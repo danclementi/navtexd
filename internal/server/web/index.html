@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NAVTEX</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="srvmsg" class="srvmsg" role="alert" hidden><span id="srvmsg-text"></span> <button type="button" id="srvmsg-x" title="Hide this message" aria-label="Hide">&#10005;</button></div>
+<header id="hdr">
+  <div class="hdrrow">
+    <fieldset class="grp" id="grp-main">
+      <div class="mainrow">
+        <div class="logo" title="Claude's attempted NAVTEX Decoder">
+          <img src="cand_logo.png" alt="CaND" width="116" height="62">
+        </div>
+        <div class="dials">
+          <div class="dial" data-id="level" data-label="INP.LEVEL" data-red="0.9" title="Input level (dBFS); red = near clipping"></div>
+          <div class="dial" data-id="q" data-label="QUALITY" data-red="0" title="Signal quality (inverse of the crest factor)"></div>
+          <div class="dial" data-id="cpu" data-label="CPU LOAD" data-red="0.85" title="CPU load of the decoder"></div>
+        </div>
+      </div>
+      <div class="timerow"><span id="date">&nbsp;</span><span id="clock">--:--:-- UTC</span></div>
+      <div class="sunrow"><span id="sun" class="msun" title="Receive location">Sunrise: --:-- / Sunset: --:--</span></div>
+      <label class="field commentrow">Comment <input id="c-comment" class="entry" type="text" maxlength="120" placeholder="operational comment"></label>
+    </fieldset>
+    <fieldset class="grp" id="grp-spec">
+      <div class="specwrap2"><canvas id="spec-mini"></canvas></div>
+      <div class="tunecol">
+        <label class="check"><input id="c-autotune" type="checkbox"> Auto</label>
+        <span class="led" id="l-lock"><i></i>LOCK</span>
+        <span class="small">Carrier (Hz)</span>
+        <input id="c-carrier" type="number" min="200" max="2600" step="1">
+        <span class="spacer"></span>
+        <div id="mini-scale" class="seg" title="Vertical scale of this spectrum"><button type="button" data-sc="log">LOG</button><button type="button" data-sc="lin">LIN</button></div>
+      </div>
+    </fieldset>
+    <fieldset class="grp ctl" id="grp-set">
+      <div class="sub">
+        <label class="field grow">Audio input <select id="c-device"><option value="">-</option></select></label>
+      </div>
+      <div class="sub">
+        <label class="field">Frequency <select id="c-channel"><option value="518">518 kHz</option><option value="490">490 kHz</option><option value="424">424 kHz</option></select></label>
+        <label class="field">Polarity <select id="c-polarity" title="Signal polarity"><option value="normal">Normal (USB)</option><option value="inverted">Inverted (LSB)</option><option value="auto">Auto</option></select></label>
+      </div>
+      <div class="sub">
+        <label class="check"><input id="c-uos" type="checkbox"> Unshift on Space</label>
+        <button id="b-clip" title="Save the last minute of input audio (and a few seconds more) as a WAV file for later analysis">Save clip</button>
+      </div>
+      <div class="sub">
+        <span class="resyncbox"><button id="b-resync" title="Resynchronise the decoder">RESYNC</button><span class="led" id="l-sync"><i></i>SYNC</span><span class="led" id="l-data"><i></i>DATA</span></span>
+      </div>
+    </fieldset>
+  </div>
+  <div id="login" class="row" hidden>
+    <label class="field grow">Access token <input id="tok" type="password" autocomplete="current-password"></label>
+    <button id="b-login">Unlock</button>
+  </div>
+  <div class="tickerrow"><div id="ticker" class="ticker" title="Latest decoded text"></div><input id="msg-color" type="color" value="#8cf0a0" title="Colour of the message text"></div>
+</header>
+<nav id="tabs">
+  <button data-tab="status" class="on">Status</button>
+  <button data-tab="spectrum">Spectrum</button>
+  <button data-tab="log">Log</button>
+  <button data-tab="schedule">Schedule</button>
+  <button data-tab="scope">Signal</button>
+  <button data-tab="report">Report</button>
+  <button data-tab="statistics">Statistics</button>
+  <button data-tab="ephemeris">Ephemeris</button>
+  <button data-tab="options">Options</button>
+  <button data-tab="database">Database</button>
+  <button data-tab="syslog">System Log</button>
+</nav>
+<main>
+  <section id="tab-status">
+    <div class="cols">
+      <div class="col grow textcol">
+        <h3>In-progress message</h3>
+        <pre id="text"></pre>
+      </div>
+      <div id="st-split" class="splitter" role="separator" aria-orientation="vertical" tabindex="0" title="Drag to change the split (double-click: reset)"></div>
+      <div class="col reccol">
+        <h3>Recent records</h3>
+        <div class="tablewrap fill"><table id="recent"><thead><tr><th>UTC</th><th>Kind</th><th>ID</th><th>Station</th><th>Q</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </div>
+  </section>
+  <section id="tab-spectrum" hidden>
+    <div class="specwrap"><canvas id="spec"></canvas><div id="spec-scale" class="seg" title="Vertical scale of the spectrum"><button type="button" data-sc="log">LOG</button><button type="button" data-sc="lin">LIN</button></div></div>
+  </section>
+  <section id="tab-log" hidden>
+    <div class="filters" id="filters">
+      <div class="frow">
+        <label class="field">Frequency <select id="f-freq"><option value="">both</option><option value="518">518</option><option value="490">490</option><option value="424">424</option></select></label>
+        <label class="field">NAVAREA <select id="f-area"><option value="">ALL</option></select></label>
+        <label class="field">ID letter <select id="f-b1"><option value="">ALL</option></select></label>
+        <label class="field">Kind <select id="f-kind"><option value="">all</option><option value="message">message</option><option value="incomplete">incomplete</option><option value="fragment">fragment</option></select></label>
+        <label class="field">From <input id="f-from" type="date"></label>
+        <label class="field">To <input id="f-to" type="date"></label>
+        <span class="field" id="f-km-wrap">Distance <input id="f-kmin" type="number" min="0" step="any" placeholder="0" title="Minimum distance (km)"> to <input id="f-kmax" type="number" min="0" step="any" placeholder="&#8734;" title="Maximum distance (km); empty = no limit"> km</span>
+        <label class="check"><input id="f-unid" type="checkbox"> UNID only</label>
+      </div>
+      <div class="frow">
+        <label class="field grow">Body text <input id="f-text" type="text" placeholder="search the message text"></label>
+        <span class="fsep"></span>
+        <button id="f-apply" title="Apply the filter (Enter in any field does the same)">Apply</button><button id="f-clear">Clear all</button>
+        <span class="filtind" id="f-ind" title="A filter is applied: only matching records are listed"><i></i><b>FILTER ON</b><span id="f-stat" class="small"></span></span>
+      </div>
+    </div>
+    <div class="row lognav">
+      <span>Records: <b id="n-total">0</b> <span id="n-all" class="small"></span></span>
+      <span id="n-pos" class="small"></span>
+      <label class="field">Order <select id="n-order"><option value="oldest">newest last</option><option value="newest">newest first</option></select></label>
+      <label class="field">Go to date <input id="n-date" type="date" title="Jump to the first record of this day (UTC)"></label>
+      <button id="n-goto" title="Jump to the date">Go</button>
+      <button id="n-latest" title="Jump to the most recent record">Most recent</button>
+      <span class="grow"></span>
+      <span id="n-selinfo" class="small"></span>
+      <button id="n-open" title="Read the selected record (double-click or Enter)" disabled>Open record</button>
+      <button id="n-report" title="Move the selected records to the report, in time order" hidden>Add to report</button>
+      <button id="n-delete" title="Delete the selected records">&minus; Delete record</button>
+    </div>
+    <div id="logscroll" class="logscroll" tabindex="0" title="Up/Down: one line. Page Up/Down: a page. Double-click or Enter: open the record. Ctrl-click: select several records. Shift-click on the time: move the record to the report.">
+      <table id="log-table"><thead><tr><th>UTC received</th><th>Freq</th><th>Q</th><th>B1</th><th>B2</th><th>Msg#</th><th>Area</th><th>Station</th><th class="km">Dist km</th><th>Kind</th></tr></thead><tbody></tbody></table>
+    </div>
+  </section>
+  <section id="tab-database" hidden>
+    <div class="cols">
+      <div class="col grow">
+        <h3>Station list</h3>
+        <div class="row">
+          <label class="field">Frequency <select id="s-freq"><option value="">all</option><option value="518">518</option><option value="490">490</option><option value="424">424</option></select></label>
+          <label class="field grow">Search <input id="s-text" type="text" placeholder="call sign, name, country"></label>
+          <span id="s-count" class="small"></span>
+        </div>
+        <div class="tablewrap tall"><table id="st-table"><thead><tr><th>Area</th><th>Freq</th><th>B1</th><th>Call</th><th>Name</th><th>CC</th><th>Km</th><th>Brg</th></tr></thead><tbody></tbody></table></div>
+      </div>
+      <div class="col" id="kw-panel">
+        <h3>Keywords <span id="kw-title" class="small"></span></h3>
+        <div class="row"><label class="check"><input type="radio" name="kwtype" value="GID" checked> Geographical (GID)</label>
+          <label class="check"><input type="radio" name="kwtype" value="UID"> Unique (UID)</label></div>
+        <ul id="kw-list" class="kwlist"></ul>
+        <div class="row"><input id="kw-new" type="text" placeholder="new keyword"><label class="check"><input id="kw-word" type="checkbox"> whole word</label><button id="kw-add">Add</button></div>
+        <div class="row"><button id="kw-save">Confirm keyword list</button><button id="kw-revert">Revert</button><span id="kw-count" class="small"></span></div>
+        <div id="kw-msg" class="small"></div>
+      </div>
+    </div>
+    <div class="cols">
+      <fieldset class="col" id="maint"><legend>Log database maintenance</legend>
+        <div class="row"><label class="check"><input id="m-old-on" type="checkbox"> Older than</label><input id="m-old" type="date"></div>
+        <div class="row"><label class="check"><input id="m-km-on" type="checkbox"> Closer than</label><input id="m-km" type="number" min="0" step="any"> km</div>
+        <div class="row"><label class="check"><input id="m-unid" type="checkbox"> Delete all unidentified (UNID) records instead</label></div>
+        <div class="row"><label class="check"><input id="m-compact" type="checkbox" checked> Compact the database afterwards</label></div>
+        <div class="row"><button id="m-preview">Count</button><button id="m-delete">Delete records</button><button id="m-compact-now">Compact now</button></div>
+        <div id="m-msg" class="small"></div>
+      </fieldset>
+      <fieldset class="col" id="tableio"><legend>Station table</legend>
+        <div class="row"><a id="st-export" href="/api/stations/export" download="YAND_STATIONS.TXT">Export table</a></div>
+        <div class="row"><input id="st-file" type="file" accept=".txt,.TXT"><label class="check"><input id="st-reid" type="checkbox" checked> re-identify records</label><button id="st-import">Import table</button></div>
+        <div class="row"><button id="st-reidentify">Re-identify all records now</button><button id="st-recorrect" title="Redo the word autocorrection of every stored record, e.g. after adding words to the vocabulary">Redo autocorrection of all records</button></div>
+        <div id="st-msg" class="small"></div>
+      </fieldset>
+      <fieldset class="col" id="clipbox"><legend>Saved audio clips</legend>
+        <div class="row small">The "Save clip" button in the header saves the input just before and after the press as a WAV file with a .json file describing it. A clip can be played back as an input file (-in).</div>
+        <div class="tablewrap"><table id="clip-table"><thead><tr><th>UTC start</th><th>Length</th><th>Size</th><th></th></tr></thead><tbody></tbody></table></div>
+        <div id="clip-msg" class="small"></div>
+      </fieldset>
+    </div>
+  </section>
+  <section id="tab-scope" hidden>
+    <div class="filters">
+      <label class="check"><input id="sc2-on" type="checkbox" checked> Display</label>
+      <label class="field">Time scale <select id="sc2-span"><option value="0.2">200 ms</option><option value="0.5">500 ms</option><option value="1">1 s</option></select></label>
+      <label class="field">Trigger <select id="sc2-trig"><option value="rise">bit 0 &rarr; 1</option><option value="fall">bit 1 &rarr; 0</option><option value="none">none</option></select></label>
+      <button id="sc2-one" type="button" title="Capture one sweep at the next trigger">One-shot</button>
+      <label class="check"><input id="sc2-free" type="checkbox" checked> Free-run</label>
+      <label class="check"><input id="sc2-clock" type="checkbox" checked> Bit clock</label>
+      <span id="sc2-state" class="small"></span>
+    </div>
+    <div id="sc2-lanes" class="filters"></div>
+    <canvas id="sc2-canvas"></canvas>
+    <p class="small">The signals are shown on one time axis, each shifted for its own filter delay, so a decided bit sits below the part of the signal that produced it. The decoder works about two seconds behind the antenna, so a sweep is that old. High tone = bit 1.</p>
+  </section>
+  <section id="tab-report" hidden>
+    <p class="note">Records moved here from the Log tab (shift-click on the time, or select rows and press "Add to report"). The NavtexDX report format itself is planned for a later milestone.</p>
+    <div class="row">
+      <button id="rp-remove" disabled>Remove selected</button><button id="rp-clear" disabled>Clear list</button><span id="rp-count" class="small"></span>
+      <span class="grow"></span>
+      <fieldset id="rp-info" class="radios"><legend>Personal info</legend>
+        <label class="check"><input type="radio" name="rp-info" value="omit"> Omit</label>
+        <label class="check"><input type="radio" name="rp-info" value="header" checked> As header</label>
+        <label class="check"><input type="radio" name="rp-info" value="footer"> As footer</label>
+      </fieldset>
+      <button id="rp-save" disabled title="Save the report as a text file">Save Report</button>
+      <button id="rp-copy" disabled title="Copy the report text to the clipboard">Copy to Clipboard</button>
+      <span id="rp-msg" class="small"></span>
+    </div>
+    <div class="tablewrap tall"><table id="rp-table"><thead><tr><th>UTC received</th><th>Freq</th><th>Q</th><th>ID</th><th>Station</th><th class="km">Dist km</th><th>Kind</th></tr></thead><tbody></tbody></table></div>
+    <h3>Text <span id="rp-title" class="small"></span></h3>
+    <pre id="rp-text"></pre>
+  </section>
+  <section id="tab-statistics" hidden><p class="note">Reception statistics are planned for the next milestone.</p></section>
+  <section id="tab-schedule" hidden>
+    <div class="filters">
+      <label class="field">Frequency <select id="sc-freq"><option value="518">518 kHz</option><option value="490">490 kHz</option><option value="424">424 kHz</option></select></label>
+      <button id="sc-now">On air now</button>
+      <label class="check" id="sc-km-wrap"><input id="sc-km" type="checkbox"> Show distances</label>
+      <label class="check" id="sc-brg-wrap"><input id="sc-brg" type="checkbox"> Show bearings</label>
+      <span id="sc-utc" class="small"></span>
+    </div>
+    <div class="areas"><span class="small">NAVAREAs shown:</span> <span id="sc-areas"></span> <button id="sc-all" type="button" class="small">All</button> <button id="sc-none" type="button" class="small">None</button></div>
+    <div class="tablewrap tall"><table id="sc-table"></table></div>
+  </section>
+  <section id="tab-ephemeris" hidden>
+    <div class="filters">
+      <label class="field">Frequency <select id="ep-freq"><option value="518">518</option><option value="490">490</option><option value="424">424</option></select></label>
+      <label class="field">Station <select id="ep-station"></select></label>
+      <label class="field">Date (UTC) <input id="ep-date" type="date"></label>
+      <button id="ep-today">Today</button>
+    </div>
+    <div id="ep-note" class="note" hidden></div>
+    <canvas id="ep-canvas"></canvas>
+    <dl id="ep-info" class="epinfo"></dl>
+  </section>
+  <section id="tab-options" hidden>
+    <div id="opt-note" class="note" hidden></div>
+    <form id="opt-form"></form>
+    <div class="row"><button id="opt-save" type="button">Save changes</button><span id="opt-msg" class="small"></span></div>
+  </section>
+  <section id="tab-syslog" hidden>
+    <div id="log-note" class="note" hidden></div>
+    <div class="filters">
+      <label class="field">Show <select id="log-level"><option value="all">everything</option><option value="warn">warnings and errors</option></select></label>
+      <label class="field grow">Search <input id="log-filter" type="text" placeholder="filter the lines"></label>
+      <label class="check"><input id="log-follow" type="checkbox" checked> follow</label>
+      <a id="log-dl" href="/api/syslog.txt" download="navtex-system-log.txt">Download</a>
+      <span id="log-count" class="small"></span>
+    </div>
+    <pre id="log" class="tallpre"></pre>
+  </section>
+</main>
+<dialog id="rec-dlg" aria-label="Message">
+  <div class="dlghead">
+    <button id="dlg-older" type="button" title="Older record (left arrow key)">&#9664;</button>
+    <button id="dlg-newer" type="button" title="Newer record (right arrow key)">&#9654;</button>
+    <b id="dlg-title"></b>
+    <span class="grow"></span>
+    <button id="dlg-close" type="button" title="Close (Esc)" aria-label="Close">&#10005;</button>
+  </div>
+  <dl id="dlg-info" class="dlginfo"></dl>
+  <pre id="dlg-text"></pre>
+</dialog>
+<dialog id="log-dlg" aria-label="Log record">
+  <div class="dlghead">
+    <button id="ld-prev" type="button" title="Previous record in the list (left arrow key)">&#9664;</button>
+    <button id="ld-next" type="button" title="Next record in the list (right arrow key)">&#9654;</button>
+    <b id="rec-title"></b>
+    <span class="grow"></span>
+    <button id="ld-report" type="button" title="Move this record to the report" hidden>Add to report</button>
+    <button id="ld-delete" type="button" title="Delete this record">&minus; Delete</button>
+    <button id="ld-close" type="button" title="Close (Esc)" aria-label="Close">&#10005;</button>
+  </div>
+  <div id="rec-info" class="ldinfo"></div>
+  <div class="ldtext">
+    <label class="check small" title="Words with unreadable characters, repaired from the maritime vocabulary, are shown in [brackets]; hover for what was received. The raw text is never changed."><input type="checkbox" id="rec-cor" checked> show autocorrections</label>
+    <pre id="rec-text"></pre>
+    <div id="rev-sug" class="small" hidden></div>
+    <div id="rev-list" class="small" hidden></div>
+  </div>
+  <div class="ldrev">
+    <h3>Shift reverser</h3>
+    <div class="row"><textarea id="rev-in" rows="2" placeholder="Paste or select text decoded in the wrong shift, e.g. -'54-(&pound;-, 4-$89"></textarea>
+      <div class="col"><button id="rev-sel" title="Take the text selected in the message above">Use selection</button><button id="rev-go">Reverse</button></div></div>
+    <div class="row"><textarea id="rev-out" rows="2" placeholder="The reversed text appears here; correct it if needed"></textarea>
+      <div class="col"><button id="rev-apply" disabled>Replace in message</button></div></div>
+  </div>
+</dialog>
+<footer id="sched-bar" class="schedbar">
+  <span class="fnet" title="Data sent to all connected clients"><span class="small">NET</span> <b id="t-net">-</b></span>
+  <span class="fnet" title="Connected browsers"><span class="small">USERS</span> <b id="t-users">-</b></span>
+  <span id="sched-text" class="grow" title="Stations on air now (from the station table, NAVAREAs ticked in the Schedule tab)"></span>
+  <span id="conn" class="pill">connecting</span><span id="role" class="pill"></span>
+</footer>
+<script src="app.js"></script>
+<script src="log.js"></script>
+<script src="report.js"></script>
+<script src="recdlg.js"></script>
+<script src="db.js"></script>
+<script src="clips.js"></script>
+<script src="schedule.js"></script>
+<script src="scope.js"></script>
+<script src="ephemeris.js"></script>
+<script src="opts.js"></script>
+</body>
+</html>

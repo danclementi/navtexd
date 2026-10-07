@@ -1,0 +1,150 @@
+"use strict";
+// Database tab: station list and keyword editor, log maintenance, station table import / export.
+(() => {
+  const NX = window.NX, $ = NX.$, el = NX.el, api = NX.api;
+  const D = { stations: [], byId: new Map(), max: 300, sel: null, kw: [], orig: [], loaded: false };
+  const admin = () => NX.state.role === "admin";
+
+  NX.stationList = () => D.stations;
+  NX.reloadStations = () => load();
+  NX.loadStations = async () => { if (!D.stations.length) await load(); return D.byId; };
+
+  async function load() {
+    const j = await api("GET", "/api/stations");
+    D.stations = j.stations; D.max = j.max_keyword_chars; D.byId = new Map(j.stations.map((s) => [s.id, s]));
+    renderStations();
+    if (D.sel) loadKeywords();
+    (NX.hooks.stationsLoaded || []).forEach((f) => f());
+  }
+
+  function renderStations() {
+    const f = $("s-freq").value, q = $("s-text").value.trim().toLowerCase();
+    const tb = document.querySelector("#st-table tbody");
+    tb.replaceChildren();
+    let n = 0;
+    for (const s of D.stations) {
+      if (f && String(s.freq) !== f) continue;
+      if (q && !(`${s.call} ${s.name} ${s.country} ${s.cc}`.toLowerCase().includes(q))) continue;
+      const tr = el("tr", { "data-id": s.id, class: s.id === D.sel ? "sel" : "" });
+      tr.append(el("td", { text: s.area }), el("td", { text: s.freq }), el("td", { text: s.b1 }), el("td", { text: s.call }), el("td", { text: s.name }), el("td", { text: s.cc }), el("td", { text: s.km || "" }), el("td", { text: s.brg ? s.brg + "°" : "" }));
+      tb.appendChild(tr); n++;
+    }
+    $("s-count").textContent = `${n} of ${D.stations.length} stations`;
+  }
+
+  const kind = () => document.querySelector('input[name=kwtype]:checked').value;
+  const show = (k) => k.replace(/^ +| +$/g, (m) => "␣".repeat(m.length)); // visible marks for significant spaces
+
+  function loadKeywords() {
+    const s = D.byId.get(D.sel);
+    if (!s) return;
+    $("kw-title").textContent = `${s.freq} ${s.b1} ${s.call} ${s.name}`;
+    D.orig = (kind() === "GID" ? s.gid : s.uid).slice();
+    D.kw = D.orig.slice();
+    renderKeywords();
+  }
+
+  function renderKeywords() {
+    const ul = $("kw-list");
+    ul.replaceChildren();
+    D.kw.forEach((k, i) => {
+      const b = el("button", { text: "✕", title: "Delete this keyword", disabled: !admin() });
+      b.onclick = () => { if (confirm(`Delete keyword "${k}"?`)) { D.kw.splice(i, 1); renderKeywords(); } };
+      ul.append(el("li", { class: D.orig.includes(k) ? "" : "new" }, el("span", { text: show(k) }), b));
+    });
+    const n = D.kw.join(",").length;
+    $("kw-count").textContent = `${n} / ${D.max} characters`;
+    $("kw-count").className = "small" + (n > D.max ? " badq" : "");
+    const dirty = D.kw.join("\n") !== D.orig.join("\n");
+    $("kw-save").disabled = !admin() || !D.sel || !dirty || n > D.max;
+    $("kw-revert").disabled = !dirty;
+    $("kw-add").disabled = !admin() || !D.sel;
+    $("kw-new").disabled = !admin() || !D.sel;
+  }
+
+  document.querySelector("#st-table tbody").addEventListener("click", (e) => {
+    const tr = e.target.closest("tr");
+    if (!tr) return;
+    D.sel = Number(tr.dataset.id);
+    $("kw-msg").textContent = "";
+    renderStations(); loadKeywords();
+  });
+  document.querySelectorAll("input[name=kwtype]").forEach((r) => { r.onchange = () => { $("kw-msg").textContent = ""; loadKeywords(); }; });
+  $("s-freq").onchange = $("s-text").oninput = renderStations;
+
+  $("kw-add").onclick = () => {
+    let k = $("kw-new").value.toUpperCase().replace(/[#,]/g, "");
+    if (!k.trim()) return;
+    if ($("kw-word").checked) k = " " + k.trim() + " ";
+    if (D.kw.includes(k)) { $("kw-msg").textContent = "That keyword is already in the list."; return; }
+    D.kw.push(k); $("kw-new").value = ""; $("kw-msg").textContent = ""; renderKeywords();
+  };
+  $("kw-new").onkeydown = (e) => { if (e.key === "Enter") $("kw-add").onclick(); };
+  $("kw-revert").onclick = () => { D.kw = D.orig.slice(); renderKeywords(); };
+  $("kw-save").onclick = async () => {
+    try { await api("PUT", `/api/stations/${D.sel}/keywords`, { type: kind(), keywords: D.kw }); $("kw-msg").textContent = "Saved."; await load(); }
+    catch (e) { $("kw-msg").textContent = "Not saved: " + e.message; }
+  };
+
+  // ---- maintenance ----
+  function maintBody(dry) {
+    const b = { dry_run: dry, compact: $("m-compact").checked };
+    if ($("m-unid").checked) b.unid_only = true;
+    else if ($("m-km-on").checked) b.closer_than_km = Number($("m-km").value);
+    if ($("m-old-on").checked) b.older_than = $("m-old").value;
+    return b;
+  }
+  function describe(b) {
+    const parts = [];
+    if (b.unid_only) parts.push("all unidentified records");
+    else if (b.closer_than_km) parts.push(`records closer than ${b.closer_than_km} km`);
+    else parts.push("all records");
+    if (b.older_than) parts.push(`older than ${b.older_than}`);
+    return parts.join(" ");
+  }
+  $("m-preview").onclick = async () => {
+    try { $("m-msg").textContent = `${(await api("POST", "/api/maintenance/delete", maintBody(true))).count} records match.`; } catch (e) { $("m-msg").textContent = e.message; }
+  };
+  $("m-delete").onclick = async () => {
+    try {
+      const n = (await api("POST", "/api/maintenance/delete", maintBody(true))).count;
+      if (!n) { $("m-msg").textContent = "No records match."; return; }
+      if (!confirm(`Delete ${n} records (${describe(maintBody(false))})? This cannot be undone.`)) return;
+      const r = await api("POST", "/api/maintenance/delete", maintBody(false));
+      $("m-msg").textContent = `${r.deleted} records deleted, ${r.remaining} remain.`;
+    } catch (e) { $("m-msg").textContent = e.message; }
+  };
+  $("m-compact-now").onclick = async () => { try { await api("POST", "/api/maintenance/compact"); $("m-msg").textContent = "Compacted."; } catch (e) { $("m-msg").textContent = e.message; } };
+
+  // ---- station table ----
+  $("st-import").onclick = async () => {
+    const f = $("st-file").files[0];
+    if (!f) { $("st-msg").textContent = "Choose a station file first."; return; }
+    if (!confirm(`Replace the station table with ${f.name}?`)) return;
+    try {
+      const text = await f.text();
+      const r = await fetch("/api/stations/import" + ($("st-reid").checked ? "?reidentify=1" : ""), { method: "POST", headers: { "X-Navtex": "1", "Content-Type": "text/plain" }, body: text, credentials: "same-origin" });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error);
+      $("st-msg").textContent = `${j.stations} stations imported` + (j.changed !== undefined ? `, ${j.changed} records changed.` : ".");
+      D.sel = null; await load();
+    } catch (e) { $("st-msg").textContent = "Not imported: " + e.message; }
+  };
+  $("st-recorrect").onclick = async () => {
+    try { $("st-msg").textContent = `${(await api("POST", "/api/maintenance/recorrect")).changed} records changed.`; } catch (e) { $("st-msg").textContent = e.message; }
+  };
+  $("st-reidentify").onclick = async () => {
+    try { $("st-msg").textContent = `${(await api("POST", "/api/maintenance/reidentify")).changed} records changed.`; } catch (e) { $("st-msg").textContent = e.message; }
+  };
+
+  function roles() {
+    const a = admin();
+    document.querySelectorAll("#maint input, #maint button, #tableio input, #tableio button").forEach((x) => { x.disabled = !a; });
+    $("st-export").hidden = false;
+    renderKeywords();
+  }
+  NX.listen("role", roles);
+  NX.listen("stations", () => { if (D.stations.length) load(); });
+  NX.listen("role", () => { if (D.stations.length) load(); });
+  NX.tabs.database = () => { D.loaded = true; load().then(roles).catch((e) => { $("s-count").textContent = e.message; }); };
+})();
