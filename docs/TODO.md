@@ -5,6 +5,8 @@ A running list. Move finished items to the bottom or delete them.
 ## Next
 - **Input watchdog ("no new audio"):** warn (log, banner, status lamp) when the input delivers no new samples or a constant
   value for about 10 s, and optionally reopen it. A frozen USB / virtual audio path looks like a quiet band otherwise.
+- **Startup message:** print the data folder in use (for example "data folder: C:\...\navtex-data") so it is obvious where
+  settings and messages are read from and written to. Found when an old log in another folder seemed to be missing.
 - **README:** say that the program needs a folder it can write to (not Program Files).
 - **Release:** try the zip on a second PC; then clear the "pre-release" flag, or issue v0.1.1 with any fixes.
 - **Repos:** this folder (`navtexd`) is the working repo. The older `navtex` folder is an archive and can be renamed.
