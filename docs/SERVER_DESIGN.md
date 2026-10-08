@@ -154,7 +154,7 @@ Testing aid: `navtexd -realtime -in x.wav` plays a recording at real speed; `NAV
 - **Privacy change**: distances and bearings to known stations reveal where the receiver is (two or three of them pin it down), and so do sunrise/sunset times. Viewers therefore get neither, unless `operator.public_location_info` is turned on. (The first design had said viewers see distance and bearing; that was wrong.)
 - **API added**: `GET /api/messages` with all filters (freq, navarea, b1, text, from, to, kind, unid, maxkm (admin), limit, offset, order), `GET|PATCH|DELETE /api/messages/{id}`, `POST /api/maintenance/{delete|compact|reidentify}`, `GET /api/stations`, `GET /api/stations/export`, `PUT /api/stations/{id}/keywords`, `POST /api/stations/import`, `POST /api/reverse`.
 - **Shift reverser**: `sitor.Reverse` swaps letters and figures by code (D becomes `$` and back, J is not reversed because the decoder drops BEL/ENQ). The Log tab has a box where text (or the selected text) is reversed; nothing is stored.
-- Not yet: Shift-click to the Report (milestone 5), autocorrection (milestone 6), automatic choice of which portion to reverse.
+- Not yet: autocorrection (milestone 6), automatic choice of which portion to reverse.
 
 ## 15. Milestone 4 status (done)
 - **Line events**: the segmenter calls `OnLine` per finished line; the runner publishes `line` events (`{t,q,x}`) and the hub keeps the last 300 for `hello`, so the Spectrum text pane is line based and shows per-line quality when `logging.line_quality` is on (default).
@@ -205,7 +205,7 @@ Field report (518 kHz, very weak signal): the tracker walked the carrier offset 
 - **Status bar (footer):** NET and USERS first, then the stations on air (no distance/bearing), then the live/role pills.
 - **Message text** (ticker, current text, log text, reverser) is monospace, light green on a dark ground; the colour is the swatch at the right of the ticker (per browser, stored in localStorage `nx-msgcolor`, double-click resets).
 - **Log tab:** one continuous list. Only the rows in view are in the table; the rest is two spacer rows, so 100 000 records cost the same as 100. Rows are fetched in chunks of 100 as they come into view. Up/Down move one line, PageUp/PageDown a page minus one, Home/End the ends; "Go to date" binary-searches the time-ordered list; "Most recent" jumps to the newest end. A click on B1 or Area opens the cell; Up/Down (or Enter, Tab) accepts a valid value and opens the same cell of the next record. The list is not reloaded while a cell is open, so stepping through UNIDs is not disturbed when an edit makes a record drop out of the filter.
-- **Selection:** click, Ctrl-click (several), Shift-click (range). "Add to report" moves the selected records, in time order; Shift-click on the time moves one. Delete acts on all selected.
+- **Selection:** click, Ctrl-click (several), Shift-click (range, on any column). "Add to report" (toolbar, and in the record window) moves the selected records, in time order. Delete acts on all selected.
 - **Report list:** `GET /api/report` (anyone), `POST /api/report {add,remove}` (admin). Stored as record IDs in `report.json` in the data directory. The Report tab lists them; the NavtexDX report text itself is still to do.
 
 ## 22. Second UI round: Status tab, public location option, header layout, crash fix
@@ -296,4 +296,16 @@ clamped it while the focused cell was replaced, and Escape no longer scrolls the
 - If the default web address is busy (no `-listen` given) the next nine ports are tried, then any free port; an explicit
   `-listen` is never changed.
 - `server.open_browser` (default true) opens the interface in the default browser once the web server is listening.
+
+## 32. Edit report
+
+- The Report tab has an **Edit report** button (left of Save Report) for everyone, viewers included. It opens a modal text box
+  holding the report as generated (header or footer included), monospace, no wrapping, with a line and character count.
+- **Accept** keeps the text as the report text: Save Report and Copy to Clipboard then use it, and an "edited text / revert"
+  note appears. **Revert** (in the pane) replaces the text with the generated report; **Save** saves the pane's text as a file
+  and accepts it; **Copy** copies it; **Cancel**, the close button and Esc ask before throwing away changes.
+- The edit lives in the browser only (`R.edited` in `report.js`): it never touches the log records or the server. It is
+  discarded, after a confirmation, when the list or the Personal info choice changes; if records were added in the Log tab, the
+  Report tab asks when it is next opened (OK = discard the edit, Cancel = keep the edited text).
+- Saved and copied edited text uses CRLF line endings like the generated report.
 

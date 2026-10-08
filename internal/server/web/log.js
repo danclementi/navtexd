@@ -67,7 +67,7 @@
       const r = L.cache.get(i);
       if (!r) { const tr = el("tr", { class: "ph" }); tr.append(el("td", { colspan: "10", text: "\u2026" })); rows.push(tr); continue; }
       const tr = el("tr", { "data-id": r.id, "data-i": i, class: (L.sel.has(r.id) ? "sel " : "") + (r.id === L.selId ? "cur " : "") + (r.st === "UNID" ? "unid" : "") });
-      tr.append(el("td", { text: NX.stamp(r.rx), "data-f": "utc", title: admin() ? "Shift-click: move to the report" : "" }), el("td", { text: r.ch }), el("td", { text: r.q.toFixed(0) }),
+      tr.append(el("td", { text: NX.stamp(r.rx), "data-f": "utc", }), el("td", { text: r.ch }), el("td", { text: r.q.toFixed(0) }),
         el("td", { text: r.b1 || "?", class: r.man ? "man" : "" }), el("td", { text: r.b2 }), el("td", { text: r.ser || "?" }), el("td", { text: String(r.area), class: r.man ? "man" : "" }),
         el("td", { text: r.st + (r.cmt ? ` [${r.cmt}]` : "") }), el("td", { class: "km", text: r.km ? r.km.toFixed(0) : "" }), el("td", { text: r.kind }));
       rows.push(tr);
@@ -345,11 +345,11 @@
   $("n-open").onclick = openDialog;
 
   const tbody = document.querySelector("#log-table tbody");
-  // ---- clicking rows: select, ctrl-click for several, shift-click for a range, shift-click on the time = to the report ----
+  // ---- clicking rows: select, ctrl-click for several, shift-click for a range ----
   tbody.addEventListener("click", (e) => {
     const tr = e.target.closest("tr[data-id]");
     if (!tr) return;
-    const id = Number(tr.dataset.id), i = Number(tr.dataset.i), td = e.target.closest("td"), f = td && td.dataset.f;
+    const id = Number(tr.dataset.id), i = Number(tr.dataset.i);
     sc.focus({ preventScroll: true });
     // a double-click opens the record. (The rows are rebuilt on the first click, so the browser's dblclick event is not used.)
     if (e.detail === 2 && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
@@ -358,7 +358,6 @@
       openDialog();
       return;
     }
-    if (e.shiftKey && f === "utc") { addToReport([id]); return; }
     if (e.ctrlKey || e.metaKey) {
       if (L.sel.has(id)) L.sel.delete(id); else L.sel.add(id);
       L.anchor = i; L.selId = L.sel.has(id) ? id : [...L.sel].pop() || 0;

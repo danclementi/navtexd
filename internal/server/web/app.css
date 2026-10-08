@@ -397,3 +397,12 @@ dialog#log-dlg::backdrop { background: rgba(0, 0, 0, .45); }
 .srvmsg { position: fixed; top: 0; left: 0; right: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; gap: 12px; padding: 8px 16px; background: var(--bad); color: #fff; font-weight: 600; box-shadow: 0 2px 8px rgba(0, 0, 0, .35); }
 .srvmsg[hidden] { display: none; }
 .srvmsg button { background: transparent; color: #fff; border-color: #fff; min-width: 28px; }
+
+/* Edit report */
+dialog#rp-dlg { width: min(1000px, 96vw); height: min(760px, 94vh); padding: 0; border: 2px solid var(--tabline); border-radius: 8px; background: var(--panel); color: var(--ink); }
+dialog#rp-dlg[open] { display: flex; flex-direction: column; }
+dialog#rp-dlg::backdrop { background: rgba(0, 0, 0, .45); }
+#rp-dlg .redit-note { margin: 6px 12px 0; }
+#re-text { flex: 1 1 auto; min-height: 0; margin: 6px 12px; resize: none; white-space: pre; overflow: auto; font-family: var(--mono); background: var(--msg-bg); color: var(--msg-ink); border: 1px solid var(--spec-grid); }
+#rp-dlg .dlgfoot { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--line); }
+#rp-dlg button.primary { font-weight: 600; border-color: var(--accent); }

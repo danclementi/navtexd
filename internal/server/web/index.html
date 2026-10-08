@@ -121,7 +121,7 @@
       <button id="n-report" title="Move the selected records to the report, in time order" hidden>Add to report</button>
       <button id="n-delete" title="Delete the selected records">&minus; Delete record</button>
     </div>
-    <div id="logscroll" class="logscroll" tabindex="0" title="Up/Down: one line. Page Up/Down: a page. Double-click or Enter: open the record. Ctrl-click: select several records. Shift-click on the time: move the record to the report.">
+    <div id="logscroll" class="logscroll" tabindex="0" title="Up/Down: one line. Page Up/Down: a page. Double-click or Enter: open the record. Ctrl-click: add or remove a record from the selection. Shift-click: select the range from the last clicked record.">
       <table id="log-table"><thead><tr><th>UTC received</th><th>Freq</th><th>Q</th><th>B1</th><th>B2</th><th>Msg#</th><th>Area</th><th>Station</th><th class="km">Dist km</th><th>Kind</th></tr></thead><tbody></tbody></table>
     </div>
   </section>
@@ -183,7 +183,7 @@
     <p class="small">The signals are shown on one time axis, each shifted for its own filter delay, so a decided bit sits below the part of the signal that produced it. The decoder works about two seconds behind the antenna, so a sweep is that old. High tone = bit 1.</p>
   </section>
   <section id="tab-report" hidden>
-    <p class="note">Records moved here from the Log tab (shift-click on the time, or select rows and press "Add to report"). The NavtexDX report format itself is planned for a later milestone.</p>
+    <p class="note">Records moved here from the Log tab (select rows and press "Add to report", or use the button in the record window). The NavtexDX report format itself is planned for a later milestone.</p>
     <div class="row">
       <button id="rp-remove" disabled>Remove selected</button><button id="rp-clear" disabled>Clear list</button><span id="rp-count" class="small"></span>
       <span class="grow"></span>
@@ -192,8 +192,10 @@
         <label class="check"><input type="radio" name="rp-info" value="header" checked> As header</label>
         <label class="check"><input type="radio" name="rp-info" value="footer"> As footer</label>
       </fieldset>
+      <button id="rp-edit" disabled title="Edit the report text before saving or copying it">Edit report</button>
       <button id="rp-save" disabled title="Save the report as a text file">Save Report</button>
       <button id="rp-copy" disabled title="Copy the report text to the clipboard">Copy to Clipboard</button>
+      <span id="rp-edited" class="small" hidden>edited text <button id="rp-unedit" class="linkbtn" type="button" title="Throw the edits away and use the generated report again">revert</button></span>
       <span id="rp-msg" class="small"></span>
     </div>
     <div class="tablewrap tall"><table id="rp-table"><thead><tr><th>UTC received</th><th>Freq</th><th>Q</th><th>ID</th><th>Station</th><th class="km">Dist km</th><th>Kind</th></tr></thead><tbody></tbody></table></div>
@@ -250,6 +252,23 @@
   </div>
   <dl id="dlg-info" class="dlginfo"></dl>
   <pre id="dlg-text"></pre>
+</dialog>
+<dialog id="rp-dlg" aria-label="Edit report">
+  <div class="dlghead">
+    <b>Edit report</b><span id="re-count" class="small"></span>
+    <span class="grow"></span>
+    <button id="re-close" type="button" title="Close without keeping the changes (Esc)" aria-label="Close">&#10005;</button>
+  </div>
+  <p class="small redit-note">Changes affect only this report text, never the log records. Accept keeps them for Save Report and Copy to Clipboard until the report list changes.</p>
+  <textarea id="re-text" spellcheck="false" wrap="off"></textarea>
+  <div class="dlgfoot">
+    <button id="re-revert" type="button" title="Replace the text with the report as generated from the list">Revert</button>
+    <button id="re-copy" type="button" title="Copy this text to the clipboard">Copy</button>
+    <button id="re-save" type="button" title="Save this text as a file and keep it as the report text">Save</button>
+    <span class="grow"></span><span id="re-msg" class="small"></span>
+    <button id="re-cancel" type="button">Cancel</button>
+    <button id="re-accept" type="button" class="primary" title="Keep the edited text as the report text">Accept</button>
+  </div>
 </dialog>
 <dialog id="log-dlg" aria-label="Log record">
   <div class="dlghead">
