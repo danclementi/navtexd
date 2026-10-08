@@ -349,3 +349,43 @@ func TestRevisionsAndReportText(t *testing.T) {
 		t.Errorf("not cleared: %v", d["eff"])
 	}
 }
+
+// A viewer sees distances in the report (rows and text) only when the operator allows location information.
+func TestReportDistanceForViewers(t *testing.T) {
+	for _, public := range []bool{false, true} {
+		cfg := config.Default()
+		cfg.Input.File = "/nonexistent.wav"
+		cfg.Operator.LatDeg, cfg.Operator.LonDeg = 36.85, -76.3
+		cfg.Operator.Public = public
+		s, _, st, _ := setup(t, cfg)
+		tunnel := httptest.NewServer(s.handler(true))
+		a := addMsg(t, st, s.cat, "F", time.Date(2026, 9, 28, 0, 50, 0, 0, time.UTC), "SOUTH OF NANTUCKET SHOALS", "GALE WARNING")
+		if a.DistanceKm == 0 {
+			t.Fatal("test record has no distance")
+		}
+		_, l := do(t, tunnel, "POST", "/api/report/list", map[string]any{"ids": []int64{a.ID}}, nil)
+		km, _ := l["records"].([]any)[0].(map[string]any)["km"].(float64)
+		body, _ := json.Marshal(map[string]any{"ids": []int64{a.ID}})
+		req, _ := http.NewRequest("POST", tunnel.URL+"/api/report/text", bytes.NewReader(body))
+		req.Header.Set("X-Navtex", "1")
+		resp, err := tunnel.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		buf := new(strings.Builder)
+		b := make([]byte, 4096)
+		for {
+			n, err := resp.Body.Read(b)
+			buf.Write(b[:n])
+			if err != nil {
+				break
+			}
+		}
+		resp.Body.Close()
+		tunnel.Close()
+		has := strings.Contains(buf.String(), fmt.Sprintf("%.0f", a.DistanceKm))
+		if public != (km > 0) || public != has {
+			t.Errorf("public=%v: viewer rows km=%v, text has distance=%v", public, km, has)
+		}
+	}
+}
