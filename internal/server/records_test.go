@@ -1,7 +1,10 @@
 package server
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -250,28 +253,18 @@ func TestReportList(t *testing.T) {
 	defer tunnel.Close()
 	at := time.Date(2026, 9, 28, 0, 50, 0, 0, time.UTC)
 	a := addMsg(t, st, s.cat, "F", at, "ONE")
-	b := addMsg(t, st, s.cat, "F", at.Add(time.Hour), "TWO")
 	c := addMsg(t, st, s.cat, "F", at.Add(2*time.Hour), "THREE")
 
-	if code, _ := do(t, tunnel, "POST", "/api/report", map[string]any{"add": []int64{a.ID}}, nil); code != 403 {
-		t.Errorf("viewer add: %d", code)
+	// the list comes from the browser: any user may ask for rows; they are in time order, once each, missing ones dropped
+	for name, srv := range map[string]*httptest.Server{"admin": admin, "viewer": tunnel} {
+		code, l := do(t, srv, "POST", "/api/report/list", map[string]any{"ids": []int64{c.ID, a.ID, a.ID, 999}}, nil)
+		rows, _ := l["records"].([]any)
+		if code != 200 || len(rows) != 2 || int64(rows[0].(map[string]any)["id"].(float64)) != a.ID || int64(rows[1].(map[string]any)["id"].(float64)) != c.ID {
+			t.Fatalf("%s report rows: %d %v", name, code, l)
+		}
 	}
-	// added newest first: the list comes back in time order
-	_, l := do(t, admin, "POST", "/api/report", map[string]any{"add": []int64{c.ID, a.ID, a.ID, 999}}, nil)
-	rows := l["records"].([]any)
-	if len(rows) != 2 || int64(rows[0].(map[string]any)["id"].(float64)) != a.ID || int64(rows[1].(map[string]any)["id"].(float64)) != c.ID {
-		t.Fatalf("report after add: %v", l)
-	}
-	_, l = do(t, tunnel, "GET", "/api/report", nil, nil) // a viewer may look
-	if len(l["records"].([]any)) != 2 {
-		t.Errorf("viewer list: %v", l)
-	}
-	_, l = do(t, admin, "POST", "/api/report", map[string]any{"remove": []int64{a.ID}, "add": []int64{b.ID}}, nil)
-	if rows = l["records"].([]any); len(rows) != 2 || int64(rows[0].(map[string]any)["id"].(float64)) != b.ID {
-		t.Errorf("report after remove: %v", l)
-	}
-	if _, err := os.Stat(filepath.Join(st.Dir(), "report.json")); err != nil {
-		t.Error(err)
+	if _, err := os.Stat(filepath.Join(st.Dir(), "report.json")); err == nil {
+		t.Error("the server must not keep a report list")
 	}
 }
 
@@ -323,9 +316,11 @@ func TestRevisionsAndReportText(t *testing.T) {
 	}
 
 	// the report text: personal information as header, as footer, or left out (and never for a viewer)
-	do(t, admin, "POST", "/api/report", map[string]any{"add": []int64{rec2.ID, rec.ID}}, nil)
-	get := func(srv *httptest.Server, q string) string {
-		resp, err := srv.Client().Get(srv.URL + "/api/report.txt" + q)
+	get := func(srv *httptest.Server, info string) string {
+		body, _ := json.Marshal(map[string]any{"ids": []int64{rec2.ID, rec.ID}, "info": info})
+		req, _ := http.NewRequest("POST", srv.URL+"/api/report/text", bytes.NewReader(body))
+		req.Header.Set("X-Navtex", "1")
+		resp, err := srv.Client().Do(req)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -341,7 +336,7 @@ func TestRevisionsAndReportText(t *testing.T) {
 		}
 		return b.String()
 	}
-	h, f, o, vtxt := get(admin, "?info=header"), get(admin, "?info=footer"), get(admin, "?info=omit"), get(tunnel, "?info=header")
+	h, f, o, vtxt := get(admin, "header"), get(admin, "footer"), get(admin, "omit"), get(tunnel, "header")
 	if !strings.HasPrefix(h, "Operator, test station\r\n") || strings.Contains(f[:20], "Operator") || !strings.HasSuffix(strings.TrimSpace(f), "Operator, test station") || strings.Contains(o, "Operator, test") || strings.Contains(vtxt, "Operator, test") {
 		t.Errorf("info placement:\nheader %q\nfooter %q\nomit %q\nviewer %q", h, f, o, vtxt)
 	}

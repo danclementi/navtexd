@@ -118,7 +118,7 @@
       <span class="grow"></span>
       <span id="n-selinfo" class="small"></span>
       <button id="n-open" title="Read the selected record (double-click or Enter)" disabled>Open record</button>
-      <button id="n-report" title="Move the selected records to the report, in time order" hidden>Add to report</button>
+      <button id="n-report" title="Add the selected records to your report (kept in this browser)" hidden>Add to report</button>
       <button id="n-delete" title="Delete the selected records">&minus; Delete record</button>
     </div>
     <div id="logscroll" class="logscroll" tabindex="0" title="Up/Down: one line. Page Up/Down: a page. Double-click or Enter: open the record. Ctrl-click: add or remove a record from the selection. Shift-click: select the range from the last clicked record.">
@@ -183,7 +183,7 @@
     <p class="small">The signals are shown on one time axis, each shifted for its own filter delay, so a decided bit sits below the part of the signal that produced it. The decoder works about two seconds behind the antenna, so a sweep is that old. High tone = bit 1.</p>
   </section>
   <section id="tab-report" hidden>
-    <p class="note">Records moved here from the Log tab (select rows and press "Add to report", or use the button in the record window). The NavtexDX report format itself is planned for a later milestone.</p>
+    <p class="note">Records you add from the Log tab ("Add to report", or the button in the record window). Your list is kept in this browser; other users have their own. The NavtexDX report format itself is planned for a later milestone.</p>
     <div class="row">
       <button id="rp-remove" disabled>Remove selected</button><button id="rp-clear" disabled>Clear list</button><span id="rp-count" class="small"></span>
       <span class="grow"></span>
@@ -276,7 +276,7 @@
     <button id="ld-next" type="button" title="Next record in the list (right arrow key)">&#9654;</button>
     <b id="rec-title"></b>
     <span class="grow"></span>
-    <button id="ld-report" type="button" title="Move this record to the report" hidden>Add to report</button>
+    <button id="ld-report" type="button" title="Add this record to your report (kept in this browser)" hidden>Add to report</button>
     <button id="ld-delete" type="button" title="Delete this record">&minus; Delete</button>
     <button id="ld-close" type="button" title="Close (Esc)" aria-label="Close">&#10005;</button>
   </div>
@@ -302,6 +302,7 @@
   <span id="conn" class="pill">connecting</span><span id="role" class="pill"></span>
 </footer>
 <script src="app.js"></script>
+<script src="replist.js"></script>
 <script src="log.js"></script>
 <script src="report.js"></script>
 <script src="recdlg.js"></script>

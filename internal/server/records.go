@@ -28,9 +28,8 @@ func (s *Server) recordRoutes(mux *http.ServeMux, tunnel bool) {
 	mux.HandleFunc("GET /api/stations/export", s.viewer(tunnel, s.stationExport))
 	mux.HandleFunc("PUT /api/stations/{id}/keywords", s.admin(tunnel, s.stationKeywords))
 	mux.HandleFunc("POST /api/stations/import", s.admin(tunnel, s.stationImport))
-	mux.HandleFunc("GET /api/report", s.viewer(tunnel, s.reportList))
-	mux.HandleFunc("POST /api/report", s.admin(tunnel, s.reportEdit))
-	mux.HandleFunc("GET /api/report.txt", s.viewer(tunnel, s.reportText))
+	mux.HandleFunc("POST /api/report/list", s.viewer(tunnel, s.reportList))
+	mux.HandleFunc("POST /api/report/text", s.viewer(tunnel, s.reportText))
 	mux.HandleFunc("POST /api/reverse", s.reverse)
 	s.clipRoutes(mux, tunnel)
 }

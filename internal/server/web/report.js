@@ -1,5 +1,5 @@
 "use strict";
-// Report tab: the records moved here from the Log tab, in time order. (The NavtexDX report format comes later.)
+// Report tab: the records this user added from the Log tab (the list is kept in this browser, see replist.js), in time order.
 (() => {
   const NX = window.NX, $ = NX.$, el = NX.el, api = NX.api;
   const R = { rows: [], sel: new Set(), edited: null }; // edited: { text, key } while the operator's edited report text is in use
@@ -14,15 +14,16 @@
       return tr;
     }));
     $("rp-count").textContent = `${R.rows.length} record${R.rows.length === 1 ? "" : "s"}`;
-    $("rp-remove").disabled = !admin() || !R.sel.size;
-    $("rp-clear").disabled = !admin() || !R.rows.length;
+    $("rp-remove").disabled = !R.sel.size;
+    $("rp-clear").disabled = !R.rows.length;
     $("rp-save").disabled = $("rp-copy").disabled = $("rp-edit").disabled = !R.rows.length;
     $("rp-edited").hidden = !R.edited;
     $("rp-info").hidden = !admin(); // personal information is only known to administrators
   }
   async function load() {
-    try { R.rows = (await api("GET", "/api/report")).records; } catch (e) { $("rp-count").textContent = e.message; return; }
+    try { R.rows = (await api("POST", "/api/report/list", { ids: NX.replist.ids() })).records; } catch (e) { $("rp-count").textContent = e.message; return; }
     const have = new Set(R.rows.map((r) => r.id));
+    NX.replist.keepOnly(R.rows.map((r) => r.id)); // records deleted from the log drop out of the list
     R.sel = new Set([...R.sel].filter((id) => have.has(id)));
     if (R.edited && R.edited.key !== key()) {
       // the list changed (records added in the Log tab) since the text was edited
@@ -46,11 +47,11 @@
     render(); show(id);
   });
   const dropEdits = () => { if (!R.edited) return true; if (!confirm("Your edits to the report text will be discarded. Continue?")) return false; R.edited = null; return true; };
-  $("rp-remove").onclick = async () => { if (!dropEdits()) return; try { R.rows = (await api("POST", "/api/report", { remove: [...R.sel] })).records; R.sel = new Set(); render(); } catch (e) { alert(e.message); } };
+  $("rp-remove").onclick = async () => { if (!dropEdits()) return; NX.replist.remove([...R.sel]); R.sel = new Set(); await load(); };
   $("rp-clear").onclick = async () => {
     if (!confirm("Remove all records from the report list? (The records stay in the log.)")) return;
     if (!dropEdits()) return;
-    try { R.rows = (await api("POST", "/api/report", { remove: R.rows.map((r) => r.id) })).records; R.sel = new Set(); render(); } catch (e) { alert(e.message); }
+    NX.replist.clear(); R.sel = new Set(); await load();
   };
   // ---- the report as text: save (with the browser's save dialog where it has one) or copy ----
   const infoMode = () => (admin() ? (document.querySelector("input[name=rp-info]:checked") || {}).value || "omit" : "omit");
@@ -66,7 +67,11 @@
   const key = () => R.rows.map((r) => r.id).join(",") + "|" + infoMode();
   const note = (t) => { $("rp-msg").textContent = t; clearTimeout(note.t); note.t = setTimeout(() => { $("rp-msg").textContent = ""; }, 4000); };
   const crlf = (t) => t.replace(/\r?\n/g, "\r\n");
-  const generated = async () => { const r = await fetch("/api/report.txt?info=" + infoMode(), { credentials: "same-origin", headers: { "X-Navtex": "1" } }); if (!r.ok) throw new Error(r.statusText); return r.text(); };
+  const generated = async () => {
+    const r = await fetch("/api/report/text", { method: "POST", credentials: "same-origin", headers: { "X-Navtex": "1", "Content-Type": "application/json" }, body: JSON.stringify({ ids: NX.replist.ids(), info: infoMode() }) });
+    if (!r.ok) throw new Error(r.statusText);
+    return r.text();
+  };
   const reportText = async () => (R.edited ? crlf(R.edited.text) : generated());
   // saves text (with the browser's save dialog where it has one); true if it was saved
   async function saveText(text) {

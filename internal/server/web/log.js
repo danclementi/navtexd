@@ -55,7 +55,7 @@
     $("n-selinfo").textContent = n > 1 ? `${n} selected` : "";
     $("n-open").disabled = !L.selId;
     if (dlg.open) updateNav();
-    $("n-report").hidden = n < 1 || !admin();
+    $("n-report").hidden = n < 1;
     $("n-report").textContent = n > 1 ? `Add ${n} to report` : "Add to report";
     $("n-delete").disabled = !admin() || n < 1;
     $("n-delete").textContent = n > 1 ? `\u2212 Delete ${n} records` : "\u2212 Delete record";
@@ -313,7 +313,7 @@
     $("rec-title").textContent = L.rec ? `#${L.rec.id}  ${L.rec.kind}${pos}` : "";
     $("ld-prev").disabled = i <= 0;
     $("ld-next").disabled = i < 0 || i + 1 >= n;
-    $("ld-report").hidden = !admin();
+    $("ld-report").hidden = false;
     $("ld-delete").disabled = !admin();
   }
   async function openDialog() {
@@ -430,14 +430,12 @@
 
   // ---- the report list ----
   let reportNote = 0;
-  async function addToReport(list) {
-    if (!admin() || !list.length) return;
-    // chronological order, whatever the order of the list on screen
-    const when = new Map(); for (const r of L.cache.values()) when.set(r.id, r.rx);
-    list = [...list].sort((a, b) => (when.get(a) || 0) - (when.get(b) || 0));
-    try { await api("POST", "/api/report", { add: list }); } catch (e) { alert(e.message); return; }
-    $("n-selinfo").textContent = `${list.length} moved to the report`;
-    if (dlg.open) $("rec-title").textContent += "  \u2014 moved to the report";
+  function addToReport(list) {
+    if (!list.length) return;
+    const n = NX.replist.add(list);
+    const msg = n === list.length ? `${n} added to your report` : n ? `${n} added to your report (the rest were already there)` : "already in your report";
+    $("n-selinfo").textContent = msg;
+    if (dlg.open) $("rec-title").textContent += "  \u2014 " + (n ? "added to your report" : "already in your report");
     clearTimeout(reportNote); reportNote = setTimeout(render, 2500);
   }
   $("n-report").onclick = () => addToReport([...L.sel]);
