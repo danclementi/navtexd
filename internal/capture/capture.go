@@ -7,7 +7,7 @@ package capture
 
 // Device names an audio input.
 type Device struct {
-	Name string // the text to put in input.device (a substring is enough on Windows)
+	Name string // the text to put in input.device.name (a substring is enough on Windows)
 	Note string
 }
 

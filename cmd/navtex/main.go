@@ -38,12 +38,12 @@ func main() {
 	flag.Var(&sets, "set", "override any option: -set decoder.unreadable=star (repeatable)")
 	// shortcuts for the most used options; each is equivalent to a -set
 	shortcuts := map[string]string{
-		"in":         "input.file",
-		"device":     "input.device",
-		"rate":       "input.sample_rate_hz",
-		"centre":     "input.centre_hz",
-		"start":      "input.start_utc",
-		"swap":       "input.swap_iq",
+		"in":         "input.file.path",
+		"device":     "input.device.name",
+		"rate":       "input.*.sample_rate_hz",
+		"centre":     "input.*.centre_hz",
+		"start":      "input.*.start_utc",
+		"swap":       "input.*.swap_iq",
 		"order":      "decoder.bit_order",
 		"unreadable": "decoder.unreadable",
 		"format":     "output.format",
@@ -52,7 +52,7 @@ func main() {
 	flag.String("in", "", "input WAV file (mono = real audio, stereo = I/Q)")
 	flag.String("device", "", "live: audio input to capture (part of its name, see -list-devices); use -device default for the system default input")
 	flag.String("rate", "", "live / stdin: sample rate in Hz (default 48000)")
-	stdin := flag.Bool("stdin", false, "read raw PCM from standard input (see -rate, -set input.channels, -set input.pcm_format)")
+	stdin := flag.Bool("stdin", false, "read raw PCM from standard input (see -rate, -set input.stdin.channels, -set input.stdin.pcm_format)")
 	flag.String("centre", "", "Hz: I/Q centre frequency, or for real audio the receiver LO; default: parsed from the file name")
 	flag.String("start", "", `time of the first sample, UTC "yyyy-mm-dd hh:mm:ss"; default: from the file name (local time) or file time`)
 	flag.String("swap", "", "true: stereo left = Q, right = I")
@@ -87,18 +87,6 @@ func main() {
 		cfg = c
 	}
 	flag.Visit(func(f *flag.Flag) {
-		if path, ok := shortcuts[f.Name]; ok {
-			if err := config.Set(&cfg, path, f.Value.String()); err != nil {
-				fatal(err)
-			}
-		}
-		if f.Name == "channel" {
-			if err := config.Set(&cfg, "channel.frequency_hz", fmt.Sprint(*chKHz*1e3)); err != nil {
-				fatal(err)
-			}
-		}
-	})
-	flag.Visit(func(f *flag.Flag) {
 		switch f.Name {
 		case "device":
 			cfg.Input.Source = "device"
@@ -109,6 +97,22 @@ func main() {
 	if *stdin {
 		cfg.Input.Source = "stdin"
 	}
+	group := map[string]string{"device": "device", "hpsdr": "hpsdr", "stdin": "stdin", "file": "file"}[cfg.Input.Source]
+	flag.Visit(func(f *flag.Flag) {
+		if path, ok := shortcuts[f.Name]; ok {
+			if group == "file" && f.Name == "rate" {
+				fatal(fmt.Errorf("-rate: a WAV file carries its own sample rate"))
+			}
+			if err := config.Set(&cfg, strings.Replace(path, "*", group, 1), f.Value.String()); err != nil {
+				fatal(err)
+			}
+		}
+		if f.Name == "channel" {
+			if err := config.Set(&cfg, "channel.frequency_hz", fmt.Sprint(*chKHz*1e3)); err != nil {
+				fatal(err)
+			}
+		}
+	})
 	for _, kv := range sets {
 		path, val, ok := strings.Cut(kv, "=")
 		if !ok {
@@ -142,7 +146,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	if cfg.Input.Source == "file" && cfg.Input.File == "" {
+	if cfg.Input.Source == "file" && cfg.Input.File.Path == "" {
 		flag.Usage()
 		os.Exit(2)
 	}

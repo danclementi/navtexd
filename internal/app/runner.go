@@ -20,6 +20,7 @@ import (
 	"navtex/internal/clip"
 	"navtex/internal/config"
 	"navtex/internal/engine"
+	"navtex/internal/hpsdr"
 	"navtex/internal/segment"
 	"navtex/internal/sitor"
 	"navtex/internal/source"
@@ -64,6 +65,8 @@ type Runner struct {
 
 	// Enrich, if set, completes a new record (station identification) before it is stored.
 	Enrich func(*store.Record)
+	// Radios, if set, is the list of radios used successfully (most recent first).
+	Radios *hpsdr.MRU
 	// Keep, if set, decides after identification whether a record is stored (selective logging).
 	Keep func(store.Record) bool
 
@@ -263,7 +266,7 @@ func (r *Runner) SetUnshiftOnSpace(on bool) error {
 }
 
 func (r *Runner) SetAutotune(on bool) error {
-	if _, err := r.Modify(func(c *config.Config) error { c.Channel.Autotune = on; return nil }); err != nil {
+	if _, err := r.Modify(func(c *config.Config) error { t := c.Tuning(); t.Autotune = on; c.SetTuning(t); return nil }); err != nil {
 		return err
 	}
 	return nil
@@ -274,7 +277,12 @@ func (r *Runner) Scope() *engine.Scope { return r.scope.Load() }
 
 // SetCarrier fixes the carrier at an audio frequency (autotune off).
 func (r *Runner) SetCarrier(hz float64) error {
-	if _, err := r.Modify(func(c *config.Config) error { c.Channel.Autotune, c.Channel.ManualCarrierHz = false, hz; return nil }); err != nil {
+	if _, err := r.Modify(func(c *config.Config) error {
+		t := c.Tuning()
+		t.Autotune, t.ManualCarrierHz = false, hz
+		c.SetTuning(t)
+		return nil
+	}); err != nil {
 		return err
 	}
 	return nil
@@ -291,13 +299,25 @@ func (r *Runner) run(ctx context.Context, cfg config.Config, cmds chan func(*eng
 		r.log("error", err.Error())
 		r.setState(State{Error: err.Error(), Since: time.Now().UTC()})
 	}
-	src, err := source.Open(ctx, cfg)
+	src, err := source.Open(ctx, cfg, source.WithRadios(r.Radios))
 	if err != nil {
 		fail(err)
 		return
 	}
 	defer src.Close()
 	r.log("info", "start: "+src.Info)
+	if src.Notices != nil {
+		go func() {
+			for {
+				select {
+				case m := <-src.Notices:
+					r.log(m.Level, m.Text)
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+	}
 
 	var eng *engine.Engine
 	wallAt := func(streamS float64) time.Time {
@@ -328,6 +348,13 @@ func (r *Runner) run(ctx context.Context, cfg config.Config, cmds chan func(*eng
 				r.Enrich(&rec)
 			}
 			notes := r.Correct(&rec)
+			{
+				sc := r.Config().Segment
+				if keep, n := fragmentKept(rec, sc); !keep {
+					r.log("info", fmt.Sprintf("DATABASE: fragment not stored (%d word(s) of %d+ letters, %d needed).", n, sc.FragWordLetters, sc.MinFragmentWords))
+					return
+				}
+			}
 			head := strings.TrimSpace(rec.B1 + rec.B2 + rec.Serial)
 			if head == "" {
 				head = "???"
@@ -399,7 +426,7 @@ func (r *Runner) run(ctx context.Context, cfg config.Config, cmds chan func(*eng
 	block := cfg.Input.BlockSize
 	if src.Live {
 		block = max(256, int(src.SampleRate()/20))
-	} else if cfg.Input.Realtime {
+	} else if cfg.Input.File.Realtime {
 		block = max(256, int(src.SampleRate()/20))
 	}
 	buf := make([]complex64, block)
@@ -442,7 +469,7 @@ loop:
 			}
 			break
 		}
-		if cfg.Input.Realtime && !src.Live {
+		if cfg.Input.File.Realtime && !src.Live {
 			target := t0.Add(time.Duration(float64(samples) / src.SampleRate() * float64(time.Second)))
 			for {
 				d := time.Until(target)
@@ -520,7 +547,7 @@ func (r *Runner) ClipDir() string {
 func (r *Runner) finishClip(ring *clip.Ring, src *source.Opened) {
 	frames, m := ring.Take()
 	cfg := r.Config()
-	m.CentreHz, m.ChannelHz, m.Autotune, m.Software = src.CentreHz(), cfg.Channel.FrequencyHz, cfg.Channel.Autotune, "navtexd"
+	m.CentreHz, m.ChannelHz, m.Autotune, m.Software = src.CentreHz(), cfg.Channel.FrequencyHz, cfg.Autotune(), "navtexd"
 	m.CarrierHz = math.Float64frombits(r.carr.Load())
 	// the settings that matter for decoding; the network and personal options stay out
 	var all map[string]json.RawMessage

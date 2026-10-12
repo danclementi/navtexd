@@ -35,7 +35,8 @@ func addMsg(t *testing.T, st *store.Store, cat interface{ Enrich(*store.Record) 
 
 func TestRecordsAndStations(t *testing.T) {
 	cfg := config.Default()
-	cfg.Input.File = "/nonexistent.wav"
+	cfg.Input.File.Path = "/nonexistent.wav"
+	cfg.Input.Source = "file"
 	cfg.Operator.LatDeg, cfg.Operator.LonDeg = 36.85, -76.3
 	s, _, st, _ := setup(t, cfg)
 	admin := httptest.NewServer(s.handler(false))
@@ -138,7 +139,8 @@ func TestRecordsAndStations(t *testing.T) {
 
 func TestEphemerisLoggingAndStations(t *testing.T) {
 	cfg := config.Default()
-	cfg.Input.File = "/nonexistent.wav"
+	cfg.Input.File.Path = "/nonexistent.wav"
+	cfg.Input.Source = "file"
 	cfg.Operator.LatDeg, cfg.Operator.LonDeg = 36.85, -76.3
 	s, _, _, _ := setup(t, cfg)
 	admin := httptest.NewServer(s.handler(false))
@@ -190,7 +192,8 @@ func TestEphemerisLoggingAndStations(t *testing.T) {
 
 func TestAutocorrectionAndReversalSuggestions(t *testing.T) {
 	cfg := config.Default()
-	cfg.Input.File = "/nonexistent.wav"
+	cfg.Input.File.Path = "/nonexistent.wav"
+	cfg.Input.Source = "file"
 	s, _, st, dir := setup(t, cfg)
 	admin := httptest.NewServer(s.handler(false))
 	defer admin.Close()
@@ -245,7 +248,8 @@ func TestAutocorrectionAndReversalSuggestions(t *testing.T) {
 
 func TestReportList(t *testing.T) {
 	cfg := config.Default()
-	cfg.Input.File = "/nonexistent.wav"
+	cfg.Input.File.Path = "/nonexistent.wav"
+	cfg.Input.Source = "file"
 	s, _, st, _ := setup(t, cfg)
 	admin := httptest.NewServer(s.handler(false))
 	defer admin.Close()
@@ -270,7 +274,8 @@ func TestReportList(t *testing.T) {
 
 func TestRevisionsAndReportText(t *testing.T) {
 	cfg := config.Default()
-	cfg.Input.File = "/nonexistent.wav"
+	cfg.Input.File.Path = "/nonexistent.wav"
+	cfg.Input.Source = "file"
 	cfg.Operator.Info = "Operator, test station"
 	s, _, st, _ := setup(t, cfg)
 	admin := httptest.NewServer(s.handler(false))
@@ -354,7 +359,8 @@ func TestRevisionsAndReportText(t *testing.T) {
 func TestReportDistanceForViewers(t *testing.T) {
 	for _, public := range []bool{false, true} {
 		cfg := config.Default()
-		cfg.Input.File = "/nonexistent.wav"
+		cfg.Input.File.Path = "/nonexistent.wav"
+		cfg.Input.Source = "file"
 		cfg.Operator.LatDeg, cfg.Operator.LonDeg = 36.85, -76.3
 		cfg.Operator.Public = public
 		s, _, st, _ := setup(t, cfg)
@@ -387,5 +393,68 @@ func TestReportDistanceForViewers(t *testing.T) {
 		if public != (km > 0) || public != has {
 			t.Errorf("public=%v: viewer rows km=%v, text has distance=%v", public, km, has)
 		}
+	}
+}
+
+// Two stations can share frequency, B1 and NAVAREA (518 kHz C / NAVAREA 4: Moisie and Santa Marta). Choosing one of the
+// candidates must then pick that station, not just set B1 and NAVAREA, which leave the choice open.
+func TestPickCandidateStation(t *testing.T) {
+	cfg := config.Default()
+	cfg.Input.File.Path = "/nonexistent.wav"
+	cfg.Input.Source = "file"
+	cfg.Operator.LatDeg, cfg.Operator.LonDeg = 36.85, -76.3
+	s, _, st, _ := setup(t, cfg)
+	admin := httptest.NewServer(s.handler(false))
+	defer admin.Close()
+	at := time.Date(2026, 9, 28, 3, 20, 0, 0, time.UTC)
+	rec := addMsg(t, st, s.cat, "C", at, "NOTHING USEFUL")
+	if rec.Station != "UNID" || len(rec.Candidates) < 2 {
+		t.Fatalf("expected an undecided record with candidates: %q %v", rec.Station, rec.Candidates)
+	}
+	var moisie, marta int
+	for _, c := range rec.Candidates {
+		switch {
+		case strings.Contains(c.Label, "Moisie"):
+			moisie = c.StationID
+		case strings.Contains(c.Label, "Santa Marta"):
+			marta = c.StationID
+		}
+	}
+	if moisie == 0 || marta == 0 {
+		t.Fatalf("candidates: %v", rec.Candidates)
+	}
+	url := fmt.Sprintf("/api/messages/%d", rec.ID)
+	// B1 and NAVAREA alone cannot decide
+	code, p := do(t, admin, "PATCH", url, map[string]any{"v": rec.Version, "b1": "C", "area": 4}, nil)
+	if code != 200 || p["st"] != "UNID" {
+		t.Fatalf("B1 and area only: %d %v", code, p["st"])
+	}
+	v := int(p["v"].(float64))
+	code, p = do(t, admin, "PATCH", url, map[string]any{"v": v, "station": marta}, nil)
+	if code != 200 || !strings.Contains(p["st"].(string), "Santa Marta") || p["man"] != true || p["im"] != "manual" {
+		t.Fatalf("pick Santa Marta: %d %v %v", code, p["st"], p["im"])
+	}
+	// re-identification leaves the choice alone
+	if _, err := s.cat.Reidentify(st); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := st.Get(rec.ID)
+	if !strings.Contains(got.Station, "Santa Marta") {
+		t.Fatalf("after re-identification: %s", got.Station)
+	}
+	// the other one, then back to undecided by editing B1
+	code, p = do(t, admin, "PATCH", url, map[string]any{"v": got.Version, "station": moisie}, nil)
+	if code != 200 || !strings.Contains(p["st"].(string), "Moisie") {
+		t.Fatalf("pick Moisie: %d %v", code, p["st"])
+	}
+	v = int(p["v"].(float64))
+	code, p = do(t, admin, "PATCH", url, map[string]any{"v": v, "area": 4}, nil)
+	if code != 200 || p["st"] != "UNID" {
+		t.Fatalf("editing NAVAREA drops the pick: %d %v", code, p["st"])
+	}
+	// a station on another frequency is refused
+	v = int(p["v"].(float64))
+	if code, _ = do(t, admin, "PATCH", url, map[string]any{"v": v, "station": 1}, nil); code != 400 {
+		t.Fatalf("station on another frequency: %d", code)
 	}
 }

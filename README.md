@@ -19,7 +19,7 @@ It is a single self-contained program written in pure Go (standard library only,
 - Streaming decoder: carrier search and tracking, symbol timing, SITOR-B framing, diversity combining of the two
   transmitted copies of every character, optional spelling correction of unreadable characters (the raw received text
   is always kept unchanged).
-- Input from a sound card or virtual audio cable, a WAV file (real audio or I/Q), or raw samples on stdin.
+- Input from a sound card or virtual audio cable, a WAV file (real audio or I/Q), raw samples on stdin, or I/Q straight from an OpenHPSDR (Metis / Hermes) radio over the network (Protocol 1: Hermes, Hermes Lite, ANAN, Pavel Demin's Red Pitaya and QMtech images). Receive only.
 - Multi-client web interface: **Status**, **Spectrum**, **Log**, **Schedule**, **Signal**, **Report**,
   **Statistics**, **Ephemeris**, **Options**, **Database** and **System Log** tabs.
 - Message log with filters (station, subject, text, distance), a reader pop-up, and de-duplication.
@@ -62,16 +62,24 @@ The default expects the carrier near 1000 Hz of audio.
 | `-data DIR` | Data folder (settings, messages, station table). Default: `navtex-data` next to the program. |
 | `-in FILE` | Decode a WAV file instead of live audio (the default input is the system's default audio device). Mono is real audio; stereo is I/Q. |
 | `-device NAME` | Live audio device (part of the name). `-list-devices` lists them. |
+| `-radio ADDRESS` | Take I/Q from an OpenHPSDR (Metis) radio at this address, or `auto` to search the local network. The radio is tuned for you (receiver LO = channel − 3 kHz unless `-centre` is given); `-rate` picks 48000, 96000, 192000 or 384000 Hz. The address is remembered for the next start (change it on the Options page). The last four radios that worked are kept (most recent first) in `radios.json` in the data folder and offered in the Options dropdown and in the header **Input** selector, which switches between audio and radio without visiting Options. With several radios on the network, a previously used one is preferred, otherwise the only idle one; if it is ambiguous, the log lists them and you pick one. Only one program can use a radio at a time, so close Thetis / SDRConnect first. |
 | `-stdin` | Read raw samples from stdin. |
 | `-channel 490\|518` | Which NAVTEX channel (default 518). |
-| `-rate HZ`, `-centre HZ` | Sample rate and receiver (dial) frequency. |
-| `-start "yyyy-mm-dd hh:mm:ss"` | UTC start time for file input. |
+| `-rate HZ`, `-centre HZ`, `-carrier HZ` | Sample rate, receiver (dial) frequency, and a fixed carrier position (turns autotune off) for the selected input. Every kind of input (audio device, radio, raw stream, WAV file) has its own group of options (`input.device.*`, `input.hpsdr.*`, `input.stdin.*`, `input.file.*`) with its own rate, centre, autotune and carrier, shown for the selected source on the Options page (Input tab). |
+| `-start "yyyy-mm-dd hh:mm:ss"` | UTC start time for file or stdin input. |
 | `-set path=value` | Override any option, e.g. `-set decoder.unreadable=star`. |
 | `-options`, `-dump-config` | List all options / print the current configuration. |
 | `-list`, `-show ID` | Print the stored messages / one message and exit. |
 | `-v` | Verbose output. |
 
 Run `navtexd -h` for the complete list.
+
+### Fewer junk fragments in the Log
+Text received outside any ZCZC...NNNN message is kept as a "fragment". Much of it is noise. On the Options page (Decoder tab,
+Message segmentation) two settings thin it out: `min_fragment_chars` (fewer visible characters than this: dropped) and the word
+test, `min_fragment_words` words of at least `min_fragment_word_letters` letters (0 = no word test, the default). With
+`fragment_words_after_autocorrect` on, words repaired from the vocabulary count too. Dropped fragments are not stored; the System
+Log notes each one ("fragment not stored (N words ...)") so that you can tune the numbers. Messages are never affected.
 
 ### Running two copies
 

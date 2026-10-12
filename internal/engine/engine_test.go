@@ -216,8 +216,8 @@ func TestAutotuneOffKeepsCarrier(t *testing.T) {
 	src := open(t, "usb_real", 516500)
 	var r result
 	c := cfg518()
-	c.Channel.Autotune = false
-	c.Channel.ManualCarrierHz = 1500
+	c.Input.Device.Autotune = false
+	c.Input.Device.ManualCarrierHz = 1500
 	e := newEngine(t, src, c, &r)
 	drive(e, src, 2048, nil)
 	if len(r.records) == 0 {
@@ -230,7 +230,7 @@ func TestAutotuneOffKeepsCarrier(t *testing.T) {
 	// a carrier set 60 Hz away decodes nothing useful, and no tracking happens
 	src2 := open(t, "usb_real", 516500)
 	var r2 result
-	c.Channel.ManualCarrierHz = 1560
+	c.Input.Device.ManualCarrierHz = 1560
 	e2 := newEngine(t, src2, c, &r2)
 	drive(e2, src2, 2048, nil)
 	for _, s := range r2.status {

@@ -100,26 +100,123 @@ type Server struct {
 	PublicHosts   string `json:"public_hosts" doc:"Host names of the public (tunnel) address, comma separated; requests for them are always viewers"`
 }
 
-// Input describes where the samples come from.
+// Input describes where the samples come from. Each kind of source has its own group of options (rate, tuning,
+// carrier ...), so that, for example, a sound card and a raw stream can run at different sample rates and each
+// remembers its own carrier position. Only the group of the selected source is used.
 type Input struct {
-	Source       string  `json:"source" doc:"Where the samples come from: file (WAV recording), device (sound card / virtual audio cable input, live) or stdin (raw PCM piped in)" choices:"file,device,stdin"`
-	File         string  `json:"file" doc:"WAV recording to decode (mono = real audio, stereo = I/Q); used when source is file"`
-	Device       string  `json:"device" doc:"Audio input for source=device: part of its name (see -list-devices). Empty = the system default input"`
-	SampleRateHz float64 `json:"sample_rate_hz" unit:"Hz" doc:"Sample rate of a device or stdin stream (WAV files carry their own)"`
-	Channels     int     `json:"channels" doc:"Device / stdin: 1 = real audio, 2 = I/Q"`
-	PCMFormat    string  `json:"pcm_format" doc:"Sample encoding of a stdin stream" choices:"s16le,f32le"`
-	CentreHz     float64 `json:"centre_hz" unit:"Hz" doc:"I/Q: centre frequency of the recording. Real audio: the receiver's dial (LO) frequency. 0 = from the file name; for device/stdin: the channel frequency minus 1000 Hz, i.e. the carrier is expected near 1000 Hz of audio"`
-	SwapIQ       bool    `json:"swap_iq" doc:"Two-channel input: left channel is Q and right is I"`
-	StartUTC     string  `json:"start_utc" doc:"Time of the first sample, UTC, yyyy-mm-dd hh:mm:ss. Empty = infer from the file name (taken as this computer's local time) or the file's modification time; for device / stdin, empty = use the system clock"`
-	BlockSize    int     `json:"block_size" unit:"samples" doc:"Samples read from the source at a time"`
-	Realtime     bool    `json:"realtime" doc:"File input: play the recording back at its real speed instead of as fast as possible (for testing displays)"`
+	Source    string      `json:"source" doc:"Where the samples come from: file (WAV recording), device (sound card / virtual audio cable input, live), stdin (raw PCM piped in) or hpsdr (I/Q over the network from an OpenHPSDR / Metis radio)" choices:"file,device,stdin,hpsdr"`
+	BlockSize int         `json:"block_size" unit:"samples" doc:"Samples read from the source at a time"`
+	Device    DeviceInput `json:"device"`
+	HPSDR     HPSDRInput  `json:"hpsdr"`
+	Stdin     StdinInput  `json:"stdin"`
+	File      FileInput   `json:"file"`
+}
+
+// DeviceInput: a sound card or virtual audio cable (the audio output of an SDR program, or a receiver's audio).
+type DeviceInput struct {
+	Name            string  `json:"name" doc:"Audio input: part of its name (see -list-devices). Empty = the system default input"`
+	SampleRateHz    float64 `json:"sample_rate_hz" unit:"Hz" doc:"Sample rate to capture at"`
+	Channels        int     `json:"channels" doc:"1 = real audio (a receiver's SSB audio), 2 = I/Q"`
+	SwapIQ          bool    `json:"swap_iq" doc:"Two-channel input: left channel is Q and right is I"`
+	CentreHz        float64 `json:"centre_hz" unit:"Hz" doc:"Real audio: the receiver's dial (LO) frequency. I/Q: the centre frequency. 0 = the channel frequency minus 1000 Hz, i.e. the carrier is expected near 1000 Hz of audio"`
+	Autotune        bool    `json:"autotune" doc:"Find and follow the carrier automatically. Off: the carrier stays at manual_carrier_hz"`
+	ManualCarrierHz float64 `json:"manual_carrier_hz" unit:"Hz" doc:"Frequency of the carrier (centre between mark and space) in this input's audio / baseband, used when autotune is off (the carrier marker in the spectrum can be dragged to set it)"`
+}
+
+// HPSDRInput: an OpenHPSDR / Metis radio on the network (Protocol 1), receive only.
+type HPSDRInput struct {
+	Address         string  `json:"address" doc:"Address of the radio (e.g. 192.168.1.50), or empty to search the local network. The last radios that worked are offered in a list"`
+	SampleRateHz    float64 `json:"sample_rate_hz" unit:"Hz" doc:"I/Q sample rate of the radio" choices:"48000,96000,192000,384000"`
+	SwapIQ          bool    `json:"swap_iq" doc:"Exchange I and Q (mirror the spectrum)"`
+	CentreHz        float64 `json:"centre_hz" unit:"Hz" doc:"Frequency the radio is tuned to (its LO). 0 = the channel frequency minus 3000 Hz, which keeps the carrier away from the radio's DC spur"`
+	Autotune        bool    `json:"autotune" doc:"Find and follow the carrier automatically. Off: the carrier stays at manual_carrier_hz"`
+	ManualCarrierHz float64 `json:"manual_carrier_hz" unit:"Hz" doc:"Frequency of the carrier in the radio's baseband (channel frequency minus LO), used when autotune is off (the carrier marker in the spectrum can be dragged to set it)"`
+}
+
+// StdinInput: raw PCM piped into the program.
+type StdinInput struct {
+	SampleRateHz    float64 `json:"sample_rate_hz" unit:"Hz" doc:"Sample rate of the stream"`
+	Channels        int     `json:"channels" doc:"1 = real audio, 2 = I/Q"`
+	PCMFormat       string  `json:"pcm_format" doc:"Sample encoding of the stream" choices:"s16le,f32le"`
+	SwapIQ          bool    `json:"swap_iq" doc:"Two-channel input: left channel is Q and right is I"`
+	CentreHz        float64 `json:"centre_hz" unit:"Hz" doc:"Real audio: the dial (LO) frequency. I/Q: the centre frequency. 0 = the channel frequency minus 1000 Hz"`
+	StartUTC        string  `json:"start_utc" doc:"Time of the first sample, UTC, yyyy-mm-dd hh:mm:ss. Empty = use the system clock"`
+	Autotune        bool    `json:"autotune" doc:"Find and follow the carrier automatically. Off: the carrier stays at manual_carrier_hz"`
+	ManualCarrierHz float64 `json:"manual_carrier_hz" unit:"Hz" doc:"Frequency of the carrier in the stream's audio / baseband, used when autotune is off"`
+}
+
+// FileInput: a WAV recording.
+type FileInput struct {
+	Path            string  `json:"path" doc:"WAV recording to decode (mono = real audio, stereo = I/Q); its sample rate is read from the file"`
+	Realtime        bool    `json:"realtime" doc:"Play the recording back at its real speed instead of as fast as possible (for testing displays)"`
+	SwapIQ          bool    `json:"swap_iq" doc:"Stereo recording: left channel is Q and right is I"`
+	CentreHz        float64 `json:"centre_hz" unit:"Hz" doc:"Centre frequency of an I/Q recording, or the dial frequency of a real-audio one. 0 = from the file name or the clip's own record"`
+	StartUTC        string  `json:"start_utc" doc:"Time of the first sample, UTC, yyyy-mm-dd hh:mm:ss. Empty = infer from the file name (taken as this computer's local time) or the file's modification time"`
+	Autotune        bool    `json:"autotune" doc:"Find and follow the carrier automatically. Off: the carrier stays at manual_carrier_hz"`
+	ManualCarrierHz float64 `json:"manual_carrier_hz" unit:"Hz" doc:"Frequency of the carrier in the recording's audio / baseband, used when autotune is off"`
+}
+
+// Tuning is the part of a source's options that says where the carrier is: the same three values for every kind of
+// source, kept separately for each.
+type Tuning struct {
+	CentreHz        float64
+	Autotune        bool
+	ManualCarrierHz float64
+}
+
+// Tuning returns the carrier-related options of the selected source.
+func (c Config) Tuning() Tuning {
+	switch c.Input.Source {
+	case "hpsdr":
+		h := c.Input.HPSDR
+		return Tuning{h.CentreHz, h.Autotune, h.ManualCarrierHz}
+	case "stdin":
+		h := c.Input.Stdin
+		return Tuning{h.CentreHz, h.Autotune, h.ManualCarrierHz}
+	case "file":
+		h := c.Input.File
+		return Tuning{h.CentreHz, h.Autotune, h.ManualCarrierHz}
+	}
+	h := c.Input.Device
+	return Tuning{h.CentreHz, h.Autotune, h.ManualCarrierHz}
+}
+
+// SetTuning stores the carrier-related options for the selected source.
+func (c *Config) SetTuning(t Tuning) {
+	switch c.Input.Source {
+	case "hpsdr":
+		c.Input.HPSDR.CentreHz, c.Input.HPSDR.Autotune, c.Input.HPSDR.ManualCarrierHz = t.CentreHz, t.Autotune, t.ManualCarrierHz
+	case "stdin":
+		c.Input.Stdin.CentreHz, c.Input.Stdin.Autotune, c.Input.Stdin.ManualCarrierHz = t.CentreHz, t.Autotune, t.ManualCarrierHz
+	case "file":
+		c.Input.File.CentreHz, c.Input.File.Autotune, c.Input.File.ManualCarrierHz = t.CentreHz, t.Autotune, t.ManualCarrierHz
+	default:
+		c.Input.Device.CentreHz, c.Input.Device.Autotune, c.Input.Device.ManualCarrierHz = t.CentreHz, t.Autotune, t.ManualCarrierHz
+	}
+}
+
+// Autotune reports whether the selected source follows the carrier automatically.
+func (c Config) Autotune() bool { return c.Tuning().Autotune }
+
+// ManualCarrierHz is the selected source's fixed carrier position (used when autotune is off).
+func (c Config) ManualCarrierHz() float64 { return c.Tuning().ManualCarrierHz }
+
+// SampleRate is the configured sample rate of the selected source (0 for a file, which carries its own).
+func (c Config) SampleRate() float64 {
+	switch c.Input.Source {
+	case "hpsdr":
+		return c.Input.HPSDR.SampleRateHz
+	case "stdin":
+		return c.Input.Stdin.SampleRateHz
+	case "device":
+		return c.Input.Device.SampleRateHz
+	}
+	return 0
 }
 
 // Channel selects the NAVTEX frequency to decode.
 type Channel struct {
-	FrequencyHz     float64 `json:"frequency_hz" unit:"Hz" doc:"RF frequency of the NAVTEX channel: 518000 (international), 490000 (local language) or 424000 (Japan)"`
-	Autotune        bool    `json:"autotune" doc:"Find and follow the carrier automatically. Off: the carrier stays at manual_carrier_hz"`
-	ManualCarrierHz float64 `json:"manual_carrier_hz" unit:"Hz" doc:"Audio frequency of the carrier (centre between mark and space) used when autotune is off (the carrier marker in the spectrum can be dragged to set it)"`
+	FrequencyHz float64 `json:"frequency_hz" unit:"Hz" doc:"RF frequency of the NAVTEX channel: 518000 (international), 490000 (local language) or 424000 (Japan)"`
 }
 
 // DDC controls the digital down-converter.
@@ -137,8 +234,12 @@ type Output struct {
 // Default returns the default configuration.
 func Default() Config {
 	return Config{
-		Input:       Input{Source: "device", SampleRateHz: 48000, Channels: 1, PCMFormat: "s16le", BlockSize: 16384},
-		Channel:     Channel{FrequencyHz: 518000, Autotune: true, ManualCarrierHz: DefaultCarrierHz},
+		Input: Input{Source: "device", BlockSize: 16384,
+			Device: DeviceInput{SampleRateHz: 48000, Channels: 1, Autotune: true, ManualCarrierHz: DefaultCarrierHz},
+			HPSDR:  HPSDRInput{SampleRateHz: 48000, Autotune: true, ManualCarrierHz: HPSDRCarrierHz},
+			Stdin:  StdinInput{SampleRateHz: 48000, Channels: 1, PCMFormat: "s16le", Autotune: true, ManualCarrierHz: DefaultCarrierHz},
+			File:   FileInput{Autotune: true, ManualCarrierHz: DefaultCarrierHz}},
+		Channel:     Channel{FrequencyHz: 518000},
 		DDC:         DDC{TargetRateHz: 4000},
 		Receiver:    fsk.DefaultReceiverConfig(0),
 		Decoder:     sitor.DefaultConfig(),
@@ -164,29 +265,38 @@ func (c Config) Validate() error {
 		bad("ddc.target_rate_hz must be at least 1000")
 	}
 	switch c.Input.Source {
-	case "file", "device", "stdin":
+	case "file", "device", "stdin", "hpsdr":
 	default:
-		bad("input.source %q: want file, device or stdin", c.Input.Source)
+		bad("input.source %q: want file, device, stdin or hpsdr", c.Input.Source)
 	}
-	if c.Input.Source != "file" {
-		if c.Input.SampleRateHz < 8000 || c.Input.SampleRateHz > 400000 {
-			bad("input.sample_rate_hz must be between 8000 and 400000")
-		}
-		if c.Input.Channels != 1 && c.Input.Channels != 2 {
-			bad("input.channels must be 1 (real audio) or 2 (I/Q)")
-		}
-		if _, err := iq.ParsePCMFormat(c.Input.PCMFormat); err != nil {
-			errs = append(errs, err)
-		}
+	switch c.Input.HPSDR.SampleRateHz {
+	case 48000, 96000, 192000, 384000:
+	default:
+		bad("input.hpsdr.sample_rate_hz for a radio must be 48000, 96000, 192000 or 384000")
 	}
-	if c.Clips.BeforeS < 0 || c.Clips.AfterS < 0 || c.Clips.BeforeS+c.Clips.AfterS > 600 {
-		bad("clips.before_s and clips.after_s must be positive, together at most 600 s")
+	if d := c.Input.Device; d.SampleRateHz < 8000 || d.SampleRateHz > 400000 {
+		bad("input.device.sample_rate_hz must be between 8000 and 400000")
+	}
+	if d := c.Input.Stdin; d.SampleRateHz < 8000 || d.SampleRateHz > 400000 {
+		bad("input.stdin.sample_rate_hz must be between 8000 and 400000")
+	}
+	if c.Input.Device.Channels != 1 && c.Input.Device.Channels != 2 {
+		bad("input.device.channels must be 1 (real audio) or 2 (I/Q)")
+	}
+	if c.Input.Stdin.Channels != 1 && c.Input.Stdin.Channels != 2 {
+		bad("input.stdin.channels must be 1 (real audio) or 2 (I/Q)")
+	}
+	if _, err := iq.ParsePCMFormat(c.Input.Stdin.PCMFormat); err != nil {
+		errs = append(errs, fmt.Errorf("input.stdin.pcm_format: %w", err))
 	}
 	if c.Input.BlockSize < 64 {
 		bad("input.block_size must be at least 64")
 	}
-	if _, err := ParseStart(c.Input.StartUTC); err != nil {
-		errs = append(errs, err)
+	if _, err := ParseStart(c.Input.File.StartUTC); err != nil {
+		errs = append(errs, fmt.Errorf("input.file.%w", err))
+	}
+	if _, err := ParseStart(c.Input.Stdin.StartUTC); err != nil {
+		errs = append(errs, fmt.Errorf("input.stdin.%w", err))
 	}
 	switch c.Output.Format {
 	case "text", "messages", "json":
@@ -207,7 +317,7 @@ func (c Config) Validate() error {
 		bad("receiver tracking: need track_window_symbols >= track_min_symbols >= 2 * track_min_each_sign")
 	}
 	if a := c.Autocorrect; a.MinLen < 3 || a.MaxLen < a.MinLen || a.MaxLen > 40 || a.MaxUnreadable < 0 || a.MaxUnreadable > 90 || a.MaxCandidates < 1 || a.MaxCandidates > 10 {
-		bad("autocorrect: word letters 3..40 (min <= max), unreadable 0..90 %, candidates 1..10")
+		bad("autocorrect: word letters 3..40 (min <= max), unreadable 0..90 %%, candidates 1..10")
 	}
 	m := c.Meters
 	if m.RateHz < 1 || m.RateHz > 50 || m.SpectrumMaxHz < 500 || m.SpectrumSmooth < 0 || m.SpectrumSmooth > 0.99 || m.LevelTauS < 0 ||
@@ -216,6 +326,9 @@ func (c Config) Validate() error {
 	}
 	if c.Segment.IdleCloseS < 5 || c.Segment.MinFragmentChars < 0 {
 		bad("segment: idle_close_s must be at least 5 and min_fragment_chars not negative")
+	}
+	if c.Segment.MinFragmentWords < 0 || c.Segment.MinFragmentWords > 100 || c.Segment.FragWordLetters < 1 || c.Segment.FragWordLetters > 40 {
+		bad("segment: min_fragment_words 0..100 and min_fragment_word_letters 1..40")
 	}
 	d := c.Decoder
 	if d.MinRun < 2 || d.MaxBad < 1 || d.VoteAgree < 1 || d.VoteFactor < 1 || d.ShiftHz <= 0 {
@@ -231,7 +344,7 @@ func ParseStart(s string) (time.Time, error) {
 	}
 	t, err := time.ParseInLocation(TimeFormat, strings.TrimSpace(s), time.UTC)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("input.start_utc %q: want yyyy-mm-dd hh:mm:ss (UTC)", s)
+		return time.Time{}, fmt.Errorf("start_utc %q: want yyyy-mm-dd hh:mm:ss (UTC)", s)
 	}
 	return t, nil
 }
@@ -239,10 +352,10 @@ func ParseStart(s string) (time.Time, error) {
 // StartTime resolves the UTC time of the first sample of a recording: the configured start, else inferred from the
 // file. The second result says where it came from.
 func (c Config) StartTime(durationS float64) (time.Time, string, error) {
-	if t, err := ParseStart(c.Input.StartUTC); err != nil || !t.IsZero() {
+	if t, err := ParseStart(c.Input.File.StartUTC); err != nil || !t.IsZero() {
 		return t, "configuration", err
 	}
-	return iq.InferStartTime(c.Input.File, durationS)
+	return iq.InferStartTime(c.Input.File.Path, durationS)
 }
 
 // Load reads a JSON file on top of the defaults (missing keys keep their default; unknown keys are an error).
@@ -252,6 +365,9 @@ func Load(path string) (Config, error) {
 		return Config{}, err
 	}
 	c := Default()
+	if b, err = migrateInput(b); err != nil {
+		return Config{}, fmt.Errorf("%s: %w", path, err)
+	}
 	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&c); err != nil {
@@ -374,8 +490,11 @@ func Set(c *Config, path, value string) error {
 // LiveCentreHz is the centre / LO frequency to use for a device or stdin stream: the configured one, else the channel
 // frequency minus DefaultCarrierHz.
 func (c Config) LiveCentreHz() float64 {
-	if c.Input.CentreHz != 0 {
-		return c.Input.CentreHz
+	if hz := c.Tuning().CentreHz; hz != 0 {
+		return hz
+	}
+	if c.Input.Source == "hpsdr" {
+		return c.Channel.FrequencyHz - HPSDRCarrierHz
 	}
 	return c.Channel.FrequencyHz - DefaultCarrierHz
 }
@@ -383,10 +502,15 @@ func (c Config) LiveCentreHz() float64 {
 // DefaultCarrierHz is the audio frequency assumed for the NAVTEX carrier of a live stream when no LO is configured.
 const DefaultCarrierHz = 1000.0
 
+// HPSDRCarrierHz is where the NAVTEX carrier lands in the I/Q stream of a radio when no LO is configured: a few kHz
+// away from the radio's DC spur.
+const HPSDRCarrierHz = 3000.0
+
 // liveFields lists the options (paths, or prefixes ending in ".") that can be applied to a running channel; see
 // RestartNeeded. The tests check that this list and RestartNeeded agree for every option.
 var liveFields = []string{
-	"operator.", "logging.", "autocorrect.", "meters.", "segment.", "decoder.", "channel.autotune", "channel.manual_carrier_hz",
+	"operator.", "logging.", "autocorrect.", "meters.", "segment.", "decoder.", "input.device.autotune", "input.device.manual_carrier_hz", "input.hpsdr.autotune",
+	"input.hpsdr.manual_carrier_hz", "input.stdin.autotune", "input.stdin.manual_carrier_hz", "input.file.autotune", "input.file.manual_carrier_hz",
 	"receiver.demod.presence_db", "receiver.demod.presence_offset_hz", "receiver.demod.timing_gain",
 	"receiver.demod.timing_confidence", "receiver.demod.timing_lost_blocks",
 	"receiver.blanker_threshold", "receiver.search_", "receiver.lose_carrier_after_s", "receiver.track_",
@@ -418,7 +542,21 @@ func RestartNeeded(a, b Config) bool {
 	neutral := func(c *Config) {
 		c.Operator, c.Server, c.Meters, c.Logging, c.Segment = Operator{}, Server{}, Meters{}, Logging{}, segment.Config{}
 		c.Autocorrect = Autocorrect{}
-		c.Channel.Autotune, c.Channel.ManualCarrierHz = false, 0
+		// only the selected source's options matter, and of those the carrier options are live
+		t := c.Tuning()
+		t.Autotune, t.ManualCarrierHz = false, 0
+		c.SetTuning(t)
+		in := &c.Input
+		switch in.Source {
+		case "hpsdr":
+			in.Device, in.Stdin, in.File = DeviceInput{}, StdinInput{}, FileInput{}
+		case "stdin":
+			in.Device, in.HPSDR, in.File = DeviceInput{}, HPSDRInput{}, FileInput{}
+		case "file":
+			in.Device, in.HPSDR, in.Stdin = DeviceInput{}, HPSDRInput{}, StdinInput{}
+		default:
+			in.HPSDR, in.Stdin, in.File = HPSDRInput{}, StdinInput{}, FileInput{}
+		}
 		c.Decoder = sitor.Config{ShiftHz: c.Decoder.ShiftHz}
 		r := &c.Receiver
 		blank := r.BlankK > 0
@@ -432,4 +570,95 @@ func RestartNeeded(a, b Config) bool {
 	neutral(&a)
 	neutral(&b)
 	return a != b
+}
+
+// migrateInput rewrites a settings file from before the input options were split into one group per source
+// (input.sample_rate_hz, input.file as a string ...) into the current layout. A file already in the current layout
+// is returned unchanged.
+func migrateInput(b []byte) ([]byte, error) {
+	var top map[string]any
+	if err := json.Unmarshal(b, &top); err != nil {
+		return b, nil // the strict decoder reports the syntax error properly
+	}
+	in, _ := top["input"].(map[string]any)
+	ch, _ := top["channel"].(map[string]any)
+	_, oldAuto := ch["autotune"]
+	_, oldCarrier := ch["manual_carrier_hz"]
+	_, oldFile := in["file"].(string)
+	_, oldDevice := in["device"].(string)
+	if !oldFile && !oldDevice && !oldAuto && !oldCarrier && in["sample_rate_hz"] == nil && in["channels"] == nil && in["centre_hz"] == nil &&
+		in["radio"] == nil && in["pcm_format"] == nil && in["swap_iq"] == nil && in["start_utc"] == nil && in["realtime"] == nil {
+		return b, nil
+	}
+	if in == nil {
+		in = map[string]any{}
+		top["input"] = in
+	}
+	take := func(k string) (any, bool) { v, ok := in[k]; delete(in, k); return v, ok }
+	sub := func(name string) map[string]any {
+		m, ok := in[name].(map[string]any)
+		if !ok {
+			m = map[string]any{}
+			in[name] = m
+		}
+		return m
+	}
+	file, _ := take("file")
+	device, _ := take("device")
+	rate, haveRate := take("sample_rate_hz")
+	channels, haveCh := take("channels")
+	pcm, havePCM := take("pcm_format")
+	centre, haveCentre := take("centre_hz")
+	radio, haveRadio := take("radio")
+	swap, haveSwap := take("swap_iq")
+	start, haveStart := take("start_utc")
+	realtime, haveRT := take("realtime")
+	put := func(m map[string]any, k string, v any, have bool) {
+		if have {
+			m[k] = v
+		}
+	}
+	if s, ok := file.(string); ok {
+		put(sub("file"), "path", s, true)
+	} else if file != nil {
+		in["file"] = file
+	}
+	if s, ok := device.(string); ok {
+		put(sub("device"), "name", s, true)
+	} else if device != nil {
+		in["device"] = device
+	}
+	d, h, st, f := sub("device"), sub("hpsdr"), sub("stdin"), sub("file")
+	put(d, "sample_rate_hz", rate, haveRate)
+	if r, ok := rate.(float64); ok && (r == 48000 || r == 96000 || r == 192000 || r == 384000) {
+		put(h, "sample_rate_hz", rate, true)
+	}
+	put(st, "sample_rate_hz", rate, haveRate)
+	put(d, "channels", channels, haveCh)
+	put(st, "channels", channels, haveCh)
+	put(st, "pcm_format", pcm, havePCM)
+	for _, m := range []map[string]any{d, h, st, f} {
+		put(m, "centre_hz", centre, haveCentre)
+		put(m, "swap_iq", swap, haveSwap)
+	}
+	put(h, "address", radio, haveRadio)
+	put(st, "start_utc", start, haveStart)
+	put(f, "start_utc", start, haveStart)
+	put(f, "realtime", realtime, haveRT)
+	// autotune and the manual carrier belonged to the channel; they go to the source that was selected
+	group := map[string]string{"file": "file", "stdin": "stdin", "hpsdr": "hpsdr"}[fmt.Sprint(in["source"])]
+	if group == "" {
+		group = "device"
+	}
+	if ch != nil {
+		if v, ok := ch["autotune"]; ok {
+			sub(group)["autotune"] = v
+			delete(ch, "autotune")
+		}
+		if v, ok := ch["manual_carrier_hz"]; ok {
+			sub(group)["manual_carrier_hz"] = v
+			delete(ch, "manual_carrier_hz")
+		}
+	}
+	return json.MarshalIndent(top, "", "  ")
 }

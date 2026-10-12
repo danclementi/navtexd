@@ -27,6 +27,7 @@ import (
 	"navtex/internal/catalog"
 	"navtex/internal/config"
 	"navtex/internal/dirlock"
+	"navtex/internal/hpsdr"
 	"navtex/internal/server"
 	"navtex/internal/sitor"
 	"navtex/internal/store"
@@ -51,12 +52,17 @@ func main() {
 		sets    setFlags
 	)
 	flag.Var(&sets, "set", "override any option: -set decoder.unreadable=star (repeatable)")
-	shortcuts := map[string]string{"in": "input.file", "device": "input.device", "rate": "input.sample_rate_hz",
-		"centre": "input.centre_hz", "start": "input.start_utc", "channel": "channel.frequency_hz", "listen": "server.listen", "tunnel": "server.tunnel_listen", "realtime": "input.realtime"}
+	// Command-line shortcuts for options. A name with "*" in its path is filled in with the group of the selected
+	// source (device, hpsdr, stdin or file).
+	shortcuts := map[string]string{"in": "input.file.path", "device": "input.device.name", "radio": "input.hpsdr.address", "rate": "input.*.sample_rate_hz",
+		"centre": "input.*.centre_hz", "start": "input.*.start_utc", "carrier": "input.*.manual_carrier_hz", "channel": "channel.frequency_hz",
+		"listen": "server.listen", "tunnel": "server.tunnel_listen", "realtime": "input.file.realtime"}
 	flag.String("in", "", "input WAV file")
 	flag.String("device", "", "audio input to capture (part of its name; see -list-devices)")
-	flag.String("rate", "", "live / stdin sample rate in Hz")
-	flag.String("centre", "", "Hz: receiver LO (real audio) or I/Q centre; live default: channel - 1000 Hz")
+	flag.String("radio", "", "take I/Q from an OpenHPSDR (Metis) radio at this address; use auto to search the network")
+	flag.String("rate", "", "sample rate in Hz of the selected live input (a radio offers 48000, 96000, 192000, 384000; a WAV file has its own)")
+	flag.String("centre", "", "Hz: receiver LO (real audio) or I/Q centre of the selected input; live default: channel - 1000 Hz (radio: channel - 3000 Hz)")
+	flag.String("carrier", "", "Hz: fix the carrier at this position in the selected input's audio / baseband and turn autotune off")
 	flag.String("start", "", "UTC time of the first sample (yyyy-mm-dd hh:mm:ss) for a piped recording")
 	flag.String("channel", "", "channel frequency in Hz (518000, 490000, 424000)")
 	flag.String("listen", "", "web server address, e.g. 127.0.0.1:8080, :8080 for all interfaces, off for none")
@@ -98,23 +104,47 @@ func main() {
 		}
 		cfg = c
 	}
+	base := cfg // the configuration before the command line, for remembering the input choice below
+	// first the flags that choose the source, then the ones that set its options
 	flag.Visit(func(f *flag.Flag) {
-		if path, ok := shortcuts[f.Name]; ok {
-			v := f.Value.String()
-			switch f.Name {
-			case "device":
-				cfg.Input.Source = "device"
-			case "in":
-				cfg.Input.Source = "file" // a file on the command line wins over the default live input
-			}
-			if err := config.Set(&cfg, path, v); err != nil {
-				fatal(err)
-			}
+		switch f.Name {
+		case "device":
+			cfg.Input.Source = "device"
+		case "in":
+			cfg.Input.Source = "file" // a file on the command line wins over the default live input
+		case "radio":
+			cfg.Input.Source = "hpsdr"
 		}
 	})
 	if *stdin {
 		cfg.Input.Source = "stdin"
 	}
+	group := map[string]string{"device": "device", "hpsdr": "hpsdr", "stdin": "stdin", "file": "file"}[cfg.Input.Source]
+	flag.Visit(func(f *flag.Flag) {
+		path, ok := shortcuts[f.Name]
+		if !ok {
+			return
+		}
+		v := f.Value.String()
+		if f.Name == "radio" && strings.EqualFold(v, "auto") {
+			v = ""
+		}
+		if strings.Contains(path, "*") {
+			if group == "file" && f.Name == "rate" {
+				fatal(fmt.Errorf("-rate: a WAV file carries its own sample rate"))
+			}
+			path = strings.Replace(path, "*", group, 1)
+		}
+		if err := config.Set(&cfg, path, v); err != nil {
+			fatal(err)
+		}
+		if f.Name == "carrier" {
+			if err := config.Set(&cfg, "input."+group+".autotune", "false"); err != nil {
+				fatal(err)
+			}
+		}
+	})
+	rememberInput(base, cfg, explicitFlags, settings)
 	for _, kv := range sets {
 		path, val, ok := strings.Cut(kv, "=")
 		if !ok {
@@ -206,6 +236,7 @@ func main() {
 		return o.LatDeg, o.LonDeg, o.LatDeg != 0 || o.LonDeg != 0
 	}
 	run.Enrich = cat.Enrich
+	run.Radios = hpsdr.OpenMRU(filepath.Join(*dataDir, "radios.json"))
 	run.Keep = func(r store.Record) bool { return cat.Logged(r.StationID) }
 	srv.Attach(run, cat)
 	run.Start()
@@ -351,4 +382,32 @@ func listRecords(dir string, id int64) {
 func fatal(err error) {
 	fmt.Fprintln(os.Stderr, "navtexd:", err)
 	os.Exit(2)
+}
+
+// rememberInput saves the radio or audio device given on the command line as the program's own setting, so that the next
+// start without the option uses it too (the Options page shows the value but cannot "change" it to save it). Only that
+// choice is kept; everything else given on the command line is for this run only, and so is a file or stdin input.
+func rememberInput(base, cfg config.Config, explicit map[string]bool, settings string) {
+	if cfg.Input.Source == "file" || cfg.Input.Source == "stdin" {
+		return
+	}
+	keep := base
+	switch {
+	case explicit["radio"] && cfg.Input.Source == "hpsdr":
+		keep.Input.Source, keep.Input.HPSDR.Address = "hpsdr", cfg.Input.HPSDR.Address
+	case explicit["device"] && cfg.Input.Source == "device":
+		keep.Input.Source, keep.Input.Device.Name = "device", cfg.Input.Device.Name
+	default:
+		return
+	}
+	if keep.Input == base.Input {
+		if _, err := os.Stat(settings); err == nil {
+			return // already saved that way
+		}
+	}
+	if err := keep.Save(settings); err != nil {
+		fmt.Fprintln(os.Stderr, "navtexd: could not remember the input choice:", err)
+		return
+	}
+	fmt.Println("remembered the input choice in", settings, "(change it later on the Options page)")
 }

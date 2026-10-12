@@ -114,8 +114,8 @@ type controlsMsg struct {
 	Carrier  float64 `json:"carrier"`
 	Comment  string  `json:"comment"`
 	Source   string  `json:"source"`
-	LineQ    bool    `json:"lineq"`            // show the quality figure on text lines
-	Device   string  `json:"device,omitempty"` // administrators only
+	LineQ    bool    `json:"lineq"`  // show the quality figure on text lines
+	Device   string  `json:"device"` // administrators only (empty for viewers)
 }
 
 type recordMsg struct {
@@ -155,10 +155,10 @@ func brief(r store.Record, withDist bool) recordMsg {
 func (s *Server) controls(admin bool) controlsMsg {
 	c := s.run.Config()
 	pol, _ := c.Decoder.Polarity.MarshalText()
-	m := controlsMsg{Channel: int(c.Channel.FrequencyHz/1000 + 0.5), Polarity: string(pol), UoS: c.Decoder.UnshiftOnSpace, Autotune: c.Channel.Autotune,
-		Carrier: c.Channel.ManualCarrierHz, Comment: c.Operator.Comment, Source: c.Input.Source, LineQ: c.Logging.LineQuality}
+	m := controlsMsg{Channel: int(c.Channel.FrequencyHz/1000 + 0.5), Polarity: string(pol), UoS: c.Decoder.UnshiftOnSpace, Autotune: c.Autotune(),
+		Carrier: c.ManualCarrierHz(), Comment: c.Operator.Comment, Source: c.Input.Source, LineQ: c.Logging.LineQuality}
 	if admin {
-		m.Device = c.Input.Device
+		m.Device = c.Input.Device.Name
 	}
 	return m
 }
@@ -377,6 +377,8 @@ func (s *Server) handler(tunnel bool) http.Handler {
 	mux.HandleFunc("GET /api/settings", s.admin(tunnel, s.getSettings))
 	mux.HandleFunc("PUT /api/settings", s.admin(tunnel, s.putSettings))
 	mux.HandleFunc("GET /api/audio-devices", s.admin(tunnel, s.devices))
+	mux.HandleFunc("GET /api/radios", s.admin(tunnel, s.radios))
+	mux.HandleFunc("GET /api/input", s.admin(tunnel, s.input))
 	mux.HandleFunc("POST /api/control/{name}", s.admin(tunnel, s.control))
 	mux.HandleFunc("GET /api/syslog", s.admin(tunnel, s.syslog))
 	mux.HandleFunc("POST /api/login", s.login(tunnel))
@@ -609,6 +611,27 @@ func (s *Server) devices(w http.ResponseWriter, r *http.Request, id Identity) {
 	writeJSON(w, 200, out)
 }
 
+// input says where the samples come from now (administrators only; the broadcast controls leave it out).
+func (s *Server) input(w http.ResponseWriter, r *http.Request, id Identity) {
+	c := s.run.Config().Input
+	writeJSON(w, 200, map[string]string{"source": c.Source, "device": c.Device.Name, "radio": c.HPSDR.Address})
+}
+
+// radios lists the radios that have been used successfully, most recently used first (administrators only: the addresses
+// are part of the receiver's setup).
+func (s *Server) radios(w http.ResponseWriter, r *http.Request, id Identity) {
+	type d struct {
+		Addr  string `json:"addr"`
+		Name  string `json:"name,omitempty"`
+		Label string `json:"label"`
+	}
+	out := []d{}
+	for _, k := range s.run.Radios.List() {
+		out = append(out, d{k.Addr, k.Name, k.Label()})
+	}
+	writeJSON(w, 200, out)
+}
+
 func (s *Server) control(w http.ResponseWriter, r *http.Request, id Identity) {
 	var body struct {
 		Value json.RawMessage `json:"value"`
@@ -679,9 +702,23 @@ func (s *Server) control(w http.ResponseWriter, r *http.Request, id Identity) {
 		var t string
 		if t, err = asString(); err == nil {
 			var restart bool
-			restart, err = s.run.Modify(func(c *config.Config) error { c.Input.Source, c.Input.Device = "device", t; return nil })
+			restart, err = s.run.Modify(func(c *config.Config) error { c.Input.Source, c.Input.Device.Name = "device", t; return nil })
 			if err == nil && restart {
 				s.run.Log("info", "audio input changed to "+t)
+				s.run.Restart()
+			}
+		}
+	case "radio": // take I/Q from a radio: its address, or empty to search the network
+		var t string
+		if t, err = asString(); err == nil {
+			t = strings.TrimSpace(t)
+			var restart bool
+			restart, err = s.run.Modify(func(c *config.Config) error { c.Input.Source, c.Input.HPSDR.Address = "hpsdr", t; return nil })
+			if err == nil && restart {
+				if t == "" {
+					t = "(search the network)"
+				}
+				s.run.Log("info", "input changed to radio "+t)
 				s.run.Restart()
 			}
 		}

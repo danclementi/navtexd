@@ -135,6 +135,7 @@ func (s *Server) patchMessage(w http.ResponseWriter, r *http.Request, id Identit
 		NavArea *int    `json:"area"`
 		Comment *string `json:"cmt"`
 		Rev     *revOp  `json:"rev"`
+		Station *int    `json:"station"` // choose this station (ID); sets B1 and NAVAREA to its own; 0 = no choice
 	}
 	if err := readBody(r, &body); err != nil {
 		fail(w, 400, err)
@@ -155,7 +156,7 @@ func (s *Server) patchMessage(w http.ResponseWriter, r *http.Request, id Identit
 			fail(w, 400, errors.New("B1 must be a capital letter (or empty / ?)"))
 			return
 		}
-		rec.B1, rec.Manual = b, true
+		rec.B1, rec.Manual, rec.Picked = b, true, 0
 		if body.NavArea == nil {
 			rec.NavArea = 0
 		}
@@ -165,12 +166,24 @@ func (s *Server) patchMessage(w http.ResponseWriter, r *http.Request, id Identit
 			fail(w, 400, errors.New("NAVAREA must be 0 to 99"))
 			return
 		}
-		rec.NavArea, rec.Manual = *body.NavArea, true
+		rec.NavArea, rec.Manual, rec.Picked = *body.NavArea, true, 0
+	}
+	if body.Station != nil {
+		if *body.Station == 0 {
+			rec.Picked = 0
+		} else {
+			st, ok := s.cat.Station(*body.Station)
+			if !ok || st.FreqKHz != rec.Channel {
+				fail(w, 400, errors.New("that station does not transmit on this channel"))
+				return
+			}
+			rec.B1, rec.NavArea, rec.Manual, rec.Picked = st.ID, st.NavArea, true, *body.Station
+		}
 	}
 	if body.Comment != nil {
 		rec.Comment = strings.TrimSpace(*body.Comment)
 	}
-	if body.B1 != nil || body.NavArea != nil {
+	if body.B1 != nil || body.NavArea != nil || body.Station != nil {
 		s.cat.Enrich(&rec)
 	}
 	if body.Rev != nil {

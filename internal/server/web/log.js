@@ -279,18 +279,15 @@
       const cands = el("div", { class: "cands" }, el("span", { class: "small", text: "Candidate stations:" }));
       box.append(cands);
       for (const c of r.cand) {
-        const b = el("button", { text: "Use", disabled: !admin(), title: "Set B1 and NAVAREA to this station" });
+        const b = el("button", { text: "Use", disabled: !admin(), title: "Identify the message as this station (sets B1 and NAVAREA to its own)" });
         b.onclick = () => useCandidate(c.id);
         cands.append(el("span", { class: "cand" }, `${c.label}  (${c.score.toFixed(1)}) `, b));
       }
     }
   }
 
-  async function useCandidate(sid) {
-    const map = await NX.loadStations();
-    const s = map.get(sid);
-    if (s) patch({ b1: s.b1, area: s.area });
-  }
+  // The server sets B1 and NAVAREA from the station and remembers the choice (several stations can share all three)
+  function useCandidate(sid) { patch({ station: sid }); }
 
   // a record as returned by PATCH (the full record) in the shape of a list row
   const rowOf = (r, old) => ({ ...old, id: r.id, v: r.v, ch: r.ch, rx: Date.parse(r.rx) || old.rx, kind: r.kind, b1: r.b1, b2: r.b2, ser: r.ser, area: r.area, sid: r.sid, st: r.st, q: r.q, km: r.km || 0, brg: r.brg || 0, cmt: r.cmt, man: r.man, im: r.im });

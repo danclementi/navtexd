@@ -56,6 +56,7 @@ func TestRingWrapAndFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer w.Close() // Windows cannot delete the temporary folder while the file is open
 	buf := make([]complex64, 10)
 	if k, _ := w.Read(buf); k != 10 || math.Abs(float64(real(buf[1]))-3001) > 0 {
 		t.Errorf("read back %d %v", k, buf[1])

@@ -211,6 +211,15 @@ func (c *Catalog) Enrich(r *store.Record) {
 	for _, cd := range res.Candidates {
 		r.Candidates = append(r.Candidates, store.Candidate{StationID: cd.Index + 1, Label: Label(c.tab.Stations[cd.Index]), Score: store.F2(cd.Score)})
 	}
+	if r.Picked >= 1 && r.Picked <= len(c.tab.Stations) && c.tab.Stations[r.Picked-1].FreqKHz == r.Channel {
+		// the operator chose this station among the candidates (needed when several share frequency, B1 and NAVAREA)
+		res.Index, res.Method, res.Score = r.Picked-1, "manual", 0
+		for _, cd := range res.Candidates {
+			if cd.Index == res.Index {
+				res.Score = cd.Score
+			}
+		}
+	}
 	if res.Index < 0 {
 		return
 	}
@@ -294,6 +303,18 @@ func (c *Catalog) Import(data []byte) (int, error) {
 	return len(tab.Stations), c.save()
 }
 
+func sameCandidates(a, b []store.Candidate) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // Reidentify runs the identification again over the stored records (after a table or position change). It returns how
 // many records changed.
 func (c *Catalog) Reidentify(st *store.Store) (int, error) {
@@ -303,7 +324,7 @@ func (c *Catalog) Reidentify(st *store.Store) (int, error) {
 		old := r
 		c.Enrich(&r)
 		if r.StationID == old.StationID && r.NavArea == old.NavArea && r.DistanceKm == old.DistanceKm && r.BearingDeg == old.BearingDeg &&
-			r.IdentMethod == old.IdentMethod && r.IdentScore == old.IdentScore {
+			r.IdentMethod == old.IdentMethod && r.IdentScore == old.IdentScore && sameCandidates(r.Candidates, old.Candidates) {
 			continue
 		}
 		if _, err := st.Update(r); err != nil && !errors.Is(err, store.ErrConflict) && !errors.Is(err, store.ErrNotFound) {

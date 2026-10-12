@@ -169,9 +169,9 @@ func New(fs, centreHz float64, kind iq.Kind, cfg config.Config, h Handlers) (*En
 	e.qNeed = int(cfg.Meters.QualityWindowS * e.front.OutputRate())
 	e.lastText = -1e9
 	e.spec = newSpec(fs, kind, shift, cfg.Meters)
-	if !cfg.Channel.Autotune {
+	if !cfg.Autotune() {
 		e.rx.SetAutotune(false)
-		e.rx.SetCarrier(cfg.Channel.ManualCarrierHz - shift)
+		e.rx.SetCarrier(cfg.ManualCarrierHz() - shift)
 	}
 	return e, nil
 }
@@ -226,14 +226,18 @@ func (e *Engine) Resync() {
 
 // SetAutotune turns automatic carrier search/tracking on or off (off freezes the current carrier).
 func (e *Engine) SetAutotune(on bool) {
-	e.cfg.Channel.Autotune = on
+	t := e.cfg.Tuning()
+	t.Autotune = on
+	e.cfg.SetTuning(t)
 	e.rx.SetAutotune(on)
 	e.status(fmt.Sprintf("autotune %v", map[bool]string{true: "on", false: "off"}[on]))
 }
 
 // SetCarrierAudioHz sets the carrier by hand (real audio input: audio frequency of the carrier centre).
 func (e *Engine) SetCarrierAudioHz(hz float64) {
-	e.cfg.Channel.ManualCarrierHz = hz
+	t := e.cfg.Tuning()
+	t.ManualCarrierHz = hz
+	e.cfg.SetTuning(t)
 	e.rx.SetCarrier(hz - e.shift)
 	e.status(fmt.Sprintf("carrier set to %.1f Hz", hz))
 }
@@ -275,15 +279,15 @@ func (e *Engine) Reconfigure(cfg config.Config) {
 	e.seg.SetConfig(cfg.Segment)
 	e.rx.SetConfig(cfg.Receiver)
 	// carrier
-	if cfg.Channel.Autotune != old.Channel.Autotune {
-		e.SetAutotune(cfg.Channel.Autotune)
-		if !cfg.Channel.Autotune {
-			e.SetCarrierAudioHz(cfg.Channel.ManualCarrierHz)
+	if cfg.Autotune() != old.Autotune() {
+		e.SetAutotune(cfg.Autotune())
+		if !cfg.Autotune() {
+			e.SetCarrierAudioHz(cfg.ManualCarrierHz())
 		}
-	} else if !cfg.Channel.Autotune && cfg.Channel.ManualCarrierHz != old.Channel.ManualCarrierHz {
-		e.SetCarrierAudioHz(cfg.Channel.ManualCarrierHz)
+	} else if !cfg.Autotune() && cfg.ManualCarrierHz() != old.ManualCarrierHz() {
+		e.SetCarrierAudioHz(cfg.ManualCarrierHz())
 	}
-	e.cfg.Channel.ManualCarrierHz = cfg.Channel.ManualCarrierHz
+	e.cfg.SetTuning(cfg.Tuning())
 	// meters
 	m, om := cfg.Meters, old.Meters
 	e.cfg.Meters = m

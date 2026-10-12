@@ -17,6 +17,7 @@ import (
 	"navtex/internal/app"
 	"navtex/internal/catalog"
 	"navtex/internal/config"
+	"navtex/internal/hpsdr"
 	"navtex/internal/store"
 )
 
@@ -73,7 +74,8 @@ func do(t *testing.T, ts *httptest.Server, method, path string, body any, hdr ma
 
 func TestAPIRolesSettingsAndControls(t *testing.T) {
 	cfg := config.Default()
-	cfg.Input.File = "/nonexistent.wav"
+	cfg.Input.File.Path = "/nonexistent.wav"
+	cfg.Input.Source = "file"
 	s, r, _, dir := setup(t, cfg)
 	admin := httptest.NewServer(s.handler(false))
 	defer admin.Close()
@@ -164,7 +166,8 @@ func TestLiveRecording(t *testing.T) {
 		t.Skip("recording not available")
 	}
 	cfg := config.Default()
-	cfg.Input.File = recording
+	cfg.Input.File.Path = recording
+	cfg.Input.Source = "file"
 	s, r, st, _ := setup(t, cfg)
 	ts := httptest.NewServer(s.handler(false))
 	defer ts.Close()
@@ -221,5 +224,58 @@ func TestListenNearWhenBusy(t *testing.T) {
 	defer ln.Close()
 	if ln.Addr().String() == busy.Addr().String() {
 		t.Error("got the busy address")
+	}
+}
+
+func TestRadiosListAndControl(t *testing.T) {
+	cfg := config.Default()
+	cfg.Input.File.Path = "/nonexistent.wav"
+	cfg.Input.Source = "file"
+	s, r, _, dir := setup(t, cfg)
+	r.Radios = hpsdr.OpenMRU(filepath.Join(dir, "radios.json"))
+	r.Radios.Touch("10.0.0.1", "R_PITAYA")
+	r.Radios.Touch("10.0.0.2", "")
+	admin := httptest.NewServer(s.handler(false))
+	defer admin.Close()
+	tunnel := httptest.NewServer(s.handler(true))
+	defer tunnel.Close()
+
+	get := func(ts *httptest.Server) (int, []map[string]any) {
+		resp, err := http.Get(ts.URL + "/api/radios")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var l []map[string]any
+		json.NewDecoder(resp.Body).Decode(&l)
+		return resp.StatusCode, l
+	}
+	code, l := get(admin)
+	if code != 200 || len(l) != 2 || l[0]["addr"] != "10.0.0.2" || l[1]["label"] != "10.0.0.1  R_PITAYA" {
+		t.Fatalf("radio list: %d %v", code, l)
+	}
+	if code, _ = get(tunnel); code != 403 {
+		t.Fatalf("a viewer must not see the radio addresses: %d", code)
+	}
+	if _, c := do(t, tunnel, "GET", "/api/hello", nil, nil); c != nil {
+		if b, _ := json.Marshal(c); strings.Contains(string(b), "10.0.0.") {
+			t.Fatalf("a viewer's page data names a radio: %s", b)
+		}
+	}
+	// choosing a radio from the header sets source and address; an audio device takes the source back
+	if code, _ = do(t, admin, "POST", "/api/control/radio", map[string]any{"value": "127.0.0.1"}, nil); code != 200 {
+		t.Fatalf("radio control: %d", code)
+	}
+	if c := r.Config(); c.Input.Source != "hpsdr" || c.Input.HPSDR.Address != "127.0.0.1" {
+		t.Fatalf("after choosing a radio: %q %q", c.Input.Source, c.Input.HPSDR.Address)
+	}
+	if code, _ = do(t, tunnel, "POST", "/api/control/radio", map[string]any{"value": "10.0.0.1"}, nil); code != 403 {
+		t.Fatalf("viewer radio control: %d", code)
+	}
+	if code, _ = do(t, admin, "POST", "/api/control/device", map[string]any{"value": "Line 1"}, nil); code != 200 {
+		t.Fatalf("device control: %d", code)
+	}
+	if c := r.Config(); c.Input.Source != "device" || c.Input.Device.Name != "Line 1" {
+		t.Fatalf("after choosing an audio input: %q %q", c.Input.Source, c.Input.Device.Name)
 	}
 }

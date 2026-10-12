@@ -61,7 +61,8 @@ type Record struct {
 	IdentMethod string      `json:"im"`
 	IdentScore  F2          `json:"is"`
 	Candidates  []Candidate `json:"cand,omitempty"`
-	Manual      bool        `json:"man"` // B1 / NAVAREA set by the operator: never re-identified
+	Manual      bool        `json:"man"`            // B1 / NAVAREA set by the operator: never re-identified
+	Picked      int         `json:"pick,omitempty"` // station chosen by the operator among the candidates (ID); 0 = none
 	Lines       []Line      `json:"lines"`
 	Corrected   string      `json:"cor,omitempty"` // body after word autocorrection (of the effective text)
 	Revs        []Revision  `json:"rev,omitempty"` // stretches the operator replaced, e.g. text decoded in the wrong shift

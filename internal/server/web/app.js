@@ -82,7 +82,26 @@
     set("c-autotune", c.autotune);
     set("c-comment", c.comment);
     if (!c.autotune) set("c-carrier", c.carrier); else if (document.activeElement !== $("c-carrier")) $("c-carrier").value = "";
-    if (c.device !== undefined) set("c-device", c.device);
+    refreshInput();
+  }
+  // Which input is in use: asked of the server (administrators only) whenever the controls change.
+  async function refreshInput() {
+    if (state.role !== "admin") return;
+    try {
+      const i = await api("GET", "/api/input");
+      state.inputWanted = i.source === "hpsdr" ? "r:" + i.radio : "a:" + i.device;
+      showInput();
+    } catch (e) { /* not available */ }
+  }
+  // The Input box: audio inputs ("a:name") and radios ("r:address"; "r:" searches the network).
+  function showInput() {
+    const sel = $("c-device"), want = state.inputWanted;
+    if (want === undefined || document.activeElement === sel) return;
+    if (![...sel.options].some((o) => o.value === want)) { // a radio that has not delivered data yet, or an unlisted device
+      const o = new Option(want.startsWith("r:") ? want.slice(2) + "  (not confirmed yet)" : want.slice(2), want);
+      (want.startsWith("r:") ? sel.querySelector("optgroup.radios") : sel.querySelector("optgroup.audio"))?.prepend(o);
+    }
+    sel.value = want;
   }
 
   function showSun(s) {
@@ -367,7 +386,11 @@
   $("c-polarity").onchange = (e) => control("polarity", e.target.value);
   $("c-uos").onchange = (e) => control("uos", e.target.checked);
   $("c-autotune").onchange = (e) => control("autotune", e.target.checked);
-  $("c-device").onchange = (e) => e.target.value && control("device", e.target.value);
+  $("c-device").onchange = (e) => {
+    const v = e.target.value;
+    if (v.startsWith("r:")) control("radio", v.slice(2));
+    else if (v.startsWith("a:")) control("device", v.slice(2));
+  };
   $("c-comment").onchange = (e) => control("comment", e.target.value);
   $("c-carrier").onchange = (e) => { const v = Number(e.target.value); if (v) control("carrier", v); };
   $("b-resync").onclick = () => control("resync");
@@ -377,12 +400,18 @@
   async function loadDevices() {
     if (state.role !== "admin") return;
     try {
-      const devs = await api("GET", "/api/audio-devices");
+      const [devs, radios] = await Promise.all([api("GET", "/api/audio-devices"), api("GET", "/api/radios")]);
       const sel = $("c-device");
-      const cur = sel.value;
-      sel.replaceChildren(new Option("(default)", ""));
-      for (const d of devs) sel.add(new Option(d.name, d.name));
-      sel.value = cur;
+      if (document.activeElement === sel) return;
+      const audio = document.createElement("optgroup"); audio.label = "Audio input"; audio.className = "audio";
+      audio.append(new Option("(default)", "a:"));
+      for (const d of devs) audio.append(new Option(d.name, "a:" + d.name));
+      const rg = document.createElement("optgroup"); rg.label = "Radio (OpenHPSDR)"; rg.className = "radios";
+      for (const r of radios) rg.append(new Option(r.label, "r:" + r.addr));
+      rg.append(new Option("Radio: search the network", "r:"));
+      sel.replaceChildren(audio, rg);
+      NX.knownRadios = radios;
+      refreshInput();
     } catch (e) { /* not available */ }
   }
 
@@ -410,21 +439,22 @@
     }
     note.hidden = true; $("opt-save").hidden = false;
     try { fields = (await api("GET", "/api/settings")).fields; } catch (e) { note.hidden = false; note.textContent = e.message; return; }
-    const title = { operator: "Operator and position", channel: "Channel and tuning", input: "Audio input", ddc: "Down-converter", decoder: "Decoder", receiver: "Receiver (FSK demodulator)", segment: "Message segmentation", logging: "Logging", autocorrect: "Word autocorrection", meters: "Meters and spectrum", server: "Network server", output: "Output (command line)" };
+    const title = { operator: "Operator and position", input: "Input source", "input.device": "Audio input (sound card or virtual audio cable)", "input.hpsdr": "Radio (OpenHPSDR / Metis)", "input.stdin": "Raw stream (standard input)", "input.file": "WAV file", channel: "Channel", ddc: "Down-converter", decoder: "Decoder", receiver: "Receiver (FSK demodulator)", segment: "Message segmentation", logging: "Logging", autocorrect: "Word autocorrection", meters: "Meters and spectrum", server: "Network server", output: "Output (command line)" };
     const pages = [
       ["station", "Station", ["operator"]],
-      ["input", "Input and tuning", ["channel", "input", "ddc"]],
-      ["decoder", "Decoder", ["receiver", "decoder", "segment"]],
+      ["input", "Input", ["channel", "input", "input.device", "input.hpsdr", "input.stdin", "input.file"]],
+      ["decoder", "Decoder", ["receiver", "decoder", "segment", "ddc"]],
       ["logging", "Logging", ["logging", "autocorrect"]],
       ["display", "Display", ["meters"]],
       ["network", "Network", ["server"]],
       ["cli", "Command line", ["output"]],
     ];
     const known = new Set(pages.flatMap((p) => p[2]));
-    const others = [...new Set(fields.map((f) => f.path.split(".")[0]))].filter((g) => !known.has(g));
+    const gkey = (path) => { const a = path.split("."); return a[0] === "input" && a.length > 2 ? a[0] + "." + a[1] : a[0]; };
+    const others = [...new Set(fields.map((f) => gkey(f.path)))].filter((g) => !known.has(g));
     if (others.length) pages.push(["other", "Other", others]);
     const groups = new Map();
-    for (const f of fields) { const g = f.path.split(".")[0]; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(f); }
+    for (const f of fields) { const g = gkey(f.path); if (!groups.has(g)) groups.set(g, []); groups.get(g).push(f); }
     const bar = document.createElement("div"); bar.className = "subtabs"; form.appendChild(bar);
     const pageEls = new Map(), extra = { box: null };
     const showPage = (id) => { optPage = id; for (const [k, p] of pageEls) { p.hidden = k !== id; } for (const b of bar.children) b.classList.toggle("on", b.dataset.page === id); };
@@ -435,7 +465,7 @@
       if (id === "logging") { extra.box = document.createElement("div"); extra.box.id = "opt-extra"; }
       for (const g of gs) {
         if (!groups.has(g)) continue;
-        const fs = document.createElement("fieldset"); fs.className = "optgrp";
+        const fs = document.createElement("fieldset"); fs.className = "optgrp"; if (g.startsWith("input.")) fs.dataset.src = g.slice(6);
         const lg = document.createElement("legend"); lg.textContent = title[g] || g; fs.appendChild(lg); page.appendChild(fs);
         for (const f of groups.get(g)) {
           const row = document.createElement("div"); row.className = "opt";
@@ -449,6 +479,12 @@
             for (const c of f.choices || [f.value]) inp.add(new Option(c, c));
             inp.value = f.value;
           } else if (f.path === "operator.info") { inp = document.createElement("textarea"); inp.rows = 5; inp.value = f.value; row.classList.add("wide"); }
+          else if (f.path === "input.hpsdr.address") {
+            inp = document.createElement("input"); inp.type = "text"; inp.value = f.value; inp.placeholder = "empty = search the network";
+            inp.setAttribute("list", "radio-list");
+            let dl = document.getElementById("radio-list"); if (!dl) { dl = document.createElement("datalist"); dl.id = "radio-list"; document.body.append(dl); }
+            dl.replaceChildren(...(NX.knownRadios || []).map((r) => { const o = document.createElement("option"); o.value = r.addr; o.label = r.name || ""; o.textContent = r.label; return o; }));
+          }
           else { inp = document.createElement("input"); inp.type = f.kind === "int" || f.kind === "float" ? "number" : "text"; if (inp.type === "number") inp.step = f.kind === "int" ? "1" : "any"; inp.value = f.value; }
           inp.dataset.path = f.path; inp.dataset.orig = String(f.value);
           const live = f.apply === "live";
@@ -470,6 +506,12 @@
         }
       }
       if (extra.box && id === "logging") page.appendChild(extra.box);
+    }
+    // only the options of the selected input source are shown
+    const srcSel = form.querySelector('[data-path="input.source"]');
+    if (srcSel) {
+      const showSrc = () => form.querySelectorAll("fieldset[data-src]").forEach((fs) => { fs.hidden = fs.dataset.src !== srcSel.value; });
+      srcSel.addEventListener("change", showSrc); showSrc();
     }
     showPage(pageEls.has(optPage) ? optPage : "station");
     if (NX.optionsExtra && extra.box) NX.optionsExtra(extra.box);
@@ -535,4 +577,5 @@
   connect();
   setTimeout(loadDevices, 800);
   setInterval(() => { if (state.role === "admin" && $("c-device").options.length <= 1) loadDevices(); }, 5000);
+  setInterval(() => { if (state.role === "admin") loadDevices(); }, 20000); // a radio joins the list once it has delivered data
 })();

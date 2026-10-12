@@ -66,11 +66,16 @@ func (r Record) Text() string {
 // Config controls the segmenter.
 type Config struct {
 	MinFragmentChars int     `json:"min_fragment_chars" unit:"characters" doc:"Do not keep fragments (text outside any ZCZC message) with fewer visible characters than this (0 = keep all)"`
+	MinFragmentWords int     `json:"min_fragment_words" doc:"Keep a fragment only if it contains at least this many words of min_fragment_word_letters letters or more (0 = no word test). Many fragments are noise without a single recognisable word"`
+	FragWordLetters  int     `json:"min_fragment_word_letters" unit:"letters" doc:"Shortest run of letters that counts as a word in the fragment word test"`
+	FragWordsCorrect bool    `json:"fragment_words_after_autocorrect" doc:"Count the words after autocorrection, so that words repaired from the vocabulary count; off = count the received text as it is"`
 	IdleCloseS       float64 `json:"idle_close_s" unit:"s" doc:"A message or fragment with no new character for this long is closed"`
 	MaxLineChars     int     `json:"max_line_chars" unit:"characters" doc:"Force a line break after this many characters without one"`
 }
 
-func DefaultConfig() Config { return Config{MinFragmentChars: 16, IdleCloseS: 60, MaxLineChars: 200} }
+func DefaultConfig() Config {
+	return Config{MinFragmentChars: 16, FragWordLetters: 4, FragWordsCorrect: true, IdleCloseS: 60, MaxLineChars: 200}
+}
 
 // Segmenter builds records from text chunks. quality(a, b) returns the signal quality between two stream times.
 type Segmenter struct {
