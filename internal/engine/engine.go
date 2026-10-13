@@ -38,6 +38,7 @@ type Level struct {
 type Spectrum struct {
 	StartHz, StepHz float64
 	Filtered, Raw   []float32
+	Channel         []float32 // same grid: the signal after the channel filter, chanOff (-300) where it has no data; nil if off
 	CarrierHz       float64
 	FullScaleDB     float64 // level of a full-scale tone in the units of the spectrum
 }
@@ -126,6 +127,7 @@ type Engine struct {
 	qCrest, qEye float64 // the two components of the latest quality value (qEye < 0: not available)
 
 	spec *specState
+	chs  *chanSpec // spectrum after the channel filter
 }
 
 // New creates an engine for a source with the given sample rate, centre frequency and kind.
@@ -165,10 +167,16 @@ func New(fs, centreHz float64, kind iq.Kind, cfg config.Config, h Handlers) (*En
 		}
 	}
 	e.scope = NewScope(e.front.OutputRate(), cfg.Receiver.Baud, cfg.Receiver.ShiftHz, e.rx.Demod().FilterDelay())
-	e.rx.Demod().OnBlock = e.scope.Block
+	e.rx.Demod().OnBlock = func(n0 int64, x, y []complex128) {
+		e.scope.Block(n0, x, y)
+		if e.chs != nil {
+			e.chs.feed(y)
+		}
+	}
 	e.qNeed = int(cfg.Meters.QualityWindowS * e.front.OutputRate())
 	e.lastText = -1e9
 	e.spec = newSpec(fs, kind, shift, cfg.Meters)
+	e.chs = newChanSpec(e.front.OutputRate(), e.spec.step, e.spec.n, cfg.Meters.SpectrumSmooth)
 	if !cfg.Autotune() {
 		e.rx.SetAutotune(false)
 		e.rx.SetCarrier(cfg.ManualCarrierHz() - shift)
@@ -294,8 +302,10 @@ func (e *Engine) Reconfigure(cfg config.Config) {
 	e.qNeed = int(m.QualityWindowS * e.front.OutputRate())
 	if m.SpectrumMaxHz != om.SpectrumMaxHz || m.SpectrumFFT != om.SpectrumFFT || m.RateHz != om.RateHz {
 		e.spec = newSpec(e.fs, e.kind, e.shift, m)
+		e.chs = newChanSpec(e.front.OutputRate(), e.spec.step, e.spec.n, m.SpectrumSmooth)
 	} else {
 		e.spec.alpha = m.SpectrumSmooth
+		e.chs.alpha = m.SpectrumSmooth
 	}
 }
 
@@ -506,6 +516,12 @@ func (e *Engine) emitMeters() {
 	if sp := e.spec.take(); sp != nil {
 		sp.CarrierHz = e.shift + f0
 		sp.FullScaleDB = e.spec.fullScaleDB
+		if e.cfg.Meters.SpectrumChannel {
+			ch := make([]float32, len(sp.Filtered))
+			if e.chs.frame(ch, sp.StartHz, sp.StepHz, e.shift+f0) {
+				sp.Channel = ch
+			}
+		}
 		m.Spectrum = sp
 	}
 	e.h.Meters(m)

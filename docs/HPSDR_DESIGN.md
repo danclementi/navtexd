@@ -60,7 +60,7 @@ two 512-byte frames. Each frame: `7F 7F 7F`, C0..C4 (status), then 504 bytes of 
   48 kHz is enough (NAVTEX occupies ~±400 Hz).
 - Multiple receivers on one radio (518/490/424 at once) are natural in this protocol — leave room for
   it in the API now (list of frequencies), implement one receiver first.
-- Options: `input.hpsdr.address` (blank = discover), `input.hpsdr.rate`, hardware options only when the
+- Options: `input.hpsdr.address` (blank = discover), `input.hpsdr.sample_rate_hz`, hardware options only when the
   board reports them (attenuator, preamp, dither, random). The Red Pitaya/QMtech images show none.
 - Status: SYNC/DATA as now, plus radio name/firmware, packets lost, and ADC overload where reported.
 - Exclusivity: one host per radio. Discovery reply `03` tells us it is busy; say so instead of failing

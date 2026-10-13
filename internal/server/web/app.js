@@ -118,8 +118,7 @@
     r.className = "pill " + (admin ? "ok" : "");
     document.querySelectorAll("#grp-set input, #grp-set select, #grp-spec input, #b-resync, #b-clip").forEach((el) => { el.disabled = !admin; });
     $("login").hidden = !needToken;
-    $("opt-save").disabled = !admin;
-    if (state.tab === "options") loadOptions();
+    if (state.tab === "options") loadOptions(true);
     if (state.tab === "syslog") loadLog();
     fire("role", role);
   }
@@ -269,11 +268,21 @@
     }
     const trace = (arr, colour, width) => {
       g.beginPath();
-      for (let i = 0; i < n; i++) { const v = lin ? lv(arr, i) : dbv(arr, i); const x = X(f0 + i * s.step), y = Math.min(T + ph, Math.max(T, Y(v))); if (i) g.lineTo(x, y); else g.moveTo(x, y); }
+      let pen = false; // a value of -300 dB or lower means "no data here": lift the pen
+      for (let i = 0; i < n; i++) {
+        if (arr[i] <= -3000) { pen = false; continue; }
+        const v = lin ? lv(arr, i) : dbv(arr, i); const x = X(f0 + i * s.step), y = Math.min(T + ph, Math.max(T, Y(v)));
+        if (pen) g.lineTo(x, y); else g.moveTo(x, y);
+        pen = true;
+      }
       g.strokeStyle = colour; g.lineWidth = width; g.stroke();
     };
     if (s.raw && s.raw.length) trace(s.raw, cssVar("--spec-raw"), 1);
     trace(s.filt, cssVar("--spec-filt"), 1.5);
+    if (s.chan && s.chan.length === n) {
+      trace(s.chan, cssVar("--spec-chan"), 1.5);
+      if (!mini) { g.font = `11px ${FONT}`; g.fillStyle = cssVar("--spec-chan"); g.textAlign = "left"; g.textBaseline = "bottom"; g.fillText("\u2014 after channel filter", L + 6, T + ph - 4); g.fillStyle = cssVar("--spec-filt"); g.fillText("\u2014 input", L + 6, T + ph - 18); }
+    }
     // level of a full-scale single tone: if the signal is far below it, there is gain to spare
     if (fsDB !== null && !mini) {
       const fv = lin ? 1 : fsDB, y = Y(fv), rx = L + pw - 84, below = (fsDB - mxDb).toFixed(0);
@@ -429,15 +438,16 @@
   });
 
   // ---- options ----
-  let fields = [], optPage = "station";
-  async function loadOptions() {
+  let fields = [], optPage = "station", optPages = new Map(), optMsgTimer = 0;
+  async function loadOptions(force) {
+    if (!force && pendingCount()) return; // keep unsaved edits when coming back to this tab
     const note = $("opt-note"), form = $("opt-form");
-    form.replaceChildren();
+    form.replaceChildren(); $("opt-tabs").replaceChildren();
     if (state.role !== "admin") {
       note.hidden = false; note.textContent = "Settings can only be viewed and changed from the local network.";
-      $("opt-save").hidden = true; return;
+      $("opt-bar").hidden = true; $("opt-hint").hidden = true; return;
     }
-    note.hidden = true; $("opt-save").hidden = false;
+    note.hidden = true; $("opt-bar").hidden = false; $("opt-hint").hidden = false;
     try { fields = (await api("GET", "/api/settings")).fields; } catch (e) { note.hidden = false; note.textContent = e.message; return; }
     const title = { operator: "Operator and position", input: "Input source", "input.device": "Audio input (sound card or virtual audio cable)", "input.hpsdr": "Radio (OpenHPSDR / Metis)", "input.stdin": "Raw stream (standard input)", "input.file": "WAV file", channel: "Channel", ddc: "Down-converter", decoder: "Decoder", receiver: "Receiver (FSK demodulator)", segment: "Message segmentation", logging: "Logging", autocorrect: "Word autocorrection", meters: "Meters and spectrum", server: "Network server", output: "Output (command line)" };
     const pages = [
@@ -455,8 +465,8 @@
     if (others.length) pages.push(["other", "Other", others]);
     const groups = new Map();
     for (const f of fields) { const g = gkey(f.path); if (!groups.has(g)) groups.set(g, []); groups.get(g).push(f); }
-    const bar = document.createElement("div"); bar.className = "subtabs"; form.appendChild(bar);
-    const pageEls = new Map(), extra = { box: null };
+    const bar = $("opt-tabs");
+    const pageEls = new Map(), extra = { box: null }; optPages = pageEls;
     const showPage = (id) => { optPage = id; for (const [k, p] of pageEls) { p.hidden = k !== id; } for (const b of bar.children) b.classList.toggle("on", b.dataset.page === id); };
     for (const [id, label, gs] of pages) {
       if (!gs.some((g) => groups.has(g)) && id !== "logging") continue;
@@ -496,11 +506,11 @@
               try {
                 const r = await api("PUT", "/api/settings", { changes: ch });
                 inp.dataset.orig = valueOf(inp); row.classList.add("applied");
-                if (r.restarted) $("opt-msg").textContent = "The channel was restarted for this change.";
+                if (r.restarted) setMsg("The channel was restarted for this change.");
                 setTimeout(() => row.classList.remove("applied"), 1500);
-              } catch (e) { row.classList.add("failed"); row.title = e.message; $("opt-msg").textContent = f.path + ": " + e.message; inp.value = inp.dataset.orig; if (inp.type === "checkbox") inp.checked = inp.dataset.orig === "true"; }
+              } catch (e) { row.classList.add("failed"); row.title = e.message; setMsg(f.path + ": " + e.message, 0); inp.value = inp.dataset.orig; if (inp.type === "checkbox") inp.checked = inp.dataset.orig === "true"; }
             };
-          } else inp.oninput = inp.onchange = () => { row.classList.toggle("changed", valueOf(inp) !== inp.dataset.orig); btn.classList.toggle("changed", !!page.querySelector(".opt.changed")); };
+          } else inp.oninput = inp.onchange = () => { row.classList.toggle("changed", valueOf(inp) !== inp.dataset.orig); clearMsg(); updatePending(); };
           const doc = document.createElement("div"); doc.className = "doc"; doc.textContent = f.doc + (f.unit ? ` (${f.unit})` : "");
           row.append(name, inp, doc); fs.appendChild(row);
         }
@@ -514,24 +524,48 @@
       srcSel.addEventListener("change", showSrc); showSrc();
     }
     showPage(pageEls.has(optPage) ? optPage : "station");
+    updatePending();
     if (NX.optionsExtra && extra.box) NX.optionsExtra(extra.box);
   }
   const typed = (f, inp) => (f.kind === "bool" ? inp.checked : f.kind === "int" || f.kind === "float" ? Number(inp.value) : inp.value);
   const valueOf = (inp) => (inp.type === "checkbox" ? String(inp.checked) : inp.value);
+  // pending (unsaved) changes: counted per sub-tab; the sub-tab gets a dot, the Save button the total
+  const pendingCount = () => { let n = 0; for (const p of optPages.values()) n += p.querySelectorAll(".opt.changed").length; return n; };
+  function updatePending() {
+    let n = 0;
+    for (const b of $("opt-tabs").children) {
+      const p = optPages.get(b.dataset.page), c = p ? p.querySelectorAll(".opt.changed").length : 0;
+      b.classList.toggle("changed", c > 0); b.title = c ? `${c} unsaved change${c > 1 ? "s" : ""}` : ""; n += c;
+    }
+    const admin = state.role === "admin";
+    $("opt-save").textContent = "Save changes" + (n ? ` (${n})` : ""); $("opt-save").disabled = !admin || !n; $("opt-revert").disabled = !admin || !n;
+  }
+  function clearMsg() { clearTimeout(optMsgTimer); $("opt-msg").textContent = ""; }
+  function setMsg(text, ms = 6000) { clearMsg(); $("opt-msg").textContent = text; if (ms) optMsgTimer = setTimeout(clearMsg, ms); }
+  $("opt-revert").onclick = () => {
+    for (const inp of $("opt-form").querySelectorAll("[data-path]")) {
+      if (valueOf(inp) === inp.dataset.orig) continue;
+      if (inp.type === "checkbox") inp.checked = inp.dataset.orig === "true"; else inp.value = inp.dataset.orig;
+      inp.dispatchEvent(new Event("change"));
+    }
+    clearMsg(); updatePending();
+  };
   $("opt-save").onclick = async () => {
-    $("opt-msg").textContent = "";
+    clearMsg();
     const changes = {};
     for (const inp of $("opt-form").querySelectorAll("[data-path]")) {
       if (valueOf(inp) === inp.dataset.orig) continue;
       const f = fields.find((x) => x.path === inp.dataset.path);
       changes[f.path] = typed(f, inp);
     }
-    if (!Object.keys(changes).length) { $("opt-msg").textContent = "Nothing to save (options without a badge apply as soon as you change them)."; return; }
+    const n = Object.keys(changes).length;
+    if (!n) { updatePending(); return; }
+    $("opt-save").disabled = $("opt-revert").disabled = true; // greyed out at once; loadOptions() re-evaluates
     try {
       const r = await api("PUT", "/api/settings", { changes });
-      $("opt-msg").textContent = "Saved." + (r.restarted ? " The channel was restarted." : "") + (r.server_restart ? " Restart navtexd for the server settings to take effect." : "");
-      loadOptions(); loadDevices();
-    } catch (e) { $("opt-msg").textContent = "Not saved: " + e.message; }
+      await loadOptions(true); loadDevices();
+      setMsg(`Saved ${n} change${n > 1 ? "s" : ""}.` + (r.restarted ? " The channel was restarted." : "") + (r.server_restart ? " Restart navtexd for the server settings to take effect." : ""), r.server_restart ? 15000 : 6000);
+    } catch (e) { setMsg("Not saved: " + e.message, 0); updatePending(); }
   };
 
   // ---- system log ----

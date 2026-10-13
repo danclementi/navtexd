@@ -286,3 +286,63 @@ func TestReconfigureMidStream(t *testing.T) {
 		}
 	}
 }
+
+// The channel trace shows the tone inside the channel filter at the input level, rejects a tone outside it, .
+func TestChannelSpectrum(t *testing.T) {
+	const fs = 48000.0
+	var r result
+	e, err := New(fs, 516500, iq.Real, cfg518(), Handlers{Meters: func(m Meters) { r.meters = append(r.meters, m) }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.SetAutotune(false)
+	e.SetCarrierAudioHz(1500)
+	buf := make([]complex64, 4096)
+	n := 0
+	for blk := 0; blk < 12*int(fs)/len(buf); blk++ {
+		for i := range buf {
+			tm := float64(n) / fs
+			buf[i] = complex(float32(0.3*math.Sin(2*math.Pi*1500*tm)+0.3*math.Sin(2*math.Pi*900*tm)), 0)
+			n++
+		}
+		e.Process(buf)
+	}
+	var sp *Spectrum
+	for i := len(r.meters) - 1; i >= 0 && sp == nil; i-- {
+		if s := r.meters[i].Spectrum; s != nil && s.Channel != nil {
+			sp = s
+		}
+	}
+	if sp == nil {
+		t.Fatal("no channel spectrum")
+	}
+	if len(sp.Channel) != len(sp.Filtered) {
+		t.Fatalf("channel trace has %d bins, input %d", len(sp.Channel), len(sp.Filtered))
+	}
+	at := func(hz float64) int { return int(math.Round((hz - sp.StartHz) / sp.StepHz)) }
+	in, ch := sp.Filtered[at(1500)], sp.Channel[at(1500)]
+	t.Logf("1500 Hz: input %.1f dB, channel %.1f dB; 900 Hz: input %.1f, channel %.1f", in, ch,
+		sp.Filtered[at(900)], sp.Channel[at(900)])
+	if math.Abs(float64(ch-in)) > 3 {
+		t.Errorf("tone inside the filter: input %.1f dB, channel %.1f dB", in, ch)
+	}
+	if rej := sp.Channel[at(900)]; rej > in-40 {
+		t.Errorf("tone outside the filter is only %.1f dB down in the channel trace", float64(in-rej))
+	}
+}
+
+// Bins of the input grid outside the filtered stream's bandwidth are reported as blank.
+func TestChannelSpectrumBlankOutsideBand(t *testing.T) {
+	c := newChanSpec(4000, 6, 8192, 0.5)
+	c.feed(make([]complex128, c.n))
+	out := make([]float32, 1000) // 0..6000 Hz in 6 Hz steps, channel centred at 1500 Hz
+	if !c.frame(out, 0, 6, 1500) {
+		t.Fatal("no frame")
+	}
+	for j, v := range out {
+		f := float64(j) * 6
+		if (math.Abs(f-1500) >= 1920) != (v <= chanOff) {
+			t.Fatalf("bin at %.0f Hz = %.1f", f, v)
+		}
+	}
+}

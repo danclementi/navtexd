@@ -81,7 +81,7 @@ func mmErr(what string, r uintptr) error {
 	case 4:
 		extra = " (already in use by another program)"
 	case 32:
-		extra = " (the device does not accept this sample rate / channel count; try input.sample_rate_hz = 48000 or 44100)"
+		extra = " (the device does not accept this sample rate / channel count; try input.device.sample_rate_hz = 48000 or 44100)"
 	}
 	return fmt.Errorf("%s failed: MMSYSERR %d%s", what, r, extra)
 }

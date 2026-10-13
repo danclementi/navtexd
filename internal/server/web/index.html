@@ -226,9 +226,15 @@
     <dl id="ep-info" class="epinfo"></dl>
   </section>
   <section id="tab-options" hidden>
+    <div id="opt-bar">
+      <div class="subtabs" id="opt-tabs"></div>
+      <div class="optact"><span id="opt-msg" class="small"></span><button id="opt-revert" type="button" disabled>Revert</button><button id="opt-save" type="button" disabled>Save changes</button></div>
+    </div>
     <div id="opt-note" class="note" hidden></div>
-    <form id="opt-form"></form>
-    <div class="row"><button id="opt-save" type="button">Save changes</button><span id="opt-msg" class="small"></span></div>
+    <div id="opt-scroll">
+      <form id="opt-form"></form>
+      <p id="opt-hint" class="small">Save changes saves the changes on every sub-tab. Options without a badge apply as soon as you change them.</p>
+    </div>
   </section>
   <section id="tab-syslog" hidden>
     <div id="log-note" class="note" hidden></div>

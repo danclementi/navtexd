@@ -343,51 +343,8 @@ func (r *Runner) run(ctx context.Context, cfg config.Config, cmds chan func(*eng
 			}
 		},
 		Record: func(sr segment.Record) {
-			rec := toStore(sr, r.Config(), wallAt)
-			if r.Enrich != nil {
-				r.Enrich(&rec)
-			}
-			notes := r.Correct(&rec)
-			{
-				sc := r.Config().Segment
-				if keep, n := fragmentKept(rec, sc); !keep {
-					r.log("info", fmt.Sprintf("DATABASE: fragment not stored (%d word(s) of %d+ letters, %d needed).", n, sc.FragWordLetters, sc.MinFragmentWords))
-					return
-				}
-			}
-			head := strings.TrimSpace(rec.B1 + rec.B2 + rec.Serial)
-			if head == "" {
-				head = "???"
-			}
-			if r.Keep != nil && !r.Keep(rec) {
-				r.log("info", fmt.Sprintf("DATABASE: %s %s/%s not stored (selective logging).", rec.Kind, head, rec.Station))
-				return
-			}
-			saved, err := r.st.Add(rec)
-			if err != nil {
-				r.log("error", "cannot store record: "+err.Error())
-				return
-			}
-			stored++
-			switch {
-			case saved.Kind == "fragment":
-				r.log("info", fmt.Sprintf("DATABASE: fragment stored (%d lines).", len(saved.Lines)))
-			case saved.B1 == "":
-				r.log("info", fmt.Sprintf("DATABASE: no valid ID-char for %s/%d, %s stored.", head, saved.NavArea, saved.Kind))
-			case saved.StationID == 0:
-				r.log("info", fmt.Sprintf("DATABASE: %s %s/UNID stored, station could not be identified.", saved.Kind, head))
-			default:
-				r.log("info", fmt.Sprintf("DATABASE: %s %s/%s stored (%s).", saved.Kind, head, saved.Station, saved.IdentMethod))
-			}
-			for i, n := range notes {
-				if i == 12 {
-					r.log("info", fmt.Sprintf("autocorrect: ... and %d more words", len(notes)-i))
-					break
-				}
-				r.log("info", "autocorrect: "+n)
-			}
-			if r.h.Record != nil {
-				r.h.Record(saved)
+			if r.storeRecord(sr, wallAt) {
+				stored++
 			}
 		},
 		Meters: func(m engine.Meters) {
@@ -424,9 +381,7 @@ func (r *Runner) run(ctx context.Context, cfg config.Config, cmds chan func(*eng
 		}
 	}
 	block := cfg.Input.BlockSize
-	if src.Live {
-		block = max(256, int(src.SampleRate()/20))
-	} else if cfg.Input.File.Realtime {
+	if src.Live || cfg.Input.File.Realtime { // small blocks: about 50 ms, so meters and the display stay current
 		block = max(256, int(src.SampleRate()/20))
 	}
 	buf := make([]complex64, block)
@@ -449,11 +404,19 @@ func (r *Runner) run(ctx context.Context, cfg config.Config, cmds chan func(*eng
 	t0 := time.Now()
 	var samples int64
 	endErr := error(nil)
+	var wd *inputWatch
+	if src.Live && cfg.Input.WatchdogS > 0 {
+		wd = newInputWatch(time.Duration(cfg.Input.WatchdogS*float64(time.Second)), r.log)
+		go wd.run(ctx)
+	}
 loop:
 	for ctx.Err() == nil {
 		drain()
 		n, err := src.Read(buf)
 		if n > 0 {
+			if wd != nil {
+				wd.block(buf[:n])
+			}
 			eng.Process(buf[:n])
 			samples += int64(n)
 			if ring != nil && ring.Write(buf[:n], inWall(samples)) {
@@ -502,6 +465,55 @@ loop:
 }
 
 // ToStore converts a segmenter record.
+// storeRecord completes, corrects, filters and stores one finished message or fragment, logging what happened. It
+// reports whether the record was stored.
+func (r *Runner) storeRecord(sr segment.Record, wallAt func(float64) time.Time) bool {
+	rec := toStore(sr, r.Config(), wallAt)
+	if r.Enrich != nil {
+		r.Enrich(&rec)
+	}
+	notes := r.Correct(&rec)
+	sc := r.Config().Segment
+	if keep, n := fragmentKept(rec, sc); !keep {
+		r.log("info", fmt.Sprintf("DATABASE: fragment not stored (%d word(s) of %d+ letters, %d needed).", n, sc.FragWordLetters, sc.MinFragmentWords))
+		return false
+	}
+	head := strings.TrimSpace(rec.B1 + rec.B2 + rec.Serial)
+	if head == "" {
+		head = "???"
+	}
+	if r.Keep != nil && !r.Keep(rec) {
+		r.log("info", fmt.Sprintf("DATABASE: %s %s/%s not stored (selective logging).", rec.Kind, head, rec.Station))
+		return false
+	}
+	saved, err := r.st.Add(rec)
+	if err != nil {
+		r.log("error", "cannot store record: "+err.Error())
+		return false
+	}
+	switch {
+	case saved.Kind == "fragment":
+		r.log("info", fmt.Sprintf("DATABASE: fragment stored (%d lines).", len(saved.Lines)))
+	case saved.B1 == "":
+		r.log("info", fmt.Sprintf("DATABASE: no valid ID-char for %s/%d, %s stored.", head, saved.NavArea, saved.Kind))
+	case saved.StationID == 0:
+		r.log("info", fmt.Sprintf("DATABASE: %s %s/UNID stored, station could not be identified.", saved.Kind, head))
+	default:
+		r.log("info", fmt.Sprintf("DATABASE: %s %s/%s stored (%s).", saved.Kind, head, saved.Station, saved.IdentMethod))
+	}
+	for i, n := range notes {
+		if i == 12 {
+			r.log("info", fmt.Sprintf("autocorrect: ... and %d more words", len(notes)-i))
+			break
+		}
+		r.log("info", "autocorrect: "+n)
+	}
+	if r.h.Record != nil {
+		r.h.Record(saved)
+	}
+	return true
+}
+
 func toStore(r segment.Record, cfg config.Config, wallAt func(float64) time.Time) store.Record {
 	rec := store.Record{
 		Channel:  int(cfg.Channel.FrequencyHz/1000 + 0.5),

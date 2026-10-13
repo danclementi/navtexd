@@ -3,15 +3,17 @@
 A running list. Move finished items to the bottom or delete them.
 
 ## Next
-- **Input watchdog ("no new audio"):** warn (log, banner, status lamp) when the input delivers no new samples or a constant
-  value for about 10 s, and optionally reopen it. A frozen USB / virtual audio path looks like a quiet band otherwise.
-- **Startup message:** print the data folder in use (for example "data folder: C:\...\navtex-data") so it is obvious where
-  settings and messages are read from and written to. Found when an old log in another folder seemed to be missing.
-- **README:** say that the program needs a folder it can write to (not Program Files).
-- **Release:** try the zip on a second PC; then clear the "pre-release" flag, or issue v0.1.1 with any fixes.
-- **Repos:** this folder (`navtexd`) is the working repo. The older `navtex` folder is an archive and can be renamed.
+- **Tests that run everywhere:** the decoder regression tests (block invariance, end to end, receiver, decoder; 17 tests)
+  skip when `testdata/` recordings are absent, which is the case in a fresh clone. Write a small Go test helper that
+  synthesises SITOR-B / FSK audio (known text, adjustable SNR, carrier offset, drift, impulse noise) so they always run.
+- **Coverage:** `app` (runner) 13 %, `catalog` 30 %, `server` 55 %; add tests with a fake source.
+- **Input watchdog: reopen.** The watchdog now only warns (`input.watchdog_s`). Optionally reopen the input by itself when
+  it stalls (needs a way to unblock a read that never returns).
+- **Retest** the packet-loss burst reporting and the `swap_iq` note on the other radios when they are available.
 
-## Next (radio input)
+## Next (radio input) - ON HOLD
+Wait until we have an approach for several receivers (or several audio inputs) in the GUI.
+
 - **HPSDR / Metis input:** the QMtech image works over the air (needs `input.hpsdr.swap_iq` on; Thetis compensates by itself).
   Still to try: Red Pitaya (does it need `swap_iq` too? if so, note it in the log or default it for Pavel's images, which
   report the name "R_PITAYA") and the Hermes board. Watch packet loss on the LAN. Automatic I/Q detection was postponed:
@@ -28,7 +30,6 @@ A running list. Move finished items to the bottom or delete them.
 - Packaging: Windows service, systemd unit, installer; code signing against SmartScreen warnings.
 - Linux build and test.
 - Decoder quality: indicator for how well the DX and RX copies of each character agree.
-- Optional golden-vector tests (small committed files) so the decoder keeps a regression test.
 - Importing a YaND log (left out of the first release on purpose).
 
 ## Decided against

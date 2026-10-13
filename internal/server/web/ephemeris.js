@@ -47,7 +47,7 @@
     const X = (m) => L + (m / 1440) * pw;
     const rowH = 54, rows = [{ y: T + 8, name: "Receiver", iv: d.local, col: css("--day-local") }, { y: T + 8 + rowH + 16, name: d.station.call, iv: d.dx, col: css("--day-dx") }];
     g.fillStyle = css("--ink"); g.font = `600 13px ${NX.FONT}`; g.textAlign = "left"; g.textBaseline = "top";
-    g.fillText(`Ephemeris comparison for ${d.station.call}, ${d.station.name} ${d.station.cc}` + (d.station.km ? ` (${d.station.km} km)` : "") + ` on ${d.date}`, L, 10);
+    g.fillText(`Ephemeris comparison for ${d.station.call}, ${d.station.name} ${d.station.cc}` + (d.station.km ? ` (${d.station.km} km, bearing ${d.station.brg}\u00b0)` : "") + ` on ${d.date}`, L, 10);
     g.font = `12px ${NX.FONT}`; g.fillStyle = css("--dim");
     g.textAlign = "center";
     for (let hr = 0; hr <= 24; hr += 2) g.fillText(String(hr), X(hr * 60), T + 8 + 2 * rowH + 16 + 6);
@@ -81,13 +81,8 @@
     const d = E.data;
     if (!d) return;
     const s = d.station, add = (k, v) => dl.append(el("dt", { text: k }), el("dd", { text: v }));
-    const iv = (a) => a.length ? a.map(([x, y]) => `${hhmm(x)}–${hhmm(y)}`).join(", ") : "none";
-    add("Station", `${s.call} ${s.name}, ${s.country}  (${s.freq} kHz, NAVAREA ${s.area}, B1 ${s.b1})`);
     add("Position", `latitude ${s.lat.toFixed(3)}, longitude ${s.lon.toFixed(3)}`);
-    if (s.km) add("From the receiver", `${s.km} km, bearing ${s.brg}°`);
     add("Transmission slots", s.times.join("  ") + "  UTC");
-    add("Daylight at the receiver", iv(d.local) + " UTC");
-    add("Daylight at the station", iv(d.dx) + " UTC");
   }
 
   $("ep-freq").onchange = () => { fillStations(); load(); };

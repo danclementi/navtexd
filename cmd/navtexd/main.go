@@ -185,6 +185,11 @@ func main() {
 		fatal(err)
 	}
 	defer lock.Release()
+	if abs, err := filepath.Abs(*dataDir); err == nil {
+		fmt.Printf("data folder: %s\n", abs)
+	} else {
+		fmt.Printf("data folder: %s\n", *dataDir)
+	}
 	st, err := store.Open(*dataDir)
 	if err != nil {
 		fatal(err)

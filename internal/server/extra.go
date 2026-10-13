@@ -13,7 +13,6 @@ import (
 	"navtex/internal/engine"
 	"navtex/internal/geo"
 	"navtex/internal/stations"
-	"navtex/internal/store"
 )
 
 func (s *Server) extraRoutes(mux *http.ServeMux, tunnel bool) {
@@ -131,8 +130,6 @@ func (s *Server) syslogText(w http.ResponseWriter, r *http.Request, id Identity)
 		fmt.Fprintf(w, "%s  %s%s\n", e.Time.Format("2006-01-02 15:04:05.000"), lvl, e.Text)
 	}
 }
-
-var _ = store.ErrNotFound
 
 // scope serves one oscilloscope sweep (any role; the data carries no position information).
 // Query: span (s), trig (none|rise|fall), pre (fraction before the trigger), after (end of the previous sweep, s),

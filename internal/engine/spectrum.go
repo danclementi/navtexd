@@ -114,3 +114,94 @@ func (s *specState) take() *Spectrum {
 	s.pending = nil
 	return sp
 }
+
+// chanSpec computes the spectrum of the signal after the receiver's narrow channel filter and maps it onto the grid of
+// the input spectrum, so the two traces can be drawn together. Bins of the input grid outside the filtered stream's
+// bandwidth are reported as chanOff.
+type chanSpec struct {
+	n         int
+	fs        float64 // sample rate of the filtered stream
+	win       []float64
+	winPow    float64
+	ring      []complex128
+	pos, fill int
+	smooth    []float64
+	buf       []complex128
+	alpha     float64
+	gainDB    float64 // brings the level to the units of the input spectrum
+}
+
+// chanOff marks "no data" in Spectrum.Channel.
+const chanOff = -300
+
+func newChanSpec(fs, inStep float64, inN int, alpha float64) *chanSpec {
+	n := 256
+	for float64(n) < fs/inStep && n < 4096 {
+		n <<= 1
+	}
+	c := &chanSpec{n: n, fs: fs, alpha: alpha}
+	c.win = make([]float64, n)
+	for i := range c.win {
+		c.win[i] = 0.5 - 0.5*math.Cos(2*math.Pi*float64(i)/float64(n))
+		c.winPow += c.win[i] * c.win[i]
+	}
+	c.ring = make([]complex128, n)
+	c.buf = make([]complex128, n)
+	c.smooth = make([]float64, n)
+	// Levels are calibrated on tones: a tone in the passband shows at the same height in both traces. (The peak of a
+	// tone grows with the FFT length, so the two lengths are compensated; the DDC already keeps its amplitude.)
+	c.gainDB = 10 * math.Log10(float64(inN)/float64(n))
+	return c
+}
+
+func (c *chanSpec) feed(y []complex128) {
+	for _, v := range y {
+		c.ring[c.pos] = v
+		c.pos++
+		if c.pos == c.n {
+			c.pos = 0
+		}
+		if c.fill < c.n {
+			c.fill++
+		}
+	}
+}
+
+// frame fills out (one value per bin of the input grid, bin j at startHz + j*step) for a channel whose baseband zero
+// is at centreHz on the input axis. It returns false until enough samples have arrived.
+func (c *chanSpec) frame(out []float32, startHz, step, centreHz float64) bool {
+	if c.fill < c.n {
+		return false
+	}
+	for i := 0; i < c.n; i++ {
+		c.buf[i] = c.ring[(c.pos+i)%c.n] * complex(c.win[i], 0)
+	}
+	fsk.FFT(c.buf)
+	first := c.smooth[0] == 0
+	for k := 0; k < c.n; k++ {
+		x := c.buf[k]
+		p := (real(x)*real(x) + imag(x)*imag(x)) / c.winPow
+		if first {
+			c.smooth[k] = p
+		} else {
+			c.smooth[k] = c.alpha*c.smooth[k] + (1-c.alpha)*p
+		}
+	}
+	bw := c.fs / float64(c.n)
+	for j := range out {
+		fb := startHz + float64(j)*step - centreHz // baseband frequency of this input bin
+		if math.Abs(fb) >= 0.48*c.fs {
+			out[j] = chanOff
+			continue
+		}
+		pos := fb / bw
+		if pos < 0 {
+			pos += float64(c.n)
+		}
+		k0 := int(pos)
+		fr := pos - float64(k0)
+		a, b := c.smooth[k0%c.n], c.smooth[(k0+1)%c.n]
+		out[j] = float32(10*math.Log10(a+(b-a)*fr+1e-15) + c.gainDB)
+	}
+	return true
+}

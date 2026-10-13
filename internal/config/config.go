@@ -53,6 +53,7 @@ type Meters struct {
 	SpectrumFFT      int     `json:"spectrum_fft" doc:"Spectrum FFT length, a power of two (0 = automatic, about 6 Hz per bin)"`
 	SpectrumSmooth   float64 `json:"spectrum_smooth" doc:"Smoothing of the filtered spectrum, 0 to 0.99: filtered = a*old + (1-a)*new (power, per frame), with a = this value; 0 = no smoothing"`
 	SpectrumRaw      bool    `json:"spectrum_show_unfiltered" doc:"Show the unfiltered (unsmoothed) spectrum trace behind the filtered one"`
+	SpectrumChannel  bool    `json:"spectrum_show_channel" doc:"Show a second spectrum trace of the signal after the receiver's channel filter (what the demodulator actually sees), on the same grid as the input spectrum"`
 	QualityWindowS   float64 `json:"quality_window_s" unit:"s" doc:"Length of signal analysed for each signal-quality value"`
 	QualityNoiseCF   float64 `json:"quality_noise_crest" doc:"Crest factor of noise that counts as quality 0"`
 	QualityGoodCF    float64 `json:"quality_clean_crest" doc:"Crest factor of a clean signal, quality 100 (a pure tone is 2.83)"`
@@ -106,6 +107,7 @@ type Server struct {
 type Input struct {
 	Source    string      `json:"source" doc:"Where the samples come from: file (WAV recording), device (sound card / virtual audio cable input, live), stdin (raw PCM piped in) or hpsdr (I/Q over the network from an OpenHPSDR / Metis radio)" choices:"file,device,stdin,hpsdr"`
 	BlockSize int         `json:"block_size" unit:"samples" doc:"Samples read from the source at a time"`
+	WatchdogS float64     `json:"watchdog_s" unit:"s" doc:"Warn when a live input (sound card, radio, stdin) delivers no new samples, or the same value over and over, for this long; 0 = off"`
 	Device    DeviceInput `json:"device"`
 	HPSDR     HPSDRInput  `json:"hpsdr"`
 	Stdin     StdinInput  `json:"stdin"`
@@ -234,7 +236,7 @@ type Output struct {
 // Default returns the default configuration.
 func Default() Config {
 	return Config{
-		Input: Input{Source: "device", BlockSize: 16384,
+		Input: Input{Source: "device", BlockSize: 16384, WatchdogS: 10,
 			Device: DeviceInput{SampleRateHz: 48000, Channels: 1, Autotune: true, ManualCarrierHz: DefaultCarrierHz},
 			HPSDR:  HPSDRInput{SampleRateHz: 48000, Autotune: true, ManualCarrierHz: HPSDRCarrierHz},
 			Stdin:  StdinInput{SampleRateHz: 48000, Channels: 1, PCMFormat: "s16le", Autotune: true, ManualCarrierHz: DefaultCarrierHz},
@@ -245,7 +247,7 @@ func Default() Config {
 		Decoder:     sitor.DefaultConfig(),
 		Segment:     segment.DefaultConfig(),
 		Autocorrect: Autocorrect{Enabled: true, MinLen: 5, MaxLen: 16, MaxUnreadable: 50, MaxCandidates: 4, WordsFile: "vocabulary.txt"},
-		Meters: Meters{RateHz: 10, SpectrumMaxHz: 2700, SpectrumSmooth: 0.85, SpectrumRaw: true, LevelTauS: 0.5, QualityWindowS: 0.5,
+		Meters: Meters{RateHz: 10, SpectrumMaxHz: 2700, SpectrumSmooth: 0.85, SpectrumRaw: true, SpectrumChannel: true, LevelTauS: 0.5, QualityWindowS: 0.5,
 			QualityNoiseCF: 5.0, QualityGoodCF: 2.83, QualityTauS: 1, QualityEyeWeight: 0.8, QualityEyeLowDB: 3, QualityEyeHighDB: 15},
 		Logging: Logging{LineQuality: true},
 		Clips:   Clips{BeforeS: 60, AfterS: 10, Dir: "clips"},
@@ -288,6 +290,9 @@ func (c Config) Validate() error {
 	}
 	if _, err := iq.ParsePCMFormat(c.Input.Stdin.PCMFormat); err != nil {
 		errs = append(errs, fmt.Errorf("input.stdin.pcm_format: %w", err))
+	}
+	if c.Input.WatchdogS < 0 {
+		bad("input.watchdog_s must not be negative")
 	}
 	if c.Input.BlockSize < 64 {
 		bad("input.block_size must be at least 64")

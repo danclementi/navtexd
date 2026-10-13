@@ -97,7 +97,8 @@ type spectrumMsg struct {
 	Carrier float64 `json:"carrier"`
 	Filt    []int16 `json:"filt"`
 	Raw     []int16 `json:"raw,omitempty"`
-	FS      float64 `json:"fs"` // level of a full-scale tone, dB (same units as the spectrum)
+	Chan    []int16 `json:"chan,omitempty"` // after the channel filter; -3000 = no data
+	FS      float64 `json:"fs"`             // level of a full-scale tone, dB (same units as the spectrum)
 }
 
 type sunMsg struct {
@@ -209,7 +210,11 @@ func (s *Server) Hooks() app.Hooks {
 				if s.run.Config().Meters.SpectrumRaw {
 					raw = dB(sp.Raw)
 				}
-				s.hub.Publish("spectrum", spectrumMsg{sp.StartHz, sp.StepHz, sp.CarrierHz, dB(sp.Filtered), raw, round(sp.FullScaleDB, 1)}, true, false)
+				var ch []int16
+				if sp.Channel != nil {
+					ch = dB(sp.Channel)
+				}
+				s.hub.Publish("spectrum", spectrumMsg{sp.StartHz, sp.StepHz, sp.CarrierHz, dB(sp.Filtered), raw, ch, round(sp.FullScaleDB, 1)}, true, false)
 			}
 		},
 		Text: func(text string, t time.Time) {

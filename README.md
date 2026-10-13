@@ -20,6 +20,12 @@ It is a single self-contained program written in pure Go (standard library only,
   transmitted copies of every character, optional spelling correction of unreadable characters (the raw received text
   is always kept unchanged).
 - Input from a sound card or virtual audio cable, a WAV file (real audio or I/Q), raw samples on stdin, or I/Q straight from an OpenHPSDR (Metis / Hermes) radio over the network (Protocol 1: Hermes, Hermes Lite, ANAN, Pavel Demin's Red Pitaya and QMtech images). Receive only.
+- The **Spectrum** tab (and the small spectrum in the header) draws the input spectrum together with a second,
+  orange trace: the signal after the receiver's narrow channel filter, which is what the demodulator actually sees. If
+  the carrier frequency or the filtering is wrong (easy to do with a broadband I/Q stream) the orange trace is flat or
+  misses the signal. Switch it off with `meters.spectrum_show_channel`.
+- A live input that stops delivering samples, or delivers the same value over and over, is reported in the System Log
+  after `input.watchdog_s` seconds (default 10, 0 = off).
 - Multi-client web interface: **Status**, **Spectrum**, **Log**, **Schedule**, **Signal**, **Report**,
   **Statistics**, **Ephemeris**, **Options**, **Database** and **System Log** tabs.
 - Message log with filters (station, subject, text, distance), a reader pop-up, and de-duplication.
@@ -39,6 +45,10 @@ It is a single self-contained program written in pure Go (standard library only,
    takes the next free one and says so.
 3. Open the page, go to the **Options** tab, and choose the audio input and your position. Everything can be changed
    there; settings are saved in the `navtex-data` folder next to the program and used again at the next start.
+
+The program writes its settings, message log and station table to the data folder (`navtex-data` next to the program
+by default), so unpack it somewhere you can write to, such as your Documents or a folder on your desktop, and not into
+`C:\Program Files`. It prints the folder it uses (`data folder: ...`) when it starts; use `-data DIR` to choose another.
 
 Windows SmartScreen or your antivirus may warn about an unsigned program the first time. Check the SHA-256 checksum
 published with the release, or build the program yourself from source.
@@ -60,6 +70,8 @@ The default expects the carrier near 1000 Hz of audio.
 | `-listen ADDR` | Web server address. Default `127.0.0.1:8080` (the next free port is used if it is busy); `:8080` serves the LAN; `off` disables it. An address given here is never changed. |
 | `-tunnel ADDR` | Extra view-only listener, e.g. `127.0.0.1:8081` for a tunnel. |
 | `-data DIR` | Data folder (settings, messages, station table). Default: `navtex-data` next to the program. |
+| `-config FILE` | Use this JSON settings file instead of `settings.json` in the data folder (`-dump-config` prints the effective settings). |
+| `-realtime` | Play a WAV file back at its real speed instead of as fast as possible (for trying the web interface). |
 | `-in FILE` | Decode a WAV file instead of live audio (the default input is the system's default audio device). Mono is real audio; stereo is I/Q. |
 | `-device NAME` | Live audio device (part of the name). `-list-devices` lists them. |
 | `-radio ADDRESS` | Take I/Q from an OpenHPSDR (Metis) radio at this address, or `auto` to search the local network. The radio is tuned for you (receiver LO = channel − 3 kHz unless `-centre` is given); `-rate` picks 48000, 96000, 192000 or 384000 Hz. The address is remembered for the next start (change it on the Options page). The last four radios that worked are kept (most recent first) in `radios.json` in the data folder and offered in the Options dropdown and in the header **Input** selector, which switches between audio and radio without visiting Options. With several radios on the network, a previously used one is preferred, otherwise the only idle one; if it is ambiguous, the log lists them and you pick one. Only one program can use a radio at a time, so close Thetis / SDRConnect first. |
