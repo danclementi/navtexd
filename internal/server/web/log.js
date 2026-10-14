@@ -10,7 +10,7 @@
   for (let i = 1; i <= 21; i++) $("f-area").add(new Option(String(i), String(i)));
   for (const c of "ABCDEFGHIJKLMNOPQRSTUVWXYZ?") $("f-b1").add(new Option(c, c));
 
-  const ids = ["freq", "area", "b1", "kind", "text", "from", "to", "kmin", "kmax"];
+  const ids = ["freq", "rcv", "area", "b1", "kind", "text", "from", "to", "kmin", "kmax"];
   function params() {
     const p = new URLSearchParams();
     for (const k of ids) { const v = $("f-" + k).value.trim(); if (v) p.set(k === "freq" ? "freq" : k === "area" ? "navarea" : k === "kmin" ? "minkm" : k === "kmax" ? "maxkm" : k, v); }
@@ -47,6 +47,7 @@
     $("n-total").textContent = L.total;
     $("n-all").textContent = L.total !== L.all ? `(of ${L.all})` : "";
     $("f-km-wrap").hidden = !NX.state.loc;
+    $("f-rcv-wrap").hidden = !NX.secondOn();
     indicate();
     const first = Math.max(0, Math.floor(sc.scrollTop / ROW)), vis = visRows() + 2;
     const start = Math.max(0, first - 3), end = Math.min(L.total, first + vis + 3);
@@ -67,7 +68,7 @@
       const r = L.cache.get(i);
       if (!r) { const tr = el("tr", { class: "ph" }); tr.append(el("td", { colspan: "10", text: "\u2026" })); rows.push(tr); continue; }
       const tr = el("tr", { "data-id": r.id, "data-i": i, class: (L.sel.has(r.id) ? "sel " : "") + (r.id === L.selId ? "cur " : "") + (r.st === "UNID" ? "unid" : "") });
-      tr.append(el("td", { text: NX.stamp(r.rx), "data-f": "utc", }), el("td", { text: r.ch }), el("td", { text: r.q.toFixed(0) }),
+      tr.append(el("td", { text: NX.stamp(r.rx), "data-f": "utc", }), el("td", { text: r.ch }, NX.secondOn() ? el("span", { class: "chb", text: String((r.rcv || 0) + 1), title: "Received on channel " + ((r.rcv || 0) + 1) }) : null), el("td", { text: r.q.toFixed(0) }),
         el("td", { text: r.b1 || "?", class: r.man ? "man" : "" }), el("td", { text: r.b2 }), el("td", { text: r.ser || "?" }), el("td", { text: String(r.area), class: r.man ? "man" : "" }),
         el("td", { text: r.st + (r.cmt ? ` [${r.cmt}]` : "") }), el("td", { class: "km", text: r.km ? r.km.toFixed(0) : "" }), el("td", { text: r.kind }));
       rows.push(tr);
@@ -78,6 +79,7 @@
     if (sc.scrollTop !== top) sc.scrollTop = top; // the browser may clamp it while the rows are replaced
     ensure(start, end - 1);
   }
+  NX.listen("channels", () => { if (L.loaded) render(); });
   sc.addEventListener("scroll", () => requestAnimationFrame(render));
   window.addEventListener("resize", () => { if (L.loaded) render(); });
 

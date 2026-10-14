@@ -5,12 +5,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -126,7 +128,7 @@ func TestAPIRolesSettingsAndControls(t *testing.T) {
 	if err != nil || saved.Operator.Comment != "loop antenna" {
 		t.Errorf("settings not saved: %v %v", err, saved.Operator.Comment)
 	}
-	if st := r.State(); st.Running || st.Error == "" {
+	if st := r.State(0); st.Running || st.Error == "" {
 		t.Errorf("a missing input file should be reported: %+v", st)
 	}
 }
@@ -277,5 +279,158 @@ func TestRadiosListAndControl(t *testing.T) {
 	}
 	if c := r.Config(); c.Input.Source != "device" || c.Input.Device.Name != "Line 1" {
 		t.Fatalf("after choosing an audio input: %q %q", c.Input.Source, c.Input.Device.Name)
+	}
+}
+
+// TestSecondChannelOffAndOn: the second channel is off by default, and switching it on from the settings starts it (here
+// with an input that does not exist, which it reports as its own error, tagged in the system log).
+func TestSecondChannelOffAndOn(t *testing.T) {
+	cfg := config.Default()
+	cfg.Input.File.Path = "/nonexistent.wav"
+	cfg.Input.Source = "file"
+	cfg.Second.Input.Source = "file"
+	cfg.Second.Input.File.Path = "/nonexistent2.wav"
+	s, r, st, _ := setup(t, cfg)
+	ts := httptest.NewServer(s.handler(false))
+	defer ts.Close()
+	r.Start()
+	code, h := do(t, ts, "GET", "/api/state", nil, nil)
+	if code != 200 {
+		t.Fatal(code)
+	}
+	chans, _ := h["chans"].([]any)
+	if len(chans) != 2 {
+		t.Fatalf("chans: %v", h["chans"])
+	}
+	c1 := chans[1].(map[string]any)["controls"].(map[string]any)
+	if c1["enabled"] != false || c1["label"] != "Channel 2" || c1["channel"] != float64(490) {
+		t.Errorf("second channel controls: %v", c1)
+	}
+	if r.State(1).Error != "" || r.State(1).Running {
+		t.Errorf("a disabled channel must not run: %+v", r.State(1))
+	}
+	hdr := map[string]string{"X-Navtex": "1"}
+	code, _ = do(t, ts, "PUT", "/api/settings", map[string]any{"changes": map[string]any{"second.enabled": true, "second.channel.name": "Loop"}}, hdr)
+	if code != 200 {
+		t.Fatalf("enable second: %d", code)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for r.State(1).Error == "" && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if r.State(1).Error == "" {
+		t.Fatal("the second channel did not start")
+	}
+	found := false
+	for _, e := range st.Syslog(0) {
+		if strings.HasPrefix(e.Text, "[Loop] ") && e.Level == "error" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("no tagged error line in the system log: %v", st.Syslog(0))
+	}
+	if r.State(0).Rcv != 0 || r.State(1).Rcv != 1 {
+		t.Error("state does not carry its channel")
+	}
+	// the first channel's control must not touch the second
+	if code, _ = do(t, ts, "POST", "/api/control/polarity?ch=1", map[string]any{"value": "inverted"}, hdr); code != 200 {
+		t.Fatalf("polarity ch=1: %d", code)
+	}
+	if c := r.Config(); c.Second.Decoder.Polarity == c.Decoder.Polarity {
+		t.Errorf("polarity went to the wrong channel: %v / %v", c.Decoder.Polarity, c.Second.Decoder.Polarity)
+	}
+	if code, _ = do(t, ts, "POST", "/api/control/polarity?ch=2", map[string]any{"value": "inverted"}, hdr); code != 400 {
+		t.Errorf("ch=2 must be refused: %d", code)
+	}
+}
+
+// TestTwoChannelsDecode runs the recording through both channels at once: every record is tagged with its channel, and
+// the events of the second channel say so.
+func TestTwoChannelsDecode(t *testing.T) {
+	if _, err := os.Stat(recording); err != nil {
+		t.Skip("recording not available")
+	}
+	cfg := config.Default()
+	cfg.Input.Source, cfg.Input.File.Path = "file", recording
+	cfg.Second.Enabled = true
+	cfg.Second.Input.Source, cfg.Second.Input.File.Path = "file", recording
+	cfg.Second.Channel.FrequencyHz = 518000
+	cfg.Second.Channel.Comment = "second loop"
+	s, r, st, _ := setup(t, cfg)
+	ts := httptest.NewServer(s.handler(false))
+	defer ts.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, "GET", ts.URL+"/api/events", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var mu sync.Mutex
+	sawRcv := map[string]int{}
+	done := make(chan struct{})
+	go func() {
+		sc := bufio.NewScanner(resp.Body)
+		sc.Buffer(make([]byte, 1<<20), 1<<20)
+		ev := ""
+		for sc.Scan() {
+			if n, ok := strings.CutPrefix(sc.Text(), "event: "); ok {
+				ev = n
+			}
+			if d, ok := strings.CutPrefix(sc.Text(), "data: "); ok && (ev == "meters" || ev == "text" || ev == "spectrum") {
+				var m struct {
+					Rcv int `json:"rcv"`
+				}
+				json.Unmarshal([]byte(d), &m)
+				mu.Lock()
+				sawRcv[fmt.Sprint(ev, m.Rcv)]++
+				mu.Unlock()
+			}
+			if ev == "record" {
+				recs, _ := st.Query(store.Filter{})
+				n0, n1 := 0, 0
+				for _, x := range recs {
+					if x.Rcv == 1 {
+						n1++
+					} else {
+						n0++
+					}
+				}
+				if n0 >= 1 && n1 >= 1 {
+					close(done)
+					return
+				}
+			}
+		}
+	}()
+	r.Start()
+	select {
+	case <-done:
+	case <-ctx.Done():
+		recs, _ := st.Query(store.Filter{})
+		n1 := 0
+		for _, x := range recs {
+			n1 += x.Rcv
+		}
+		mu.Lock()
+		t.Fatalf("timed out waiting for records from both channels: %d records (%d from the second); events %v; states %+v / %+v", len(recs), n1, sawRcv, r.State(0), r.State(1))
+	}
+	recs, _ := st.Query(store.Filter{})
+	for _, x := range recs {
+		if x.Rcv == 1 && !strings.Contains(x.Comment, "second loop") {
+			t.Errorf("record %d from the second channel lacks its comment: %q", x.ID, x.Comment)
+		}
+		if x.Rcv == 0 && strings.Contains(x.Comment, "second loop") {
+			t.Errorf("record %d from the first channel has the second channel's comment", x.ID)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	for _, k := range []string{"meters0", "meters1", "text0", "text1", "spectrum0", "spectrum1"} {
+		if sawRcv[k] == 0 {
+			t.Errorf("no %s events: %v", k, sawRcv)
+		}
 	}
 }

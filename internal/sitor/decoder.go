@@ -48,14 +48,27 @@ type Event struct {
 	Pol   int   // +1: mark is the higher tone, -1: lower
 	Align int   // symbol alignment (0..6) of the word framing
 	Order Order
+	// EvUnlock: how long the lock lasted and how it ended.
+	Syms   int64  // symbols locked
+	Words  int    // words seen while locked
+	Bad    int    // invalid words among them
+	Reason string // "bad words" (lost the signal), "resync" or "end"
+	// EvLock: true when this is a quick re-lock after a fade.
+	Relock bool
 }
 
 func (e Event) String() string {
 	switch e.Kind {
 	case EvLock:
+		if e.Relock {
+			return fmt.Sprintf("lock pol=%+d align=%d (re-lock after fade)", e.Pol, e.Align)
+		}
 		return fmt.Sprintf("lock pol=%+d align=%d", e.Pol, e.Align)
 	case EvUnlock:
-		return "unlock"
+		if e.Reason == "" {
+			return "unlock"
+		}
+		return fmt.Sprintf("unlock (%s) after %.1f s, %d words, %d invalid", e.Reason, float64(e.Syms)/100, e.Words, e.Bad)
 	case EvOrder:
 		return "bit order " + e.Order.String()
 	}
@@ -94,6 +107,9 @@ type Decoder struct {
 	base     int64  // word index (k = (j-align)/7) of words[0]
 	nextEmit int64  // next slot to consider for output
 	bad      int
+	lockIdx  int64 // symbol index at the lock
+	nWords   int   // words since the lock
+	nBad     int   // invalid words since the lock
 	agree    [2]int
 	dxKnown  bool
 	dxPar    int64    // DX slots are those with k%2 == dxPar
@@ -172,7 +188,7 @@ func (d *Decoder) Resync() []Event {
 	d.events = d.events[:0]
 	if d.locked {
 		d.emitReady(false)
-		d.unlock()
+		d.unlock("resync")
 	}
 	d.run = [2][7]int{}
 	d.last.ok = false
@@ -194,7 +210,7 @@ func (d *Decoder) Flush() []Event {
 	d.events = d.events[:0]
 	if d.locked {
 		d.emitReady(true)
-		d.unlock()
+		d.unlock("end")
 	}
 	d.shape.flush()
 	return d.events
@@ -276,7 +292,7 @@ func (d *Decoder) push(soft float64) {
 
 func (d *Decoder) lock(pol, a int, j int64, nw int, sticky bool) {
 	d.locked, d.pol, d.align = true, pol, a
-	d.bad = 0
+	d.bad, d.nWords, d.nBad, d.lockIdx = 0, 0, 0, d.idx
 	d.agree = [2]int{}
 	d.dxKnown = false
 	d.words = d.words[:0]
@@ -293,7 +309,7 @@ func (d *Decoder) lock(pol, a int, j int64, nw int, sticky bool) {
 	if lp := d.lastPar; lp.ok && lp.align == a && (d.cfg.KeepParity > 0 && float64(d.idx-lp.symIdx) < d.cfg.KeepParity || sticky) {
 		d.dxKnown, d.dxPar = true, lp.par
 	}
-	d.events = append(d.events, Event{Kind: EvLock, Pol: pol, Align: a})
+	d.events = append(d.events, Event{Kind: EvLock, Pol: pol, Align: a, Relock: sticky})
 	// rebuild the words that triggered the lock from the history (oldest first)
 	h := d.hist
 	for w := 0; w < nw; w++ {
@@ -302,21 +318,23 @@ func (d *Decoder) lock(pol, a int, j int64, nw int, sticky bool) {
 	}
 }
 
-func (d *Decoder) unlock() {
+func (d *Decoder) unlock(reason string) {
 	d.last.ok, d.last.pol, d.last.align, d.last.symIdx = true, d.pol, d.align, d.idx
 	d.shape.flush()
 	d.locked = false
 	d.words = d.words[:0]
-	d.events = append(d.events, Event{Kind: EvUnlock})
+	d.events = append(d.events, Event{Kind: EvUnlock, Reason: reason, Syms: d.idx - d.lockIdx, Words: d.nWords, Bad: d.nBad})
 }
 
 func (d *Decoder) addWord(w word) {
 	d.words = append(d.words, w)
 	k := d.base + int64(len(d.words)) - 1
+	d.nWords++
 	if w.ok {
 		d.bad = 0
 	} else {
 		d.bad++
+		d.nBad++
 	}
 	if !d.dxKnown {
 		if pk := k - 5; pk >= d.base {
@@ -340,7 +358,7 @@ func (d *Decoder) addWord(w word) {
 	d.emitReady(false)
 	if d.bad >= d.cfg.MaxBad {
 		d.emitReady(true)
-		d.unlock()
+		d.unlock("lost signal")
 	}
 	if d.locked {
 		d.lastPar.symIdx = d.idx

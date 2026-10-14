@@ -25,50 +25,52 @@ type Hub struct {
 	mu      sync.Mutex
 	clients map[*client]struct{}
 
-	recent  []textChunk // newest text, for new clients
-	recentN int
-	lines   []lineMsg // newest completed lines
+	recent  [2][]textChunk // newest text of each decoding channel, for new clients
+	recentN [2]int
+	lines   [2][]lineMsg // newest completed lines
 }
 
 // LineKeep is how many completed lines a new client is given.
 const LineKeep = 300
 
 type lineMsg struct {
-	T int64   `json:"t"` // unix milliseconds
-	Q float64 `json:"q"`
-	X string  `json:"x"`
+	T   int64   `json:"t"` // unix milliseconds
+	Q   float64 `json:"q"`
+	X   string  `json:"x"`
+	Rcv int     `json:"rcv,omitempty"` // decoding channel (0 = the first)
 }
 
 // AddLine remembers a completed line for new clients.
 func (h *Hub) AddLine(l lineMsg) {
 	h.mu.Lock()
-	h.lines = append(h.lines, l)
-	if len(h.lines) > LineKeep {
-		h.lines = h.lines[len(h.lines)-LineKeep:]
+	h.lines[l.Rcv] = append(h.lines[l.Rcv], l)
+	if len(h.lines[l.Rcv]) > LineKeep {
+		h.lines[l.Rcv] = h.lines[l.Rcv][len(h.lines[l.Rcv])-LineKeep:]
 	}
 	h.mu.Unlock()
 }
 
 // ClearLines forgets the lines of the message that was just completed.
-func (h *Hub) ClearLines() {
+func (h *Hub) ClearLines(rcv int) {
 	h.mu.Lock()
-	h.lines = nil
+	h.lines[rcv] = nil
 	h.mu.Unlock()
 }
 
-// Lines returns the recent lines, oldest first.
-func (h *Hub) Lines() []lineMsg {
+// Lines returns the recent lines of one decoding channel, oldest first.
+func (h *Hub) Lines(rcv int) []lineMsg {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return append(make([]lineMsg, 0, len(h.lines)), h.lines...)
+	return append(make([]lineMsg, 0, len(h.lines[rcv])), h.lines[rcv]...)
 }
 
 // TextKeep is how many characters of recent text a new client is given.
 const TextKeep = 6000
 
 type textChunk struct {
-	T int64  `json:"t"` // unix milliseconds
-	X string `json:"x"`
+	T   int64  `json:"t"` // unix milliseconds
+	X   string `json:"x"`
+	Rcv int    `json:"rcv,omitempty"` // decoding channel (0 = the first)
 }
 
 // NewHub creates an empty hub.
@@ -88,20 +90,20 @@ func (h *Hub) add(role Role, specGap time.Duration) *client {
 func (h *Hub) remove(c *client) { h.mu.Lock(); delete(h.clients, c); h.mu.Unlock() }
 
 // Recent returns the recent text chunks, oldest first.
-func (h *Hub) Recent() []textChunk {
+func (h *Hub) Recent(rcv int) []textChunk {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return append(make([]textChunk, 0, len(h.recent)), h.recent...)
+	return append(make([]textChunk, 0, len(h.recent[rcv])), h.recent[rcv]...)
 }
 
 // AddText remembers text for new clients.
-func (h *Hub) AddText(t time.Time, x string) {
+func (h *Hub) AddText(rcv int, t time.Time, x string) {
 	h.mu.Lock()
-	h.recent = append(h.recent, textChunk{t.UnixMilli(), x})
-	h.recentN += len(x)
-	for h.recentN > TextKeep && len(h.recent) > 1 {
-		h.recentN -= len(h.recent[0].X)
-		h.recent = h.recent[1:]
+	h.recent[rcv] = append(h.recent[rcv], textChunk{t.UnixMilli(), x, rcv})
+	h.recentN[rcv] += len(x)
+	for h.recentN[rcv] > TextKeep && len(h.recent[rcv]) > 1 {
+		h.recentN[rcv] -= len(h.recent[rcv][0].X)
+		h.recent[rcv] = h.recent[rcv][1:]
 	}
 	h.mu.Unlock()
 }

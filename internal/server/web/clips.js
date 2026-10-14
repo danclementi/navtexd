@@ -29,7 +29,7 @@
     if (busy) return;
     const b = $("b-clip"), old = b.textContent;
     let wait;
-    try { wait = (await api("POST", "/api/clips")).wait_s; } catch (e) { b.textContent = "Not saved"; b.title = e.message; setTimeout(() => { b.textContent = old; }, 3000); return; }
+    try { wait = (await api("POST", "/api/clips" + (NX.state.sel ? "?ch=" + NX.state.sel : ""))).wait_s; } catch (e) { b.textContent = "Not saved"; b.title = e.message; setTimeout(() => { b.textContent = old; }, 3000); return; }
     busy = true; b.disabled = true;
     const end = Date.now() + wait * 1000;
     const tick = () => {

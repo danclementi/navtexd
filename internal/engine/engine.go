@@ -105,6 +105,7 @@ type Engine struct {
 
 	inSamples   int64
 	lockedSyms  int64
+	loggedF0    float64 // carrier offset in the last log line
 	lastChanges int
 	lastText    float64
 
@@ -348,6 +349,9 @@ func (e *Engine) handleSitor(evs []sitor.Event) {
 	}
 }
 
+// trackLogHz is how far the tracked carrier must move from the last logged offset before a tracking update is logged.
+const trackLogHz = 10.0
+
 func (e *Engine) reportCarrier() {
 	for ; e.lastChanges < len(e.rx.Changes); e.lastChanges++ {
 		c := e.rx.Changes[e.lastChanges]
@@ -360,6 +364,11 @@ func (e *Engine) reportCarrier() {
 		case c.Search:
 			kind = "carrier found"
 		}
+		// small tracking updates are routine: log them only when the carrier has moved noticeably
+		if kind == "tracking" && math.Abs(c.F0-e.loggedF0) < trackLogHz {
+			continue
+		}
+		e.loggedF0 = c.F0
 		e.status(fmt.Sprintf("%s: offset %+.1f Hz", kind, c.F0))
 	}
 }

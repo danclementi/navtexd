@@ -2,7 +2,7 @@
 // NAVTEX web client: live header, spectrum, options and system log. Plain JavaScript, no build step.
 (() => {
   const $ = (id) => document.getElementById(id);
-  const state = { role: "viewer", offset: 0, text: "", controls: null, sun: null, meters: null, tab: "status", loc: false, spec: null, yTop: -20, view: { spec: { yTop: -20, yTopLin: 0, geom: null, carX: null }, "spec-mini": { yTop: -20, yTopLin: 0, geom: null, carX: null } } };
+  const state = { sel: 0, chans: [], role: "viewer", offset: 0, text: "", controls: null, sun: null, meters: null, tab: "status", loc: false, spec: null, yTop: -20, view: { spec: { yTop: -20, yTopLin: 0, geom: null, carX: null }, "spec-mini": { yTop: -20, yTopLin: 0, geom: null, carX: null }, "spec-mini2": { yTop: -20, yTopLin: 0, geom: null, carX: null } } };
 
   // ---- helpers ----
   const NX = (window.NX = { $, state, tabs: {}, hooks: {} });
@@ -32,7 +32,8 @@
     return j;
   }
   NX.api = api;
-  const control = (name, value) => api("POST", "/api/control/" + name, value === undefined ? undefined : { value }).catch((e) => alert(e.message));
+  // Controls act on the selected decoding channel (state.sel: 0 = the first, 1 = the second).
+  const control = (name, value, ch = state.sel) => api("POST", "/api/control/" + name + (ch ? "?ch=" + ch : ""), value === undefined ? undefined : { value }).catch((e) => alert(e.message));
 
   // ---- header ----
   // round dial gauges in the style of YaND's: dark green face, needle, red end of the scale
@@ -58,7 +59,7 @@
   }
   const fmtRate = (bps) => (bps < 1000 ? `${bps} B/s` : bps < 1e6 ? `${(bps / 1000).toFixed(1)} kB/s` : `${(bps / 1e6).toFixed(2)} MB/s`);
   function showNet(n) { if (!n) return; $("t-net").textContent = fmtRate(n.bps); $("t-users").textContent = String(n.users); }
-  function led(id, mode) { $(id).className = "led" + (mode === 2 ? " on" : mode === 1 ? " mid" : ""); }
+  function led(el, mode) { if (el) el.className = "led" + (mode === 2 ? " on" : mode === 1 ? " mid" : ""); }
 
   function showMeters(m) {
     state.meters = m;
@@ -66,36 +67,70 @@
     setBar("level", (db + 60) / 60, m.peak > 0 ? db.toFixed(0) + " dB" : "-", m.clip ? cssVar("--bad") : db > -6 ? cssVar("--warn") : "");
     setBar("q", m.q / 100, m.q.toFixed(0), m.q < 25 ? cssVar("--bad") : m.q < 50 ? cssVar("--warn") : "");
     setBar("cpu", m.cpu / 100, m.cpu.toFixed(0) + "%", m.cpu > 80 ? cssVar("--bad") : "");
-    led("l-lock", m.have ? 2 : 0);
-    led("l-sync", m.sync);
-    led("l-data", m.data ? 2 : 0);
-    if (document.activeElement !== $("c-carrier") && m.audio) $("c-carrier").placeholder = m.audio.toFixed(0);
+  }
+  // ---- per-channel header: the channel line (chip, frequency, input, comment, format, RESYNC, LEDs, UoS, polarity) and the small spectrum's controls ----
+  const L = (i, sel) => document.querySelector(`.chline[data-ch="${i}"] ${sel}`);
+  const S = (i, sel) => document.querySelector(`.specgrp[data-ch="${i}"] ${sel}`);
+  function showLeds(i) {
+    const m = state.chans[i].meters;
+    if (!m) return;
+    led(L(i, ".l-sync"), m.sync);
+    led(L(i, ".l-data"), m.data ? 2 : 0);
+    led(S(i, ".l-lock"), m.have ? 2 : 0);
+    const cr = S(i, ".c-carrier");
+    if (document.activeElement !== cr && m.audio) cr.placeholder = m.audio.toFixed(0);
+  }
+  function showChan(i) {
+    const c = state.chans[i].controls;
+    if (!c) return;
+    const set = (el, v) => { if (document.activeElement !== el) { if (el.type === "checkbox") el.checked = v; else el.value = v; } };
+    set(L(i, ".c-polarity"), c.polarity);
+    set(L(i, ".c-uos"), c.uos);
+    set(S(i, ".c-autotune"), c.autotune);
+    const cr = S(i, ".c-carrier");
+    if (!c.autotune) set(cr, c.carrier); else if (document.activeElement !== cr) cr.value = "";
+    const chip = L(i, ".chip");
+    chip.textContent = c.label || c.name || `Channel ${i + 1}`;
+    chip.classList.toggle("on", i === state.sel);
+    L(i, ".chfreq").textContent = c.channel + " kHz";
+    const cm = L(i, ".chcmt"); cm.textContent = c.note || ""; cm.title = c.note ? "Channel comment: " + c.note : "Channel comment (change it in Options)";
+  }
+  function showInfo(i) {
+    const r = state.chans[i].run, el = L(i, ".chinfo");
+    if (!r) { el.textContent = ""; return; }
+    el.textContent = r.error ? "\u26a0 " + r.error : (r.format || "");
+    el.classList.toggle("bad", !!r.error);
+    el.title = (r.running ? "" : "Not running. ") + (r.info || "");
+  }
+  // lines, boxes and the add chip follow the number of channels
+  function renderLines() {
+    const two = secondOn(), admin = state.role === "admin";
+    L(1, ".chip").closest(".chline").hidden = !two;
+    $("grp-spec2").hidden = !two;
+    $("b-addchan").hidden = two || !admin;
+    for (let i = 0; i < 2; i++) { const ch = L(i, ".chip"); if (ch) ch.classList.toggle("on", i === state.sel); }
+    document.body.classList.toggle("two", two);
+    scheduleSpec();
   }
 
   function showControls(c) {
     state.controls = c;
     scheduleText();
-    const set = (id, v) => { const el = $(id); if (document.activeElement !== el) { if (el.type === "checkbox") el.checked = v; else el.value = v; } };
-    set("c-channel", String(c.channel));
-    set("c-polarity", c.polarity);
-    set("c-uos", c.uos);
-    set("c-autotune", c.autotune);
-    set("c-comment", c.comment);
-    if (!c.autotune) set("c-carrier", c.carrier); else if (document.activeElement !== $("c-carrier")) $("c-carrier").value = "";
-    refreshInput();
   }
   // Which input is in use: asked of the server (administrators only) whenever the controls change.
-  async function refreshInput() {
+  async function refreshInput(ch) {
     if (state.role !== "admin") return;
+    const k = state.chans[ch].controls;
+    if (!k || !k.enabled) return;
     try {
-      const i = await api("GET", "/api/input");
-      state.inputWanted = i.source === "hpsdr" ? "r:" + i.radio : "a:" + i.device;
-      showInput();
+      const i = await api("GET", "/api/input" + (ch ? "?ch=" + ch : ""));
+      state.chans[ch].inputWanted = i.source === "hpsdr" ? "r:" + i.radio : "a:" + i.device;
+      showInput(ch);
     } catch (e) { /* not available */ }
   }
   // The Input box: audio inputs ("a:name") and radios ("r:address"; "r:" searches the network).
-  function showInput() {
-    const sel = $("c-device"), want = state.inputWanted;
+  function showInput(ch) {
+    const sel = L(ch, ".c-device"), want = state.chans[ch].inputWanted;
     if (want === undefined || document.activeElement === sel) return;
     if (![...sel.options].some((o) => o.value === want)) { // a radio that has not delivered data yet, or an unlisted device
       const o = new Option(want.startsWith("r:") ? want.slice(2) + "  (not confirmed yet)" : want.slice(2), want);
@@ -106,7 +141,7 @@
 
   function showSun(s) {
     state.sun = s;
-    $("sun").parentElement.hidden = !state.loc; // sunrise/sunset reveal the receiver's position
+    $("sun").hidden = !state.loc; // sunrise/sunset reveal the receiver's position
     $("sun").textContent = s ? `Sunrise: ${s.rise} / Sunset: ${s.set}` : "Sunrise: --:-- / Sunset: --:--";
   }
 
@@ -116,10 +151,11 @@
     const r = $("role");
     r.textContent = admin ? "admin" : "view only";
     r.className = "pill " + (admin ? "ok" : "");
-    document.querySelectorAll("#grp-set input, #grp-set select, #grp-spec input, #b-resync, #b-clip").forEach((el) => { el.disabled = !admin; });
+    document.querySelectorAll("#chlines select, #chlines input, #chlines .b-resync, .specgrp input, #b-clip").forEach((el) => { el.disabled = !admin; });
     $("login").hidden = !needToken;
     if (state.tab === "options") loadOptions(true);
     if (state.tab === "syslog") loadLog();
+    renderLines();
     fire("role", role);
   }
 
@@ -145,15 +181,17 @@
     const q = state.controls && state.controls.lineq === false ? "" : `${String(Math.round(l.q)).padStart(2, "0")}> `;
     return `${NX.stamp(l.t)} ${q}${l.x}`;
   };
-  function addText(x) {
-    state.text += x;
-    if (state.text.length > TEXT_KEEP) state.text = state.text.slice(state.text.length - TEXT_KEEP);
+  // o is the selected channel's live text (state) or another channel's stored one
+  function addTextTo(o, x) {
+    o.text += x;
+    if (o.text.length > TEXT_KEEP) o.text = o.text.slice(o.text.length - TEXT_KEEP);
     const i = x.lastIndexOf("\n");
-    state.tail = (i >= 0 ? x.slice(i + 1) : state.tail + x).replace(/\r/g, "");
-    if (state.tail.length > 200) state.tail = "";
-    scheduleText();
+    o.tail = (i >= 0 ? x.slice(i + 1) : o.tail + x).replace(/\r/g, "");
+    if (o.tail.length > 200) o.tail = "";
   }
-  function addLine(l) { state.lines.push(l); if (state.lines.length > LINE_KEEP) state.lines.shift(); scheduleText(); }
+  function addText(x) { addTextTo(state, x); scheduleText(); }
+  function addLineTo(o, l) { o.lines.push(l); if (o.lines.length > LINE_KEEP) o.lines.shift(); }
+  function addLine(l) { addLineTo(state, l); scheduleText(); }
   let textPending = false;
   function scheduleText() { if (!textPending) { textPending = true; requestAnimationFrame(drawText); } }
   function drawText() {
@@ -203,7 +241,7 @@
       j.records.forEach((r, i) => {
         const tr = document.createElement("tr");
         tr.dataset.i = String(i); tr.dataset.id = String(r.id); tr.title = "Double-click to open";
-        const cells = [NX.stamp(r.rx).slice(5, 16), r.kind, r.b1 + r.b2 + r.ser, r.st, r.q.toFixed(0)];
+        const cells = [NX.stamp(r.rx).slice(5, 16) + (NX.secondOn() ? " \u00b7" + ((r.rcv || 0) + 1) : ""), r.kind, r.b1 + r.b2 + r.ser, r.st, r.q.toFixed(0)];
         for (const c of cells) { const td = document.createElement("td"); td.textContent = c; tr.appendChild(td); }
         tb.appendChild(tr);
       });
@@ -214,11 +252,12 @@
   // LOG / LIN is chosen separately for the big spectrum and the small one in the header
   const specPref = (key) => ({ get() { try { return localStorage.getItem(key) === "lin" ? "lin" : "log"; } catch (e) { return "log"; } }, set(v) { try { localStorage.setItem(key, v); } catch (e) { /* no storage */ } } });
   const PREF = { spec: specPref("navtex.spec.scale"), "spec-mini": specPref("navtex.mini.scale") };
-  state.view.spec.scale = PREF.spec.get(); state.view["spec-mini"].scale = PREF["spec-mini"].get();
+  state.view.spec.scale = PREF.spec.get(); state.view["spec-mini"].scale = state.view["spec-mini2"].scale = PREF["spec-mini"].get();
   state.drag = null; state.specGeom = null;
   const niceTop = (v) => { const e = Math.pow(10, Math.floor(Math.log10(v))); const m = v / e; return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * e; };
-  function drawSpectrum() { drawSpec($("spec"), false); drawSpec($("spec-mini"), true); }
-  function drawSpec(cv, mini) {
+  function drawSpectrum() { drawSpec($("spec"), false, state.sel); drawSpec($("spec-mini"), true, 0); if (secondOn()) drawSpec($("spec-mini2"), true, 1); }
+  function drawSpec(cv, mini, ch) {
+    const CH = state.chans[ch];
     const V = state.view[cv.id];
     if (!mini && state.tab !== "spectrum") return;
     const dpr = window.devicePixelRatio || 1;
@@ -227,7 +266,7 @@
     const g = cv.getContext("2d");
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.fillStyle = cssVar("--spec-bg"); g.fillRect(0, 0, w, h);
-    const s = state.spec;
+    const s = CH.spec;
     if (!s) return;
     const lin = V.scale === "lin";
     const L = mini ? 26 : 44, R = mini ? 4 : 8, T = mini ? 4 : 8, B = mini ? 14 : 20, pw = w - L - R, ph = h - T - B;
@@ -297,12 +336,12 @@
       }
     }
     let car = s.carrier;
-    const adminManual = state.role === "admin" && state.controls && state.controls.autotune === false;
-    if (state.drag !== null) car = state.drag;
+    const adminManual = state.role === "admin" && CH.controls && CH.controls.autotune === false;
+    if (state.drag !== null && state.dragCh === ch) car = state.drag;
     V.carX = null;
     if (car >= f0 && car <= f1) {
       const x = Math.round(X(car)) + .5; V.carX = x;
-      const searching = state.controls && state.controls.autotune && state.meters && !state.meters.have;
+      const searching = CH.controls && CH.controls.autotune && CH.meters && !CH.meters.have;
       g.globalAlpha = searching ? 0.45 : 1;
       g.strokeStyle = cssVar("--spec-car"); g.lineWidth = adminManual ? 2 : 1; g.setLineDash([4, 3]); g.beginPath(); g.moveTo(x, T); g.lineTo(x, T + ph); g.stroke(); g.setLineDash([]); g.lineWidth = 1;
       g.fillStyle = cssVar("--spec-car"); g.textBaseline = "top"; g.textAlign = "left"; g.fillText(car.toFixed(0) + " Hz" + (adminManual && !mini ? "  \u2194" : "") + (searching && !mini ? "  searching\u2026" : ""), x + 4, T + 2); g.globalAlpha = 1;
@@ -312,8 +351,9 @@
   (() => {
     const attach = (cv) => {
       const V = state.view[cv.id];
+      const chOf = () => (cv.id === "spec" ? state.sel : cv.id === "spec-mini" ? 0 : 1);
       const freqAt = (e) => { const r = cv.getBoundingClientRect(), G = V.geom; if (!G) return null; const f = G.f0 + (e.clientX - r.left - G.L) / G.pw * (G.f1 - G.f0); return Math.max(G.f0, Math.min(G.f1, f)); };
-      const canDrag = () => state.role === "admin" && state.controls && state.controls.autotune === false;
+      const canDrag = () => { const k = state.chans[chOf()].controls; return state.role === "admin" && k && k.autotune === false; };
       cv.addEventListener("pointermove", (e) => {
         if (state.drag !== null) { state.drag = freqAt(e); scheduleSpec(); return; }
         const r = cv.getBoundingClientRect();
@@ -322,23 +362,25 @@
       cv.addEventListener("pointerdown", (e) => {
         const r = cv.getBoundingClientRect();
         if (!canDrag() || e.button !== 0 || V.carX === null || Math.abs(e.clientX - r.left - V.carX) >= 10) return;
-        cv.setPointerCapture(e.pointerId); state.drag = freqAt(e); scheduleSpec(); e.preventDefault();
+        cv.setPointerCapture(e.pointerId); state.dragCh = chOf(); state.drag = freqAt(e); scheduleSpec(); e.preventDefault();
       });
       cv.addEventListener("pointerup", (e) => {
         if (state.drag === null) return;
         const f = Math.round(freqAt(e) * 10) / 10; state.drag = null;
-        control("carrier", f); scheduleSpec();
+        control("carrier", f, state.dragCh); scheduleSpec();
       });
       cv.addEventListener("pointercancel", () => { state.drag = null; scheduleSpec(); });
     };
-    attach($("spec")); attach($("spec-mini"));
-    for (const [cid, box] of [["spec", "spec-scale"], ["spec-mini", "mini-scale"]]) {
-      const btns = document.querySelectorAll(`#${box} button`);
+    attach($("spec")); attach($("spec-mini")); attach($("spec-mini2"));
+    // LOG/LIN: one choice for the big spectrum, one shared by the small ones
+    const bind = (btns, cids, pref) => {
       btns.forEach((bt) => {
-        bt.classList.toggle("on", bt.dataset.sc === state.view[cid].scale);
-        bt.onclick = () => { state.view[cid].scale = bt.dataset.sc; PREF[cid].set(bt.dataset.sc); btns.forEach((x) => x.classList.toggle("on", x === bt)); scheduleSpec(); };
+        bt.classList.toggle("on", bt.dataset.sc === state.view[cids[0]].scale);
+        bt.onclick = () => { for (const c of cids) state.view[c].scale = bt.dataset.sc; pref.set(bt.dataset.sc); btns.forEach((x) => x.classList.toggle("on", x.dataset.sc === bt.dataset.sc)); scheduleSpec(); };
       });
-    }
+    };
+    bind(document.querySelectorAll("#spec-scale button"), ["spec"], PREF.spec);
+    bind(document.querySelectorAll(".mini-scale button"), ["spec-mini", "spec-mini2"], PREF["spec-mini"]);
   })();
   let specPending = false;
   function scheduleSpec() { if (!specPending) { specPending = true; requestAnimationFrame(() => { specPending = false; drawSpectrum(); }); } }
@@ -365,44 +407,88 @@
       document.body.classList.toggle("noloc", !state.loc);
       document.querySelector("#tabs button[data-tab=ephemeris]").hidden = !state.loc;
       showRole(h.role, h.need_token);
-      showControls(h.controls);
       showSun(h.sun);
-      showRun(h.run);
+      const hc = h.chans || [{ controls: h.controls, run: h.run, meters: h.meters, text: h.text, lines: h.lines }];
+      hc.forEach((c, i) => {
+        const n = state.chans[i];
+        n.controls = c.controls; n.run = c.run; n.meters = c.meters || null;
+        n.text = (c.text || []).map((x) => x.x).join(""); n.lines = c.lines || []; n.tail = "";
+      });
+      state.sel = 0; // the saved choice, if that channel is still on
+      try { const v = Number(localStorage.getItem("nx-chan")); if (v === 1 && secondOn()) state.sel = 1; } catch (e) { /* no storage */ }
+      applySel();
       showNet(h.net); if (!h.net) { $("t-users").textContent = String(h.clients || 1); }
-      state.text = h.text.map((c) => c.x).join("");
-      state.lines = h.lines || []; state.tail = "";
-      drawText();
-      if (h.meters) showMeters(h.meters);
       loadRecent();
       fire("hello", h);
     });
     on("location", () => { if (state.role !== "admin") { es.close(); connect(); } }); // the operator changed who may see location information
-    on("meters", showMeters);
+    // Live events carry the decoding channel they belong to (rcv, absent = 0): they are kept per channel, and shown when it is the selected one.
+    const rc = (m) => m.rcv || 0;
+    on("meters", (m) => { const i = rc(m); state.chans[i].meters = m; showLeds(i); if (i === state.sel) showMeters(m); });
     on("net", showNet);
-    on("spectrum", (s) => { state.spec = s; scheduleSpec(); });
-    on("text", (c) => addText(c.x));
-    on("line", addLine);
-    on("controls", showControls);
+    on("spectrum", (s) => { const i = rc(s); state.chans[i].spec = s; if (i === state.sel) { state.spec = s; scheduleSpec(); } });
+    on("text", (c) => { const i = rc(c); if (i === state.sel) addText(c.x); else addTextTo(state.chans[i], c.x); });
+    on("line", (l) => { const i = rc(l); if (i === state.sel) addLine(l); else addLineTo(state.chans[i], l); });
+    on("controls", (c) => {
+      const i = rc(c), was = state.chans[i].controls;
+      state.chans[i].controls = c;
+      if (i === state.sel) showControls(c);
+      showChan(i); refreshInput(i);
+      if (i === state.sel && !c.enabled) selectChan(0); // the selected channel was switched off
+      if (!was || was.enabled !== c.enabled) renderLines();
+      if (was && was.enabled !== c.enabled) fire("channels", secondOn());
+    });
     on("sun", showSun);
-    on("run", showRun);
-    on("record", (r) => { if (r.action === "new") { state.lines = []; state.tail = ""; scheduleText(); } loadRecent(); fire("record", r); });
+    on("run", (r) => { const i = rc(r); state.chans[i].run = r; showInfo(i); if (i === state.sel) showRun(r); });
+    on("record", (r) => {
+      if (r.action === "new") { const i = rc(r); if (i === state.sel) { state.lines = []; state.tail = ""; scheduleText(); } else { state.chans[i].lines = []; state.chans[i].tail = ""; } }
+      loadRecent(); fire("record", r);
+    });
     on("stations", (r) => fire("stations", r));
     on("log", (e) => { if (state.tab === "syslog") appendLog(e); });
   }
 
+  // ---- decoding channels ----
+  // The server decodes one or two channels. state.* holds the selected channel's live data; state.chans[i] holds each
+  // channel's own (controls, meters, run, spectrum, text, lines), kept up to date from the events.
+  for (let i = 0; i < 2; i++) state.chans.push({ controls: null, meters: null, run: null, spec: null, text: "", lines: [], tail: "" });
+  const secondOn = () => !!(state.chans[1].controls && state.chans[1].controls.enabled);
+  NX.secondOn = secondOn;
+  NX.chanTag = (rcv) => (secondOn() ? String((rcv || 0) + 1) : "");
+  const chanName = (i) => { const c = state.chans[i].controls; return c ? (c.name || "") : ""; };
+  function saveSel() { const n = state.chans[state.sel]; n.text = state.text; n.lines = state.lines; n.tail = state.tail; n.spec = state.spec; }
+  function applySel() {
+    const n = state.chans[state.sel];
+    state.text = n.text; state.lines = n.lines; state.tail = n.tail; state.spec = n.spec; state.meters = n.meters;
+    if (n.controls) showControls(n.controls);
+    if (n.run) showRun(n.run);
+    if (n.meters) showMeters(n.meters);
+    drawText(); renderLines();
+    for (let i = 0; i < 2; i++) { showChan(i); showLeds(i); showInfo(i); }
+    fire("channel", state.sel);
+  }
+  function selectChan(i) {
+    if (i === state.sel) return;
+    saveSel(); state.sel = i;
+    try { localStorage.setItem("nx-chan", String(i)); } catch (e) { /* no storage */ }
+    applySel();
+  }
+  NX.selectChan = selectChan;
   // ---- controls ----
-  $("c-channel").onchange = (e) => control("frequency", Number(e.target.value));
-  $("c-polarity").onchange = (e) => control("polarity", e.target.value);
-  $("c-uos").onchange = (e) => control("uos", e.target.checked);
-  $("c-autotune").onchange = (e) => control("autotune", e.target.checked);
-  $("c-device").onchange = (e) => {
-    const v = e.target.value;
-    if (v.startsWith("r:")) control("radio", v.slice(2));
-    else if (v.startsWith("a:")) control("device", v.slice(2));
-  };
-  $("c-comment").onchange = (e) => control("comment", e.target.value);
-  $("c-carrier").onchange = (e) => { const v = Number(e.target.value); if (v) control("carrier", v); };
-  $("b-resync").onclick = () => control("resync");
+  for (let i = 0; i < 2; i++) {
+    L(i, ".c-polarity").onchange = (e) => control("polarity", e.target.value, i);
+    L(i, ".c-uos").onchange = (e) => control("uos", e.target.checked, i);
+    L(i, ".b-resync").onclick = () => control("resync", undefined, i);
+    L(i, ".c-device").onchange = (e) => {
+      const v = e.target.value;
+      if (v.startsWith("r:")) control("radio", v.slice(2), i);
+      else if (v.startsWith("a:")) control("device", v.slice(2), i);
+    };
+    S(i, ".c-autotune").onchange = (e) => control("autotune", e.target.checked, i);
+    S(i, ".c-carrier").onchange = (e) => { const v = Number(e.target.value); if (v) control("carrier", v, i); };
+    L(i, ".chip").onclick = () => selectChan(i);
+  }
+  $("b-addchan").onclick = () => { optPage = "channel2"; document.querySelector("#tabs button[data-tab=options]").click(); };
   $("b-login").onclick = async () => {
     try { await api("POST", "/api/login", { token: $("tok").value }); location.reload(); } catch (e) { alert(e.message); }
   };
@@ -410,17 +496,16 @@
     if (state.role !== "admin") return;
     try {
       const [devs, radios] = await Promise.all([api("GET", "/api/audio-devices"), api("GET", "/api/radios")]);
-      const sel = $("c-device");
-      if (document.activeElement === sel) return;
+      if (document.activeElement && document.activeElement.classList.contains("c-device")) return;
       const audio = document.createElement("optgroup"); audio.label = "Audio input"; audio.className = "audio";
       audio.append(new Option("(default)", "a:"));
       for (const d of devs) audio.append(new Option(d.name, "a:" + d.name));
       const rg = document.createElement("optgroup"); rg.label = "Radio (OpenHPSDR)"; rg.className = "radios";
       for (const r of radios) rg.append(new Option(r.label, "r:" + r.addr));
       rg.append(new Option("Radio: search the network", "r:"));
-      sel.replaceChildren(audio, rg);
+      for (let i = 0; i < 2; i++) { const sel = L(i, ".c-device"); sel.replaceChildren(audio.cloneNode(true), rg.cloneNode(true)); }
       NX.knownRadios = radios;
-      refreshInput();
+      refreshInput(0); refreshInput(1);
     } catch (e) { /* not available */ }
   }
 
@@ -450,17 +535,21 @@
     note.hidden = true; $("opt-bar").hidden = false; $("opt-hint").hidden = false;
     try { fields = (await api("GET", "/api/settings")).fields; } catch (e) { note.hidden = false; note.textContent = e.message; return; }
     const title = { operator: "Operator and position", input: "Input source", "input.device": "Audio input (sound card or virtual audio cable)", "input.hpsdr": "Radio (OpenHPSDR / Metis)", "input.stdin": "Raw stream (standard input)", "input.file": "WAV file", channel: "Channel", ddc: "Down-converter", decoder: "Decoder", receiver: "Receiver (FSK demodulator)", segment: "Message segmentation", logging: "Logging", autocorrect: "Word autocorrection", meters: "Meters and spectrum", server: "Network server", output: "Output (command line)" };
+    const nameOf = (p, d) => { const f = fields.find((x) => x.path === p); return (f && String(f.value).trim()) || d; };
     const pages = [
       ["station", "Station", ["operator"]],
-      ["input", "Input", ["channel", "input", "input.device", "input.hpsdr", "input.stdin", "input.file"]],
-      ["decoder", "Decoder", ["receiver", "decoder", "segment", "ddc"]],
+      ["channel1", nameOf("channel.name", "Channel 1"), ["channel", "input", "input.device", "input.hpsdr", "input.stdin", "input.file", "receiver", "decoder", "segment", "ddc"]],
+      ["channel2", nameOf("second.channel.name", "Channel 2"), ["second", "second.channel", "second.input", "second.input.device", "second.input.hpsdr", "second.input.stdin", "second.input.file", "second.receiver", "second.decoder", "second.segment", "second.ddc"]],
       ["logging", "Logging", ["logging", "autocorrect"]],
       ["display", "Display", ["meters"]],
       ["network", "Network", ["server"]],
       ["cli", "Command line", ["output"]],
     ];
     const known = new Set(pages.flatMap((p) => p[2]));
-    const gkey = (path) => { const a = path.split("."); return a[0] === "input" && a.length > 2 ? a[0] + "." + a[1] : a[0]; };
+    const gkey = (path) => {
+      if (path.startsWith("second.")) { const r = path.slice(7); return r === "enabled" ? "second" : "second." + gkey(r); }
+      const a = path.split("."); return a[0] === "input" && a.length > 2 ? a[0] + "." + a[1] : a[0];
+    };
     const others = [...new Set(fields.map((f) => gkey(f.path)))].filter((g) => !known.has(g));
     if (others.length) pages.push(["other", "Other", others]);
     const groups = new Map();
@@ -476,7 +565,8 @@
       for (const g of gs) {
         if (!groups.has(g)) continue;
         const fs = document.createElement("fieldset"); fs.className = "optgrp"; if (g.startsWith("input.")) fs.dataset.src = g.slice(6);
-        const lg = document.createElement("legend"); lg.textContent = title[g] || g; fs.appendChild(lg); page.appendChild(fs);
+        if (g.startsWith("second.input.")) fs.dataset.src2 = g.slice(13);
+        const lg = document.createElement("legend"); lg.textContent = g === "second" ? "Channel 2: switch it on to decode a second channel from its own input" : g === "channel" || g === "second.channel" ? "Channel: frequency, name and comment" : title[g.startsWith("second.") ? g.slice(7) : g] || g; fs.appendChild(lg); page.appendChild(fs);
         for (const f of groups.get(g)) {
           const row = document.createElement("div"); row.className = "opt";
           const name = document.createElement("div"); const code = document.createElement("code"); code.textContent = f.path.slice(g.length + 1);
@@ -522,6 +612,11 @@
     if (srcSel) {
       const showSrc = () => form.querySelectorAll("fieldset[data-src]").forEach((fs) => { fs.hidden = fs.dataset.src !== srcSel.value; });
       srcSel.addEventListener("change", showSrc); showSrc();
+    }
+    const srcSel2 = form.querySelector('[data-path="second.input.source"]');
+    if (srcSel2) {
+      const showSrc2 = () => form.querySelectorAll("fieldset[data-src2]").forEach((fs) => { fs.hidden = fs.dataset.src2 !== srcSel2.value; });
+      srcSel2.addEventListener("change", showSrc2); showSrc2();
     }
     showPage(pageEls.has(optPage) ? optPage : "station");
     updatePending();
@@ -610,6 +705,6 @@
 
   connect();
   setTimeout(loadDevices, 800);
-  setInterval(() => { if (state.role === "admin" && $("c-device").options.length <= 1) loadDevices(); }, 5000);
+  setInterval(() => { if (state.role === "admin" && L(0, ".c-device").options.length <= 1) loadDevices(); }, 5000);
   setInterval(() => { if (state.role === "admin") loadDevices(); }, 20000); // a radio joins the list once it has delivered data
 })();

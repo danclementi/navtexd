@@ -121,6 +121,7 @@ func TestSet(t *testing.T) {
 // Every option is either live (IsLive) or needs a restart (RestartNeeded), and the two agree.
 func TestLiveListMatchesRestartRule(t *testing.T) {
 	base := Default()
+	base.Second.Enabled = true // the second channel's options only count while it is on
 	for _, f := range Fields(base) {
 		if strings.HasPrefix(f.Path, "server.") {
 			continue // navtexd restart, not the channel
@@ -130,6 +131,9 @@ func TestLiveListMatchesRestartRule(t *testing.T) {
 		for _, g := range []string{"device", "hpsdr", "stdin", "file"} {
 			if strings.HasPrefix(f.Path, "input."+g+".") {
 				base.Input.Source = g
+			}
+			if strings.HasPrefix(f.Path, "second.input."+g+".") {
+				base.Second.Input.Source = g
 			}
 		}
 		next := base
@@ -151,7 +155,7 @@ func TestLiveListMatchesRestartRule(t *testing.T) {
 		default:
 			v = "x"
 		}
-		switch f.Path {
+		switch strings.TrimPrefix(f.Path, "second.") {
 		case "input.source":
 			v = "stdin"
 		case "input.stdin.pcm_format":
@@ -303,5 +307,89 @@ func TestOldInputSettingsMigrate(t *testing.T) {
 	}
 	if c2, err := Load(p); err != nil || c2 != c {
 		t.Fatalf("round trip: %v", err)
+	}
+}
+
+func TestSecondChannel(t *testing.T) {
+	c := Default()
+	if c.Second.Enabled || c.ChannelEnabled(1) || !c.ChannelEnabled(0) {
+		t.Fatal("the second channel must be off by default")
+	}
+	if c.Second.Channel.FrequencyHz != 490000 || c.Channel.FrequencyHz != 518000 {
+		t.Errorf("default frequencies %v / %v", c.Channel.FrequencyHz, c.Second.Channel.FrequencyHz)
+	}
+	// ForChannel: channel 1's groups stand in for the top-level ones, the shared options stay, Second is cleared
+	c.Second.Channel.FrequencyHz = 424000
+	c.Second.Decoder.MinRun = 7
+	c.Operator.Comment = "shared"
+	d := c.ForChannel(1)
+	if d.Channel.FrequencyHz != 424000 || d.Decoder.MinRun != 7 || d.Operator.Comment != "shared" || d.Second != (Second{}) {
+		t.Errorf("ForChannel(1): %+v", d.Channel)
+	}
+	if e := c.ForChannel(0); e.Channel.FrequencyHz != 518000 || e.Second != (Second{}) {
+		t.Errorf("ForChannel(0): %+v", e.Channel)
+	}
+	// EditChannel changes only the named channel
+	c.EditChannel(1, func(d *Config) { d.Decoder.UnshiftOnSpace = !d.Decoder.UnshiftOnSpace })
+	if c.Decoder.UnshiftOnSpace == c.Second.Decoder.UnshiftOnSpace {
+		t.Error("EditChannel(1) changed the first channel too (or nothing)")
+	}
+	c.EditChannel(0, func(d *Config) { d.Channel.FrequencyHz = 490000 })
+	if c.Channel.FrequencyHz != 490000 || c.Second.Channel.FrequencyHz != 424000 {
+		t.Error("EditChannel(0) went to the wrong channel")
+	}
+	// labels
+	if c.Label(0) != "Channel 1" || c.Label(1) != "Channel 2" {
+		t.Errorf("labels %q %q", c.Label(0), c.Label(1))
+	}
+	c.Second.Channel.Name = " Loop "
+	c.Channel.Name = ""
+	if c.Label(0) != "Channel 1" {
+		t.Errorf("an empty name falls back to the default: %q", c.Label(0))
+	}
+	if c.Label(1) != "Loop" {
+		t.Errorf("label %q", c.Label(1))
+	}
+	// a bad second channel is only an error while it is on
+	c.Second.DDC.TargetRateHz = 10
+	if err := c.Validate(); err != nil {
+		t.Errorf("a disabled second channel must not be validated: %v", err)
+	}
+	c.Second.Enabled = true
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "second channel") {
+		t.Errorf("want a second-channel error, got %v", err)
+	}
+}
+
+// Changing only the second channel must not restart the first, and the reverse.
+func TestRestartPerChannel(t *testing.T) {
+	a := Default()
+	a.Second.Enabled = true
+	b := a
+	b.Second.Channel.FrequencyHz = 424000
+	if RestartNeededFor(a, b, 0) || !RestartNeededFor(a, b, 1) || !RestartNeeded(a, b) {
+		t.Error("a frequency change of the second channel")
+	}
+	b = a
+	b.Channel.FrequencyHz = 424000
+	if !RestartNeededFor(a, b, 0) || RestartNeededFor(a, b, 1) {
+		t.Error("a frequency change of the first channel")
+	}
+	b = a
+	b.Second.Channel.Comment, b.Channel.Name = "note", "name" // live
+	if RestartNeeded(a, b) {
+		t.Error("names and comments are live")
+	}
+	b = a
+	b.Second.Enabled = false
+	if !RestartNeededFor(a, b, 1) || RestartNeededFor(a, b, 0) {
+		t.Error("switching the second channel off")
+	}
+	// while it is off its settings do not matter
+	a.Second.Enabled = false
+	b = a
+	b.Second.Channel.FrequencyHz = 424000
+	if RestartNeeded(a, b) {
+		t.Error("settings of a disabled channel")
 	}
 }

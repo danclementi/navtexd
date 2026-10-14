@@ -45,10 +45,11 @@
       kick();
     };
     window.addEventListener("resize", draw);
+    NX.listen("channel", () => { S.after = 0; S.sweep = null; kick(); draw(); }); // another channel: its own sweeps
   }
 
   async function fetchSweep() {
-    const q = new URLSearchParams({ span: $("sc2-span").value, trig: $("sc2-trig").value === "none" ? "none" : $("sc2-trig").value, pre: "0.1", after: String(S.after), points: "1000" });
+    const q = new URLSearchParams({ span: $("sc2-span").value, trig: $("sc2-trig").value === "none" ? "none" : $("sc2-trig").value, pre: "0.1", after: String(S.after), points: "1000", ch: String(NX.state.sel || 0) });
     try { return await (await fetch("/api/scope?" + q)).json(); } catch (e) { return null; }
   }
 

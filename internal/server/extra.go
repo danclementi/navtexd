@@ -135,7 +135,12 @@ func (s *Server) syslogText(w http.ResponseWriter, r *http.Request, id Identity)
 // Query: span (s), trig (none|rise|fall), pre (fraction before the trigger), after (end of the previous sweep, s),
 // points (maximum points per trace).
 func (s *Server) scope(w http.ResponseWriter, r *http.Request, id Identity) {
-	sc := s.run.Scope()
+	ch, err := rcvOf(r)
+	if err != nil {
+		fail(w, 400, err)
+		return
+	}
+	sc := s.run.Scope(ch)
 	if sc == nil {
 		writeJSON(w, 200, map[string]any{"head": 0})
 		return

@@ -55,6 +55,7 @@ func (s *Server) messages(w http.ResponseWriter, r *http.Request, id Identity) {
 	q := r.URL.Query()
 	f := store.Filter{Text: q.Get("text"), B1: q.Get("b1"), Kind: q.Get("kind"), Newest: q.Get("order") == "newest", Unidentified: q.Get("unid") == "1"}
 	f.Channel, _ = strconv.Atoi(q.Get("freq"))
+	f.Rcv, _ = strconv.Atoi(q.Get("rcv"))
 	f.NavArea, _ = strconv.Atoi(q.Get("navarea"))
 	f.Limit, _ = strconv.Atoi(q.Get("limit"))
 	f.Offset, _ = strconv.Atoi(q.Get("offset"))

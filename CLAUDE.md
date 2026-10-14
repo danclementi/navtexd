@@ -24,6 +24,12 @@ server and a multi-client browser UI, comparable to YaND. Public GPL v3 project.
     `SetTuning()` / `SampleRate()` for the selected source; do not read another source's group. `Config` and `Input` must
     stay comparable (`==`), so lists such as the remembered radios live in their own file, not in the config.
 
+12. Two decoding channels (`config.Channels`): channel 0 uses the top-level `input`, `channel`, `ddc`, `receiver`, `decoder`
+    and `segment` groups, channel 1 the same groups inside `second` (plus `second.enabled`); everything else is shared. Code
+    that decodes works on `cfg.ForChannel(i)`, a single-channel `Config`; change one channel with `cfg.EditChannel(i, ...)`.
+    Anything sent to clients or stored carries its channel as `rcv` (absent = 0). Never use `cfg.Channel` etc. for "the"
+    channel in code that serves both. Design: `docs/SERVER_DESIGN.md` section 33.
+
 ## Layout
 - `cmd/navtexd` server/daemon (main); `cmd/navtex` console decoder; `cmd/navtexvocab` word-list tool.
 - DSP chain: `internal/iq` (sources) → `ddc` → `fsk` → `sitor` → `navtex` (ZCZC..NNNN parser); `pipeline` wires it;
@@ -83,7 +89,8 @@ server and a multi-client browser UI, comparable to YaND. Public GPL v3 project.
 - Connection messages and the server-closed banner: SERVER_DESIGN §30.
 
 ## Out of scope for now
-Multi-channel decoding (several channels from one I/Q stream or radio is planned, not started), installers/services,
+Several channels from one I/Q stream or radio (two channels with separate inputs exist, see rule 12), combining the
+decoded text of two channels, installers/services,
 importing YaND logs, Linux/Raspberry Pi release builds (see `docs/TODO.md`).
 
 ## Working here

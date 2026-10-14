@@ -52,13 +52,13 @@ type Server struct {
 	sent        atomic.Int64 // bytes sent to clients
 	netLast     atomic.Pointer[netMsg]
 	netOnce     sync.Once
-	qSmooth     float64 // smoothed quality for the gauge
-	qAt         time.Time
-	lPeak, lRMS float64 // smoothed input level (dB) for the gauge
-	lAt         time.Time
+	qSmooth     [config.Channels]float64 // smoothed quality for the gauge
+	qAt         [config.Channels]time.Time
+	lPeak, lRMS [config.Channels]float64 // smoothed input level (dB) for the gauge
+	lAt         [config.Channels]time.Time
 
 	mu   sync.Mutex
-	last *meterMsg
+	last [config.Channels]*meterMsg
 	sun  *sunMsg
 }
 
@@ -89,6 +89,7 @@ type meterMsg struct {
 	Offset  float64 `json:"off"`   // carrier offset from the channel, Hz
 	Audio   float64 `json:"audio"` // carrier on the audio axis, Hz
 	CPU     float64 `json:"cpu"`
+	Rcv     int     `json:"rcv,omitempty"` // decoding channel (0 = the first)
 }
 
 type spectrumMsg struct {
@@ -99,6 +100,7 @@ type spectrumMsg struct {
 	Raw     []int16 `json:"raw,omitempty"`
 	Chan    []int16 `json:"chan,omitempty"` // after the channel filter; -3000 = no data
 	FS      float64 `json:"fs"`             // level of a full-scale tone, dB (same units as the spectrum)
+	Rcv     int     `json:"rcv,omitempty"`  // decoding channel (0 = the first)
 }
 
 type sunMsg struct {
@@ -117,6 +119,11 @@ type controlsMsg struct {
 	Source   string  `json:"source"`
 	LineQ    bool    `json:"lineq"`  // show the quality figure on text lines
 	Device   string  `json:"device"` // administrators only (empty for viewers)
+	Rcv      int     `json:"rcv"`    // decoding channel these controls belong to (0 = the first)
+	Enabled  bool    `json:"enabled"`
+	Name     string  `json:"name"`  // the channel's name option, else empty
+	Label    string  `json:"label"` // name, or "ch1" / "ch2"
+	ChanNote string  `json:"note"`  // the channel's comment option
 }
 
 type recordMsg struct {
@@ -140,28 +147,40 @@ type recordMsg struct {
 	Manual    bool    `json:"man"`
 	Method    string  `json:"im"`
 	Lines     int     `json:"lines"`
+	Rcv       int     `json:"rcv,omitempty"` // decoding channel that received it (0 = the first)
 }
 
 // brief is the list / event form of a record; distance and bearing only when withDist.
 func brief(r store.Record, withDist bool) recordMsg {
 	m := recordMsg{ID: r.ID, Version: r.Version, Channel: r.Channel, Received: r.Received.UnixMilli(), End: r.End.UnixMilli(), Kind: r.Kind,
 		B1: r.B1, B2: r.B2, Serial: r.Serial, NavArea: r.NavArea, StationID: r.StationID, Station: r.Station, Quality: float64(r.Quality),
-		Comment: r.Comment, Manual: r.Manual, Method: r.IdentMethod, Lines: len(r.Lines)}
+		Comment: r.Comment, Manual: r.Manual, Method: r.IdentMethod, Lines: len(r.Lines), Rcv: r.Rcv}
 	if withDist {
 		m.Km, m.Bearing = r.DistanceKm, r.BearingDeg
 	}
 	return m
 }
 
-func (s *Server) controls(admin bool) controlsMsg {
-	c := s.run.Config()
+func (s *Server) controls(rcv int, admin bool) controlsMsg {
+	full := s.run.Config()
+	c := full.ForChannel(rcv)
 	pol, _ := c.Decoder.Polarity.MarshalText()
 	m := controlsMsg{Channel: int(c.Channel.FrequencyHz/1000 + 0.5), Polarity: string(pol), UoS: c.Decoder.UnshiftOnSpace, Autotune: c.Autotune(),
-		Carrier: c.ManualCarrierHz(), Comment: c.Operator.Comment, Source: c.Input.Source, LineQ: c.Logging.LineQuality}
+		Carrier: c.ManualCarrierHz(), Comment: c.Operator.Comment, Source: c.Input.Source, LineQ: c.Logging.LineQuality,
+		Rcv: rcv, Enabled: full.ChannelEnabled(rcv), Name: strings.TrimSpace(c.Channel.Name), Label: full.Label(rcv), ChanNote: c.Channel.Comment}
 	if admin {
 		m.Device = c.Input.Device.Name
 	}
 	return m
+}
+
+// chanHello is what a new client is told about one decoding channel.
+type chanHello struct {
+	Controls controlsMsg `json:"controls"`
+	Run      app.State   `json:"run"`
+	Meters   *meterMsg   `json:"meters,omitempty"`
+	Text     []textChunk `json:"text"`
+	Lines    []lineMsg   `json:"lines"`
 }
 
 type hello struct {
@@ -169,12 +188,13 @@ type hello struct {
 	NeedToken bool        `json:"need_token"`
 	Version   string      `json:"version"`
 	Now       int64       `json:"now"`
-	Run       app.State   `json:"run"`
-	Controls  controlsMsg `json:"controls"`
+	Run       app.State   `json:"run"`      // the first channel (see Chans)
+	Controls  controlsMsg `json:"controls"` // "
 	Meters    *meterMsg   `json:"meters,omitempty"`
 	Sun       *sunMsg     `json:"sun,omitempty"`
 	Text      []textChunk `json:"text"`
 	Lines     []lineMsg   `json:"lines"`
+	Chans     []chanHello `json:"chans"` // every decoding channel, the first one included
 	Clients   int         `json:"clients"`
 	Net       *netMsg     `json:"net,omitempty"`
 	Records   int         `json:"records"`
@@ -188,21 +208,26 @@ func (s *Server) hello(id Identity) hello {
 	if id.Role != Admin && !s.run.Config().Operator.Public {
 		sun = nil
 	}
-	return hello{Role: id.Role.String(), NeedToken: id.NeedToken, Version: Version, Now: time.Now().UnixMilli(), Run: s.run.State(),
-		Controls: s.controls(id.Role == Admin), Meters: last, Sun: sun, Text: s.hub.Recent(), Lines: s.hub.Lines(), Clients: s.hub.Clients(), Net: s.netLast.Load(), Records: s.st.Count(), Loc: s.withDist(id)}
+	chans := make([]chanHello, config.Channels)
+	for i := range chans {
+		chans[i] = chanHello{Controls: s.controls(i, id.Role == Admin), Run: s.run.State(i), Meters: last[i], Text: s.hub.Recent(i), Lines: s.hub.Lines(i)}
+	}
+	return hello{Role: id.Role.String(), NeedToken: id.NeedToken, Version: Version, Now: time.Now().UnixMilli(), Run: chans[0].Run,
+		Controls: chans[0].Controls, Meters: last[0], Sun: sun, Text: chans[0].Text, Lines: chans[0].Lines, Chans: chans,
+		Clients: s.hub.Clients(), Net: s.netLast.Load(), Records: s.st.Count(), Loc: s.withDist(id)}
 }
 
 // Hooks returns the runner hooks that feed the clients. Pass them to app.New.
 func (s *Server) Hooks() app.Hooks {
 	return app.Hooks{
 		Frame: func(f app.Frame) {
-			q := s.smoothQuality(f.Quality, f.Time)
-			pk, rm := s.smoothLevel(f.Level.Peak, f.Level.RMS, f.Time)
+			q := s.smoothQuality(f.Rcv, f.Quality, f.Time)
+			pk, rm := s.smoothLevel(f.Rcv, f.Level.Peak, f.Level.RMS, f.Time)
 			m := &meterMsg{T: f.Time.UnixMilli(), Peak: round(pk, 4), RMS: round(rm, 4), Clip: f.Level.Clip, Quality: round(q, 1),
 				Sync: int(f.Sync), Data: f.Data, Have: f.Carrier.Have, Auto: f.Carrier.Autotune, Offset: round(f.Carrier.OffsetHz, 1),
-				Audio: round(f.Carrier.AudioHz, 1), CPU: round(f.CPU, 1)}
+				Audio: round(f.Carrier.AudioHz, 1), CPU: round(f.CPU, 1), Rcv: f.Rcv}
 			s.mu.Lock()
-			s.last = m
+			s.last[f.Rcv] = m
 			s.mu.Unlock()
 			s.hub.Publish("meters", m, true, false)
 			if sp := f.Spectrum; sp != nil {
@@ -214,22 +239,22 @@ func (s *Server) Hooks() app.Hooks {
 				if sp.Channel != nil {
 					ch = dB(sp.Channel)
 				}
-				s.hub.Publish("spectrum", spectrumMsg{sp.StartHz, sp.StepHz, sp.CarrierHz, dB(sp.Filtered), raw, ch, round(sp.FullScaleDB, 1)}, true, false)
+				s.hub.Publish("spectrum", spectrumMsg{sp.StartHz, sp.StepHz, sp.CarrierHz, dB(sp.Filtered), raw, ch, round(sp.FullScaleDB, 1), f.Rcv}, true, false)
 			}
 		},
-		Text: func(text string, t time.Time) {
-			s.hub.AddText(t, text)
-			s.hub.Publish("text", textChunk{t.UnixMilli(), text}, false, false)
+		Text: func(rcv int, text string, t time.Time) {
+			s.hub.AddText(rcv, t, text)
+			s.hub.Publish("text", textChunk{t.UnixMilli(), text, rcv}, false, false)
 		},
-		Line: func(text string, q float64, t time.Time) {
-			l := lineMsg{t.UnixMilli(), round(q, 0), text}
+		Line: func(rcv int, text string, q float64, t time.Time) {
+			l := lineMsg{t.UnixMilli(), round(q, 0), text, rcv}
 			s.hub.AddLine(l)
 			s.hub.Publish("line", l, false, false)
 		},
 		Record: func(r store.Record) {
 			m := brief(r, false)
 			m.Action = "new"
-			s.hub.ClearLines()
+			s.hub.ClearLines(r.Rcv)
 			s.hub.Publish("record", m, false, false)
 		},
 		Log:   func(e store.SyslogEntry) { s.hub.Publish("log", e, false, true) },
@@ -598,7 +623,31 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request, id Identity
 
 // publishControls tells every client the new control settings (the device name is left out; administrators read it
 // from the settings).
-func (s *Server) publishControls() { s.hub.Publish("controls", s.controls(false), false, false) }
+func (s *Server) publishControls() {
+	for i := 0; i < config.Channels; i++ {
+		s.hub.Publish("controls", s.controls(i, false), false, false)
+	}
+}
+
+// chTag prefixes a system-log line about channel ch once the second channel is on.
+func (s *Server) chTag(ch int) string {
+	if c := s.run.Config(); c.Second.Enabled {
+		return "[" + c.Label(ch) + "] "
+	}
+	return ""
+}
+
+// rcvOf reads the decoding channel a request is about (query "ch", 0 or 1; default 0).
+func rcvOf(r *http.Request) (int, error) {
+	switch v := r.URL.Query().Get("ch"); v {
+	case "", "0":
+		return 0, nil
+	case "1":
+		return 1, nil
+	default:
+		return 0, fmt.Errorf("ch must be 0 or 1, not %q", v)
+	}
+}
 
 func (s *Server) devices(w http.ResponseWriter, r *http.Request, id Identity) {
 	devs, err := capture.List()
@@ -618,7 +667,12 @@ func (s *Server) devices(w http.ResponseWriter, r *http.Request, id Identity) {
 
 // input says where the samples come from now (administrators only; the broadcast controls leave it out).
 func (s *Server) input(w http.ResponseWriter, r *http.Request, id Identity) {
-	c := s.run.Config().Input
+	ch, err := rcvOf(r)
+	if err != nil {
+		fail(w, 400, err)
+		return
+	}
+	c := s.run.ChanConfig(ch).Input
 	writeJSON(w, 200, map[string]string{"source": c.Source, "device": c.Device.Name, "radio": c.HPSDR.Address})
 }
 
@@ -652,9 +706,14 @@ func (s *Server) control(w http.ResponseWriter, r *http.Request, id Identity) {
 	asString := func() (string, error) { var t string; err := json.Unmarshal(body.Value, &t); return t, err }
 	var err error
 	name := r.PathValue("name")
+	ch, cerr := rcvOf(r)
+	if cerr != nil {
+		fail(w, 400, cerr)
+		return
+	}
 	switch name {
 	case "resync":
-		if !s.run.Resync() {
+		if !s.run.Resync(ch) {
 			err = errors.New("the channel is not running")
 		}
 	case "polarity":
@@ -662,18 +721,18 @@ func (s *Server) control(w http.ResponseWriter, r *http.Request, id Identity) {
 		var p sitor.Polarity
 		if t, err = asString(); err == nil {
 			if err = p.UnmarshalText([]byte(t)); err == nil {
-				err = s.run.SetPolarity(p)
+				err = s.run.SetPolarity(ch, p)
 			}
 		}
 	case "uos":
 		var b bool
 		if b, err = asBool(); err == nil {
-			err = s.run.SetUnshiftOnSpace(b)
+			err = s.run.SetUnshiftOnSpace(ch, b)
 		}
 	case "autotune":
 		var b bool
 		if b, err = asBool(); err == nil {
-			err = s.run.SetAutotune(b)
+			err = s.run.SetAutotune(ch, b)
 		}
 	case "carrier":
 		var f float64
@@ -681,7 +740,7 @@ func (s *Server) control(w http.ResponseWriter, r *http.Request, id Identity) {
 			if f < 200 || f > 2600 {
 				err = errors.New("carrier must be between 200 and 2600 Hz")
 			} else {
-				err = s.run.SetCarrier(f)
+				err = s.run.SetCarrier(ch, f)
 			}
 		}
 	case "comment":
@@ -696,9 +755,12 @@ func (s *Server) control(w http.ResponseWriter, r *http.Request, id Identity) {
 				err = errors.New("frequency must be 518, 490 or 424 (kHz)")
 			} else {
 				var restart bool
-				restart, err = s.run.Modify(func(c *config.Config) error { c.Channel.FrequencyHz = f * 1000; return nil })
+				restart, err = s.run.Modify(func(c *config.Config) error {
+					c.EditChannel(ch, func(d *config.Config) { d.Channel.FrequencyHz = f * 1000 })
+					return nil
+				})
 				if err == nil && restart {
-					s.run.Log("info", fmt.Sprintf("channel changed to %.0f kHz", f))
+					s.run.Log("info", fmt.Sprintf("%schannel changed to %.0f kHz", s.chTag(ch), f))
 					s.run.Restart()
 				}
 			}
@@ -707,9 +769,12 @@ func (s *Server) control(w http.ResponseWriter, r *http.Request, id Identity) {
 		var t string
 		if t, err = asString(); err == nil {
 			var restart bool
-			restart, err = s.run.Modify(func(c *config.Config) error { c.Input.Source, c.Input.Device.Name = "device", t; return nil })
+			restart, err = s.run.Modify(func(c *config.Config) error {
+				c.EditChannel(ch, func(d *config.Config) { d.Input.Source, d.Input.Device.Name = "device", t })
+				return nil
+			})
 			if err == nil && restart {
-				s.run.Log("info", "audio input changed to "+t)
+				s.run.Log("info", s.chTag(ch)+"audio input changed to "+t)
 				s.run.Restart()
 			}
 		}
@@ -718,12 +783,15 @@ func (s *Server) control(w http.ResponseWriter, r *http.Request, id Identity) {
 		if t, err = asString(); err == nil {
 			t = strings.TrimSpace(t)
 			var restart bool
-			restart, err = s.run.Modify(func(c *config.Config) error { c.Input.Source, c.Input.HPSDR.Address = "hpsdr", t; return nil })
+			restart, err = s.run.Modify(func(c *config.Config) error {
+				c.EditChannel(ch, func(d *config.Config) { d.Input.Source, d.Input.HPSDR.Address = "hpsdr", t })
+				return nil
+			})
 			if err == nil && restart {
 				if t == "" {
 					t = "(search the network)"
 				}
-				s.run.Log("info", "input changed to radio "+t)
+				s.run.Log("info", s.chTag(ch)+"input changed to radio "+t)
 				s.run.Restart()
 			}
 		}
@@ -792,23 +860,23 @@ func (s *Server) netLoop() {
 }
 
 // smoothQuality is the first-order low-pass of the quality gauge (time constant meters.quality_display_tau_s).
-func (s *Server) smoothQuality(q float64, t time.Time) float64 {
+func (s *Server) smoothQuality(ch int, q float64, t time.Time) float64 {
 	tau := s.run.Config().Meters.QualityTauS
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	dt := t.Sub(s.qAt).Seconds()
-	if tau <= 0 || s.qAt.IsZero() || dt <= 0 || dt > 10*tau+5 {
-		s.qSmooth = q
+	dt := t.Sub(s.qAt[ch]).Seconds()
+	if tau <= 0 || s.qAt[ch].IsZero() || dt <= 0 || dt > 10*tau+5 {
+		s.qSmooth[ch] = q
 	} else {
-		s.qSmooth += (q - s.qSmooth) * (1 - math.Exp(-dt/tau))
+		s.qSmooth[ch] += (q - s.qSmooth[ch]) * (1 - math.Exp(-dt/tau))
 	}
-	s.qAt = t
-	return s.qSmooth
+	s.qAt[ch] = t
+	return s.qSmooth[ch]
 }
 
 // smoothLevel is the first-order low-pass of the input level gauge, applied to the level in dB
 // (time constant meters.level_display_tau_s). Peak and RMS are linear amplitudes in and out.
-func (s *Server) smoothLevel(peak, rms float64, t time.Time) (float64, float64) {
+func (s *Server) smoothLevel(ch int, peak, rms float64, t time.Time) (float64, float64) {
 	tau := s.run.Config().Meters.LevelTauS
 	toDB := func(v float64) float64 {
 		if v < 1e-5 {
@@ -818,18 +886,18 @@ func (s *Server) smoothLevel(peak, rms float64, t time.Time) (float64, float64) 
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	dt := t.Sub(s.lAt).Seconds()
+	dt := t.Sub(s.lAt[ch]).Seconds()
 	p, r := toDB(peak), toDB(rms)
-	if tau <= 0 || s.lAt.IsZero() || dt <= 0 || dt > 10*tau+5 {
-		s.lPeak, s.lRMS = p, r
+	if tau <= 0 || s.lAt[ch].IsZero() || dt <= 0 || dt > 10*tau+5 {
+		s.lPeak[ch], s.lRMS[ch] = p, r
 	} else {
 		a := 1 - math.Exp(-dt/tau)
-		s.lPeak += (p - s.lPeak) * a
-		s.lRMS += (r - s.lRMS) * a
+		s.lPeak[ch] += (p - s.lPeak[ch]) * a
+		s.lRMS[ch] += (r - s.lRMS[ch]) * a
 	}
-	s.lAt = t
+	s.lAt[ch] = t
 	if peak <= 0 {
 		return 0, 0
 	}
-	return math.Pow(10, s.lPeak/20), math.Pow(10, s.lRMS/20)
+	return math.Pow(10, s.lPeak[ch]/20), math.Pow(10, s.lRMS[ch]/20)
 }

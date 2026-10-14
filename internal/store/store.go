@@ -44,7 +44,8 @@ type Line struct {
 type Record struct {
 	ID          int64       `json:"id"`
 	Version     int         `json:"v"`
-	Channel     int         `json:"ch"` // kHz
+	Channel     int         `json:"ch"`            // kHz
+	Rcv         int         `json:"rcv,omitempty"` // decoding channel (receiver) that received it: 0 = the first, 1 = the second
 	Received    time.Time   `json:"rx"`
 	End         time.Time   `json:"end"`
 	Kind        string      `json:"kind"` // message, incomplete, fragment
@@ -125,6 +126,7 @@ func (r Record) Text() string {
 // Filter selects records. Zero values mean "any".
 type Filter struct {
 	Channel      int
+	Rcv          int    // 0 = any decoding channel, 1 = the first, 2 = the second
 	NavArea      int    // 0 = any
 	B1           string // "" or "*" = any
 	Text         string // case-insensitive substring of the text
@@ -141,6 +143,8 @@ type Filter struct {
 func (f Filter) match(r *Record) bool {
 	switch {
 	case f.Channel != 0 && r.Channel != f.Channel:
+		return false
+	case f.Rcv != 0 && r.Rcv != f.Rcv-1:
 		return false
 	case f.NavArea != 0 && r.NavArea != f.NavArea:
 		return false

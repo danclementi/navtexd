@@ -23,7 +23,12 @@ func (s *Server) clipRoutes(mux *http.ServeMux, tunnel bool) {
 }
 
 func (s *Server) clipSave(w http.ResponseWriter, r *http.Request, id Identity) {
-	wait, err := s.run.SaveClip()
+	ch, err := rcvOf(r)
+	if err != nil {
+		fail(w, 400, err)
+		return
+	}
+	wait, err := s.run.SaveClip(ch)
 	if err != nil {
 		fail(w, 409, err)
 		return

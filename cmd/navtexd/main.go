@@ -320,6 +320,11 @@ func displayAddr(a string) string {
 
 func apply(r *app.Runner, line string) {
 	f := strings.Fields(line)
+	ch := 0 // a leading "ch2" addresses the second channel
+	if len(f) > 0 && (strings.EqualFold(f[0], "ch1") || strings.EqualFold(f[0], "ch2")) {
+		ch = int(f[0][2] - '1')
+		f = f[1:]
+	}
 	if len(f) == 0 {
 		return
 	}
@@ -329,14 +334,14 @@ func apply(r *app.Runner, line string) {
 	}
 	switch strings.ToLower(f[0]) {
 	case "resync":
-		r.Resync()
+		r.Resync(ch)
 	case "autotune":
-		r.SetAutotune(arg != "off")
+		r.SetAutotune(ch, arg != "off")
 	case "uos":
-		r.SetUnshiftOnSpace(arg != "off")
+		r.SetUnshiftOnSpace(ch, arg != "off")
 	case "carrier":
 		if hz, err := strconv.ParseFloat(arg, 64); err == nil {
-			r.SetCarrier(hz)
+			r.SetCarrier(ch, hz)
 		} else {
 			fmt.Fprintln(os.Stderr, "carrier HZ: not a number")
 		}
@@ -346,9 +351,9 @@ func apply(r *app.Runner, line string) {
 			fmt.Fprintln(os.Stderr, err)
 			return
 		}
-		r.SetPolarity(p)
+		r.SetPolarity(ch, p)
 	default:
-		fmt.Fprintln(os.Stderr, "commands: resync | autotune on|off | carrier HZ | polarity auto|normal|inverted | uos on|off")
+		fmt.Fprintln(os.Stderr, "commands: [ch1|ch2] resync | autotune on|off | carrier HZ | polarity auto|normal|inverted | uos on|off")
 	}
 }
 

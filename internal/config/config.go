@@ -37,6 +37,65 @@ type Config struct {
 	Server      Server             `json:"server"`
 	Clips       Clips              `json:"clips"`
 	Output      Output             `json:"output"`
+	Second      Second             `json:"second"`
+}
+
+// Channels is the number of decoding channels. Channel 0 uses the top-level input, channel, ddc, receiver, decoder and
+// segment groups; channel 1 uses the same groups inside "second". Everything else (operator, logging, autocorrection,
+// meters, server, clips, output) is shared.
+const Channels = 2
+
+// Second holds the options of the second decoding channel: the same groups as the top level, so that it has its own
+// input, frequency, filter, blanker, timing, framing and decoder settings.
+type Second struct {
+	Enabled  bool               `json:"enabled" doc:"Decode a second channel at the same time, with its own input and settings (the groups below)"`
+	Input    Input              `json:"input"`
+	Channel  Channel            `json:"channel"`
+	DDC      DDC                `json:"ddc"`
+	Receiver fsk.ReceiverConfig `json:"receiver"`
+	Decoder  sitor.Config       `json:"decoder"`
+	Segment  segment.Config     `json:"segment"`
+}
+
+// ForChannel returns the configuration of one decoding channel as a single-channel configuration: channel 1's groups
+// stand in for the top-level ones, and the shared options are kept. Everything that decodes (source, engine, runner)
+// works on such a configuration.
+func (c Config) ForChannel(ch int) Config {
+	if ch == 1 {
+		s := c.Second
+		c.Input, c.Channel, c.DDC, c.Receiver, c.Decoder, c.Segment = s.Input, s.Channel, s.DDC, s.Receiver, s.Decoder, s.Segment
+	}
+	c.Second = Second{}
+	return c
+}
+
+// SetChannel stores the per-channel groups of d (a configuration from ForChannel, possibly changed) back as channel ch.
+func (c *Config) SetChannel(ch int, d Config) {
+	if ch == 1 {
+		c.Second.Input, c.Second.Channel, c.Second.DDC, c.Second.Receiver, c.Second.Decoder, c.Second.Segment =
+			d.Input, d.Channel, d.DDC, d.Receiver, d.Decoder, d.Segment
+		return
+	}
+	c.Input, c.Channel, c.DDC, c.Receiver, c.Decoder, c.Segment = d.Input, d.Channel, d.DDC, d.Receiver, d.Decoder, d.Segment
+}
+
+// EditChannel changes one channel through f, which sees a single-channel configuration (see ForChannel).
+func (c *Config) EditChannel(ch int, f func(*Config)) {
+	d := c.ForChannel(ch)
+	f(&d)
+	c.SetChannel(ch, d)
+}
+
+// ChannelEnabled reports whether channel ch is decoded (channel 0 always is).
+func (c Config) ChannelEnabled(ch int) bool { return ch == 0 || (ch == 1 && c.Second.Enabled) }
+
+// Label is a short name for channel ch: its name option if set, else "Channel 1" / "Channel 2".
+func (c Config) Label(ch int) string {
+	d := c.ForChannel(ch)
+	if n := strings.TrimSpace(d.Channel.Name); n != "" {
+		return n
+	}
+	return fmt.Sprintf("Channel %d", ch+1)
 }
 
 // Clips controls the "Save audio clip" function: the last seconds of input are kept in memory.
@@ -219,6 +278,8 @@ func (c Config) SampleRate() float64 {
 // Channel selects the NAVTEX frequency to decode.
 type Channel struct {
 	FrequencyHz float64 `json:"frequency_hz" unit:"Hz" doc:"RF frequency of the NAVTEX channel: 518000 (international), 490000 (local language) or 424000 (Japan)"`
+	Name        string  `json:"name" doc:"A short name for this channel, shown on its chip in the header and in the system log (e.g. the antenna or receiver)"`
+	Comment     string  `json:"comment" doc:"A note about this channel (receiver, antenna, location ...); it is stored with every record received on it"`
 }
 
 // DDC controls the digital down-converter.
@@ -241,7 +302,7 @@ func Default() Config {
 			HPSDR:  HPSDRInput{SampleRateHz: 48000, Autotune: true, ManualCarrierHz: HPSDRCarrierHz},
 			Stdin:  StdinInput{SampleRateHz: 48000, Channels: 1, PCMFormat: "s16le", Autotune: true, ManualCarrierHz: DefaultCarrierHz},
 			File:   FileInput{Autotune: true, ManualCarrierHz: DefaultCarrierHz}},
-		Channel:     Channel{FrequencyHz: 518000},
+		Channel:     Channel{FrequencyHz: 518000, Name: "Channel 1"},
 		DDC:         DDC{TargetRateHz: 4000},
 		Receiver:    fsk.DefaultReceiverConfig(0),
 		Decoder:     sitor.DefaultConfig(),
@@ -253,6 +314,18 @@ func Default() Config {
 		Clips:   Clips{BeforeS: 60, AfterS: 10, Dir: "clips"},
 		Server:  Server{Listen: "127.0.0.1:8080", OpenBrowser: true},
 		Output:  Output{Format: "text", IncompleteMessages: true},
+		Second: Second{
+			Input: Input{Source: "device", BlockSize: 16384, WatchdogS: 10,
+				Device: DeviceInput{SampleRateHz: 48000, Channels: 1, Autotune: true, ManualCarrierHz: DefaultCarrierHz},
+				HPSDR:  HPSDRInput{SampleRateHz: 48000, Autotune: true, ManualCarrierHz: HPSDRCarrierHz},
+				Stdin:  StdinInput{SampleRateHz: 48000, Channels: 1, PCMFormat: "s16le", Autotune: true, ManualCarrierHz: DefaultCarrierHz},
+				File:   FileInput{Autotune: true, ManualCarrierHz: DefaultCarrierHz}},
+			Channel:  Channel{FrequencyHz: 490000, Name: "Channel 2"},
+			DDC:      DDC{TargetRateHz: 4000},
+			Receiver: fsk.DefaultReceiverConfig(0),
+			Decoder:  sitor.DefaultConfig(),
+			Segment:  segment.DefaultConfig(),
+		},
 	}
 }
 
@@ -339,6 +412,11 @@ func (c Config) Validate() error {
 	if d.MinRun < 2 || d.MaxBad < 1 || d.VoteAgree < 1 || d.VoteFactor < 1 || d.ShiftHz <= 0 {
 		bad("decoder settings out of range")
 	}
+	if c.Second.Enabled {
+		if err := c.ForChannel(1).Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("second channel: %w", err))
+		}
+	}
 	return errors.Join(errs...)
 }
 
@@ -377,6 +455,11 @@ func Load(path string) (Config, error) {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&c); err != nil {
 		return Config{}, fmt.Errorf("%s: %w", path, err)
+	}
+	for ch := 0; ch < Channels; ch++ { // a channel without a name (older settings files) gets the default one
+		if strings.TrimSpace(c.ForChannel(ch).Channel.Name) == "" {
+			c.EditChannel(ch, func(d *Config) { d.Channel.Name = fmt.Sprintf("Channel %d", ch+1) })
+		}
 	}
 	if c.Server.ViewerHints { // the option moved from the network settings to the station settings
 		c.Operator.Public, c.Server.ViewerHints = true, false
@@ -514,7 +597,7 @@ const HPSDRCarrierHz = 3000.0
 // liveFields lists the options (paths, or prefixes ending in ".") that can be applied to a running channel; see
 // RestartNeeded. The tests check that this list and RestartNeeded agree for every option.
 var liveFields = []string{
-	"operator.", "logging.", "autocorrect.", "meters.", "segment.", "decoder.", "input.device.autotune", "input.device.manual_carrier_hz", "input.hpsdr.autotune",
+	"operator.", "logging.", "autocorrect.", "meters.", "segment.", "channel.name", "channel.comment", "decoder.", "input.device.autotune", "input.device.manual_carrier_hz", "input.hpsdr.autotune",
 	"input.hpsdr.manual_carrier_hz", "input.stdin.autotune", "input.stdin.manual_carrier_hz", "input.file.autotune", "input.file.manual_carrier_hz",
 	"receiver.demod.presence_db", "receiver.demod.presence_offset_hz", "receiver.demod.timing_gain",
 	"receiver.demod.timing_confidence", "receiver.demod.timing_lost_blocks",
@@ -525,6 +608,9 @@ var liveFields = []string{
 // blanker on or off is the one exception inside a live option; RestartNeeded decides that). Server options are not
 // live either: they need navtexd restarted.
 func IsLive(path string) bool {
+	if p, ok := strings.CutPrefix(path, "second."); ok { // the second channel has the same options
+		return p != "enabled" && IsLive(p)
+	}
 	if path == "decoder.shift_hz" {
 		return false
 	}
@@ -544,8 +630,27 @@ func IsLive(path string) bool {
 // the down-converter, the baud rate, the tone spacing, the channel filter and timing block length, and switching the
 // impulse blanker on or off.
 func RestartNeeded(a, b Config) bool {
+	return RestartNeededFor(a, b, 0) || RestartNeededFor(a, b, 1)
+}
+
+// RestartNeededFor is RestartNeeded for one channel. Switching the second channel on or off needs its restart (it
+// starts or stops); while it is off nothing in it matters.
+func RestartNeededFor(a, b Config, ch int) bool {
+	if ch == 1 {
+		if a.Second.Enabled != b.Second.Enabled {
+			return true
+		}
+		if !b.Second.Enabled {
+			return false
+		}
+	}
+	return restartNeededSingle(a.ForChannel(ch), b.ForChannel(ch))
+}
+
+func restartNeededSingle(a, b Config) bool {
 	neutral := func(c *Config) {
 		c.Operator, c.Server, c.Meters, c.Logging, c.Segment = Operator{}, Server{}, Meters{}, Logging{}, segment.Config{}
+		c.Channel.Name, c.Channel.Comment = "", ""
 		c.Autocorrect = Autocorrect{}
 		// only the selected source's options matter, and of those the carrier options are live
 		t := c.Tuning()

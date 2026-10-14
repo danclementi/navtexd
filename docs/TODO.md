@@ -11,6 +11,17 @@ A running list. Move finished items to the bottom or delete them.
   it stalls (needs a way to unblock a read that never returns).
 - **Retest** the packet-loss burst reporting and the `swap_iq` note on the other radios when they are available.
 
+## Next (two channels)
+Backend and options exist (`second.*`, SERVER_DESIGN section 33); still to do:
+- **UI left:** channel badge and filter in Report, Database and Statistics (the Log tab and Status recent records have them);
+  Statistics follows channel 0 only; a Channels tab that is friendlier than the generic option groups (input, decoder settings
+  of channel 2 are plain option groups for now).
+- **Synchronized clips:** one click saves both channels' audio clips for the same time span (the two inputs have their
+  own clocks and buffers, so start times must be aligned and recorded in each clip's .json).
+- **Quality history** per channel (Statistics shows channel 0 only), clips named per channel, per-channel log file option.
+- **Same frequency on both channels:** records show up twice in the shared tabs until a combiner exists (see the combining
+  experiment: only separate receivers or antennas have independent errors worth combining).
+
 ## Next (radio input) - ON HOLD
 Wait until we have an approach for several receivers (or several audio inputs) in the GUI.
 
@@ -26,7 +37,7 @@ Wait until we have an approach for several receivers (or several audio inputs) i
 - One-line Linux installer script (download the right release binary for the machine, check its SHA-256, create a systemd
   unit; no Docker): needs Linux arm64 / armv7 release builds first. Raspberry Pi 3 / 4 section in the README; try
   `parec` against a virtual sink, and fall back to `arecord` if `parec` fails.
-- Multi-channel decoding (490 and 518 kHz in one program).
+- Several channels from one wide I/Q stream (490 and 518 kHz from one radio); needs a shared input and a DDC per channel.
 - Packaging: Windows service, systemd unit, installer; code signing against SmartScreen warnings.
 - Linux build and test.
 - Decoder quality: indicator for how well the DX and RX copies of each character agree.
