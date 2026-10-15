@@ -109,24 +109,11 @@
     <div class="specwrap"><canvas id="spec"></canvas><div id="spec-scale" class="seg" title="Vertical scale of the spectrum"><button type="button" data-sc="log">LOG</button><button type="button" data-sc="lin">LIN</button></div></div>
   </section>
   <section id="tab-log" hidden>
-    <div class="filters" id="filters">
-      <div class="frow">
-        <label class="field">Frequency <select id="f-freq"><option value="">both</option><option value="518">518</option><option value="490">490</option><option value="424">424</option></select></label>
-        <label class="field" id="f-rcv-wrap" hidden>Channel <select id="f-rcv"><option value="">both</option><option value="1">1</option><option value="2">2</option></select></label>
-        <label class="field">NAVAREA <select id="f-area"><option value="">ALL</option></select></label>
-        <label class="field">ID letter <select id="f-b1"><option value="">ALL</option></select></label>
-        <label class="field">Kind <select id="f-kind"><option value="">all</option><option value="message">message</option><option value="incomplete">incomplete</option><option value="fragment">fragment</option></select></label>
-        <label class="field">From <input id="f-from" type="date"></label>
-        <label class="field">To <input id="f-to" type="date"></label>
-        <span class="field" id="f-km-wrap">Distance <input id="f-kmin" type="number" min="0" step="any" placeholder="0" title="Minimum distance (km)"> to <input id="f-kmax" type="number" min="0" step="any" placeholder="&#8734;" title="Maximum distance (km); empty = no limit"> km</span>
-        <label class="check"><input id="f-unid" type="checkbox"> UNID only</label>
-      </div>
-      <div class="frow">
-        <label class="field grow">Body text <input id="f-text" type="text" placeholder="search the message text"></label>
-        <span class="fsep"></span>
-        <button id="f-apply" title="Apply the filter (Enter in any field does the same)">Apply</button><button id="f-clear">Clear all</button>
-        <span class="filtind" id="f-ind" title="A filter is applied: only matching records are listed"><i></i><b>FILTER ON</b><span id="f-stat" class="small"></span></span>
-      </div>
+    <div class="fbar" id="filters">
+      <label class="check fswitch" title="Switch the filter on or off; its settings are kept"><input id="f-on" type="checkbox" checked> Filter</label>
+      <button id="f-edit" type="button" title="Choose what the list shows">Edit&hellip;</button>
+      <span class="fsum" id="f-sum"></span>
+      <span class="filtind" id="f-ind" title="A filter is applied: only matching records are listed"><i></i><b>FILTER ON</b><span id="f-stat" class="small"></span></span>
     </div>
     <div class="row lognav">
       <span>Records: <b id="n-total">0</b> <span id="n-all" class="small"></span></span>
@@ -294,6 +281,30 @@
     <span class="grow"></span><span id="re-msg" class="small"></span>
     <button id="re-cancel" type="button">Cancel</button>
     <button id="re-accept" type="button" class="primary" title="Keep the edited text as the report text">Accept</button>
+  </div>
+</dialog>
+<dialog id="f-dlg" aria-label="Log filter">
+  <div class="dlghead"><b>Filter the log</b></div>
+  <div class="fform">
+    <div class="fcol fleft">
+      <label class="field">Frequency <select id="f-freq"><option value="">both</option><option value="518">518</option><option value="490">490</option><option value="424">424</option></select></label>
+      <label class="field" id="f-rcv-wrap" hidden>Channel <select id="f-rcv"><option value="">both</option><option value="1">1</option><option value="2">2</option></select></label>
+      <label class="field">NAVAREA <select id="f-area"><option value="">ALL</option></select></label>
+      <label class="field">ID letter <select id="f-b1"><option value="">ALL</option></select></label>
+      <label class="field">Kind <select id="f-kind"><option value="">all</option><option value="message">message</option><option value="incomplete">incomplete</option><option value="fragment">fragment</option></select></label>
+    </div>
+    <div class="fcol fright">
+      <div class="frowd"><label class="field">From <input id="f-from" type="date"></label> <label class="field">To <input id="f-to" type="date"></label></div>
+      <span class="field" id="f-km-wrap">Distance <input id="f-kmin" type="number" min="0" step="any" placeholder="0" title="Minimum distance (km)"> to <input id="f-kmax" type="number" min="0" step="any" placeholder="&#8734;" title="Maximum distance (km); empty = no limit"> km</span>
+      <label class="check"><input id="f-unid" type="checkbox"> UNID only</label>
+      <label class="field grow">Body text <input id="f-text" type="text" placeholder="search the message text"></label>
+    </div>
+  </div>
+  <div class="dlgfoot">
+    <button id="f-clear" type="button" title="Empty every field">Reset</button>
+    <span class="grow"></span>
+    <button id="f-cancel" type="button">Cancel</button>
+    <button id="f-apply" type="button" title="Apply the filter (Enter in a field does the same)">Apply</button>
   </div>
 </dialog>
 <dialog id="log-dlg" aria-label="Log record">

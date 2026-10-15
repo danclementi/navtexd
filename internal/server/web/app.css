@@ -1,4 +1,5 @@
 :root {
+  color-scheme: light;
   --bg: #f4f5f7; --panel: #ffffff; --ink: #1c2330; --dim: #667085; --line: #d0d5dd;
   --accent: #2456c5; --good: #1f9d55; --warn: #d9a300; --bad: #d64545;
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -6,6 +7,7 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
+    color-scheme: dark; /* native controls (date picker icon, drop-downs, scrollbars) follow the theme */
     --bg: #12161d; --panel: #1a2029; --ink: #e4e8ee; --dim: #8a94a6; --line: #313a48; --accent: #6ea0ff;
   }
 }
@@ -451,3 +453,25 @@ fieldset.specgrp { flex: 1 1 200px; min-width: 150px; padding: 4px 8px 6px; flex
 .specwrap2 canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; border-radius: 4px; background: var(--spec-bg); }
 .chb { display: inline-block; margin-left: 4px; padding: 0 5px; border-radius: 8px; font-size: 10px; line-height: 14px; background: color-mix(in srgb, var(--accent, #2a6fdb) 22%, transparent); vertical-align: 1px; }
 .chtag { font-weight: 600; color: var(--accent); text-transform: none; letter-spacing: 0; }
+
+/* ---- Log filter: one line (switch, Edit, summary) and a pop-up for the settings ---- */
+.fbar { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; padding: 3px 6px; border-radius: 4px; }
+.fbar.active { border-left: 4px solid var(--warn); background: color-mix(in srgb, var(--warn) 9%, transparent); }
+.fswitch { font-weight: 600; white-space: nowrap; }
+.fsum { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.fsum.off { color: var(--dim); }
+dialog#f-dlg { width: min(720px, 94vw); padding: 0; border: 2px solid var(--tabline); border-radius: 8px; background: var(--panel); color: var(--ink); }
+dialog#f-dlg::backdrop { background: rgba(0, 0, 0, .45); }
+#f-dlg .fform { display: grid; grid-template-columns: max-content 1fr; gap: 14px 32px; padding: 16px 20px; }
+#f-dlg .fcol { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+#f-dlg .fleft .field { display: grid; grid-template-columns: 84px 110px; align-items: center; }
+#f-dlg .fleft .field[hidden] { display: none; }
+#f-dlg .frowd { display: flex; align-items: center; gap: 14px; }
+#f-dlg .fright .field { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+#f-dlg .fright .field.grow { gap: 8px; }
+#f-dlg .fright .field.grow input { flex: 1 1 auto; }
+#f-dlg .fright #f-km-wrap input[type=number] { width: 80px; }
+#f-dlg .fform select, #f-dlg .fform input[type=date], #f-dlg .fform input[type=number], #f-dlg .fform input[type=text] { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; min-width: 0; }
+#f-dlg .fform .check { font-size: 13px; color: var(--ink); }
+#f-dlg .dlgfoot { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--line); }
+#f-dlg .fform .field { white-space: nowrap; }

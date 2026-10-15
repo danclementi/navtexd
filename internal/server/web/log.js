@@ -15,7 +15,7 @@
     const p = new URLSearchParams();
     for (const k of ids) { const v = $("f-" + k).value.trim(); if (v) p.set(k === "freq" ? "freq" : k === "area" ? "navarea" : k === "kmin" ? "minkm" : k === "kmax" ? "maxkm" : k, v); }
     if ($("f-unid").checked) p.set("unid", "1");
-    return p;
+    return $("f-on").checked ? p : new URLSearchParams(); // switched off: the settings stay in the boxes but nothing is filtered
   }
   const filterOn = () => L.q !== ""; // the filter that is applied (not what is typed in the boxes)
   const newestFirst = () => $("n-order").value === "newest";
@@ -390,21 +390,48 @@
   $("n-latest").onclick = () => { jumpLatest(); if (L.total) selectIndex(newestFirst() ? 0 : L.total - 1); };
   $("n-goto").onclick = gotoDate;
   $("n-date").onkeydown = (e) => { if (e.key === "Enter") gotoDate(); };
-  $("f-apply").onclick = () => reload();
-  $("f-clear").onclick = () => { for (const k of ids) $("f-" + k).value = ""; $("f-unid").checked = false; reload(); };
+  // the filter is edited in a pop-up: Apply (or Enter) uses the settings, Cancel (or Esc) puts the old ones back, Reset empties the boxes
+  const fdlg = $("f-dlg");
+  const snap = () => ({ v: ids.map((k) => $("f-" + k).value), u: $("f-unid").checked });
+  let before = snap();
+  const restore = (s) => { ids.forEach((k, i) => { $("f-" + k).value = s.v[i]; }); $("f-unid").checked = s.u; };
+  const applyDlg = () => { if (!$("f-on").checked && summaryText(true)) $("f-on").checked = true; fdlg.close(); reload(); indicate(); };
+  $("f-edit").onclick = () => { before = snap(); fdlg.showModal(); };
+  fdlg.addEventListener("cancel", (e) => { e.preventDefault(); $("f-cancel").click(); });
+  $("f-cancel").onclick = () => { restore(before); fdlg.close(); indicate(); };
+  $("f-apply").onclick = applyDlg;
+  $("f-on").onchange = () => { reload().then(indicate); };
+  $("f-clear").onclick = () => { for (const k of ids) $("f-" + k).value = ""; $("f-unid").checked = false; indicate(); };
+  // what the filter boxes say, in one line (also used when the filter is switched off)
+  function summaryText() {
+    const v = (k) => $("f-" + k).value.trim(), parts = [];
+    if (v("freq")) parts.push("Frequency " + v("freq"));
+    if (v("rcv")) { const c = NX.state.chans[Number(v("rcv")) - 1], n = c && c.controls && (c.controls.label || c.controls.name); parts.push(n && n !== "Channel " + v("rcv") ? "Channel " + v("rcv") + " (" + n + ")" : "Channel " + v("rcv")); }
+    if (v("area")) parts.push("NAVAREA " + v("area"));
+    if (v("b1")) parts.push("ID letter " + v("b1"));
+    if (v("kind")) parts.push("Kind " + v("kind"));
+    if (v("from") || v("to")) parts.push("Dates " + (v("from") || "\u2026") + " to " + (v("to") || "\u2026"));
+    if (v("kmin") || v("kmax")) parts.push("Distance " + (v("kmin") || "0") + "\u2013" + (v("kmax") || "\u221e") + " km");
+    if ($("f-unid").checked) parts.push("UNID only");
+    if (v("text")) parts.push("Body text \u201c" + v("text") + "\u201d");
+    return parts.join(" \u00b7 ");
+  }
   for (const k of [...ids, "unid"]) {
     const f = $("f-" + k);
-    f.addEventListener("keydown", (e) => { if (e.key === "Enter") reload(); });
+    f.addEventListener("keydown", (e) => { if (e.key === "Enter") applyDlg(); });
     f.addEventListener("input", indicate);
     f.addEventListener("change", indicate);
   }
   // the filter indicator: what is applied, how much it hides, and what arrived since that the filter hides; the Log tab gets a dot
   function indicate() {
-    const on = filterOn(), pending = params().toString() !== L.q;
+    const on = filterOn();
     const hid = Math.max(0, (L.la - L.lt) - L.hid0);
     $("f-ind").classList.toggle("on", on);
     $("f-stat").textContent = on ? ` \u00b7 showing ${L.lt} of ${L.la}` + (hid ? ` \u00b7 +${hid} new hidden` : "") : "";
-    $("f-apply").classList.toggle("pending", pending);
+    const sum = summaryText();
+    $("f-sum").textContent = sum || "No filter settings: all records are listed";
+    $("f-sum").title = sum;
+    $("f-sum").classList.toggle("off", !on);
     $("filters").classList.toggle("active", on);
     $("tab-log").classList.toggle("filtering", on);
     const tab = document.querySelector("nav button[data-tab=log]");
