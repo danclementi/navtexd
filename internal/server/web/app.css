@@ -475,3 +475,10 @@ dialog#f-dlg::backdrop { background: rgba(0, 0, 0, .45); }
 #f-dlg .fform .check { font-size: 13px; color: var(--ink); }
 #f-dlg .dlgfoot { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--line); }
 #f-dlg .fform .field { white-space: nowrap; }
+
+/* dates: typed as yyyy-mm-dd, with a calendar button (the native date box follows the browser's language) */
+.isodate { position: relative; display: inline-flex; align-items: center; gap: 2px; }
+input.iso { width: 92px; font: inherit; font-variant-numeric: tabular-nums; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; }
+input.iso.bad { border-color: var(--bad); }
+.isodate .cal { display: inline-flex; align-items: center; padding: 3px 5px; color: var(--ink); }
+.isodate .pick { position: absolute; right: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }

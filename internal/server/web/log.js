@@ -11,9 +11,22 @@
   for (const c of "ABCDEFGHIJKLMNOPQRSTUVWXYZ?") $("f-b1").add(new Option(c, c));
 
   const ids = ["freq", "rcv", "area", "b1", "kind", "text", "from", "to", "kmin", "kmax"];
+  // dates are typed and shown as yyyy-mm-dd (like the UTC column) with a calendar button for picking
+  const isoOk = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(Date.parse(v + "T00:00:00Z")) && new Date(v + "T00:00:00Z").toISOString().slice(0, 10) === v;
+  function isoField(inp) {
+    const wrap = document.createElement("span"); wrap.className = "isodate";
+    const btn = document.createElement("button"); btn.type = "button"; btn.className = "cal"; btn.title = "Pick a date from a calendar"; btn.setAttribute("aria-label", "Pick a date");
+    btn.innerHTML = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.4" d="M2.5 3.5h11v10h-11zM2.5 6.5h11M5 2v3M11 2v3"/></svg>';
+    const pick = document.createElement("input"); pick.type = "date"; pick.className = "pick"; pick.tabIndex = -1; pick.setAttribute("aria-hidden", "true");
+    inp.parentNode.insertBefore(wrap, inp); wrap.append(inp, btn, pick);
+    btn.onclick = () => { pick.value = isoOk(inp.value.trim()) ? inp.value.trim() : ""; try { pick.showPicker(); } catch (e) { pick.focus(); pick.click(); } };
+    pick.onchange = () => { if (pick.value) { inp.value = pick.value; inp.classList.remove("bad"); inp.dispatchEvent(new Event("input", { bubbles: true })); inp.dispatchEvent(new Event("change", { bubbles: true })); } };
+    inp.addEventListener("input", () => { const d = inp.value.replace(/[^\d-]/g, ""); if (d !== inp.value) inp.value = d; inp.classList.toggle("bad", inp.value !== "" && inp.value.length >= 10 && !isoOk(inp.value)); });
+  }
+  for (const id of ["n-date", "f-from", "f-to"]) isoField($(id));
   function params() {
     const p = new URLSearchParams();
-    for (const k of ids) { const v = $("f-" + k).value.trim(); if (v) p.set(k === "freq" ? "freq" : k === "area" ? "navarea" : k === "kmin" ? "minkm" : k === "kmax" ? "maxkm" : k, v); }
+    for (const k of ids) { let v = $("f-" + k).value.trim(); if ((k === "from" || k === "to") && !isoOk(v)) v = ""; if (v) p.set(k === "freq" ? "freq" : k === "area" ? "navarea" : k === "kmin" ? "minkm" : k === "kmax" ? "maxkm" : k, v); }
     if ($("f-unid").checked) p.set("unid", "1");
     return $("f-on").checked ? p : new URLSearchParams(); // switched off: the settings stay in the boxes but nothing is filtered
   }
@@ -51,7 +64,6 @@
     indicate();
     const first = Math.max(0, Math.floor(sc.scrollTop / ROW)), vis = visRows() + 2;
     const start = Math.max(0, first - 3), end = Math.min(L.total, first + vis + 3);
-    $("n-pos").textContent = L.total ? `rows ${Math.min(first + 1, L.total)}\u2013${Math.min(first + visRows(), L.total)}` : "";
     const n = L.sel.size;
     $("n-selinfo").textContent = n > 1 ? `${n} selected` : "";
     $("n-open").disabled = !L.selId;
@@ -80,7 +92,7 @@
     ensure(start, end - 1);
   }
   NX.listen("channels", () => { if (L.loaded) render(); });
-  sc.addEventListener("scroll", () => requestAnimationFrame(render));
+  sc.addEventListener("scroll", () => { if (!L.gotoAt || performance.now() - L.gotoAt > 600) $("n-date").value = ""; requestAnimationFrame(render); }); // scrolling by hand forgets the "go to date"
   window.addEventListener("resize", () => { if (L.loaded) render(); });
 
   function scrollToIndex(i) {
@@ -144,8 +156,8 @@
     return j.records[0];
   }
   async function gotoDate() {
-    const v = $("n-date").value;
-    if (!v || !L.total) return;
+    const v = $("n-date").value.trim();
+    if (!isoOk(v) || !L.total) return;
     const t0 = Date.parse(v + "T00:00:00Z"), t1 = t0 + 86400000;
     let lo = 0, hi = L.total;
     try {
@@ -156,6 +168,7 @@
       }
     } catch (e) { return; }
     const i = Math.min(lo, L.total - 1);
+    L.gotoAt = performance.now(); // the scroll that follows is ours: it must not clear the date
     sc.scrollTop = i * ROW;
     render();
     selectIndex(i);
@@ -387,8 +400,8 @@
 
   // ---- navigation and filters ----
   $("n-order").onchange = () => reload();
-  $("n-latest").onclick = () => { jumpLatest(); if (L.total) selectIndex(newestFirst() ? 0 : L.total - 1); };
-  $("n-goto").onclick = gotoDate;
+  $("n-latest").onclick = () => { $("n-date").value = ""; jumpLatest(); if (L.total) selectIndex(newestFirst() ? 0 : L.total - 1); };
+  $("n-date").onchange = gotoDate; // picking or typing a date goes there at once
   $("n-date").onkeydown = (e) => { if (e.key === "Enter") gotoDate(); };
   // the filter is edited in a pop-up: Apply (or Enter) uses the settings, Cancel (or Esc) puts the old ones back, Reset empties the boxes
   const fdlg = $("f-dlg");
@@ -429,9 +442,8 @@
     $("f-ind").classList.toggle("on", on);
     $("f-stat").textContent = on ? ` \u00b7 showing ${L.lt} of ${L.la}` + (hid ? ` \u00b7 +${hid} new hidden` : "") : "";
     const sum = summaryText();
-    $("f-sum").textContent = sum || "No filter settings: all records are listed";
+    $("f-sum").textContent = !sum ? "No filters selected; all records are shown." : $("f-on").checked ? sum : ""; // switched off: do not show settings that are not in use
     $("f-sum").title = sum;
-    $("f-sum").classList.toggle("off", !on);
     $("filters").classList.toggle("active", on);
     $("tab-log").classList.toggle("filtering", on);
     const tab = document.querySelector("nav button[data-tab=log]");

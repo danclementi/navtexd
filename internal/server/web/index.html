@@ -117,10 +117,8 @@
     </div>
     <div class="row lognav">
       <span>Records: <b id="n-total">0</b> <span id="n-all" class="small"></span></span>
-      <span id="n-pos" class="small"></span>
       <label class="field">Order <select id="n-order"><option value="oldest">newest last</option><option value="newest">newest first</option></select></label>
-      <label class="field">Go to date <input id="n-date" type="date" title="Jump to the first record of this day (UTC)"></label>
-      <button id="n-goto" title="Jump to the date">Go</button>
+      <label class="field">Go to date <input id="n-date" class="iso" type="text" placeholder="yyyy-mm-dd" title="Jump to the first record of this day (UTC): type a date or pick one"></label>
       <button id="n-latest" title="Jump to the most recent record">Most recent</button>
       <span class="grow"></span>
       <span id="n-selinfo" class="small"></span>
@@ -294,7 +292,7 @@
       <label class="field">Kind <select id="f-kind"><option value="">all</option><option value="message">message</option><option value="incomplete">incomplete</option><option value="fragment">fragment</option></select></label>
     </div>
     <div class="fcol fright">
-      <div class="frowd"><label class="field">From <input id="f-from" type="date"></label> <label class="field">To <input id="f-to" type="date"></label></div>
+      <div class="frowd"><label class="field">From <input id="f-from" class="iso" type="text" placeholder="yyyy-mm-dd"></label> <label class="field">To <input id="f-to" class="iso" type="text" placeholder="yyyy-mm-dd"></label></div>
       <span class="field" id="f-km-wrap">Distance <input id="f-kmin" type="number" min="0" step="any" placeholder="0" title="Minimum distance (km)"> to <input id="f-kmax" type="number" min="0" step="any" placeholder="&#8734;" title="Maximum distance (km); empty = no limit"> km</span>
       <label class="check"><input id="f-unid" type="checkbox"> UNID only</label>
       <label class="field grow">Body text <input id="f-text" type="text" placeholder="search the message text"></label>
