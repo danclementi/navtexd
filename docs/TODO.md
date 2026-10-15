@@ -9,6 +9,10 @@ A running list. Move finished items to the bottom or delete them.
 - **Coverage:** `app` (runner) 13 %, `catalog` 30 %, `server` 55 %; add tests with a fake source.
 - **Input watchdog: reopen.** The watchdog now only warns (`input.watchdog_s`). Optionally reopen the input by itself when
   it stalls (needs a way to unblock a read that never returns).
+- **Compress the spectrum data sent to browsers.** Many SDR programs do this. A spectrum frame is about 7 kB of JSON (three
+  arrays of tenths of dB) and 10 frames/s per channel go to each local client, 3.3/s to remote viewers; with two channels this
+  matters over a tunnel. Options: 8-bit or delta-coded values in a binary frame, gzip/zstd of the event stream (check that
+  Cloudflare does not buffer it), fewer bins or frames for remote viewers. Revisit once remote use is common.
 - **Retest** the packet-loss burst reporting and the `swap_iq` note on the other radios when they are available.
 
 ## Next (two channels)

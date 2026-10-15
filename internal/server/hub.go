@@ -15,8 +15,8 @@ type event struct {
 type client struct {
 	ch       chan event
 	role     Role
-	specGap  time.Duration // minimum time between spectrum frames for this client
-	lastSpec time.Time
+	specGap  time.Duration // minimum time between spectrum frames of one channel for this client
+	lastSpec [2]time.Time  // when the last spectrum frame of each decoding channel was sent
 }
 
 // Hub fans events out to the connected clients. A client that cannot keep up loses live meter frames; if it also misses
@@ -129,11 +129,12 @@ func (h *Hub) Publish(name string, v any, lossy, adminOnly bool) {
 		if adminOnly && c.role != Admin {
 			continue
 		}
-		if name == "spectrum" {
-			if now.Sub(c.lastSpec) < c.specGap {
+		if sm, ok := v.(spectrumMsg); ok && sm.Rcv >= 0 && sm.Rcv < len(c.lastSpec) {
+			// the limit applies to each channel separately, otherwise two channels would share (and halve) the rate
+			if now.Sub(c.lastSpec[sm.Rcv]) < c.specGap {
 				continue
 			}
-			c.lastSpec = now
+			c.lastSpec[sm.Rcv] = now
 		}
 		select {
 		case c.ch <- ev:

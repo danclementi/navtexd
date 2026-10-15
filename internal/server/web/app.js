@@ -59,7 +59,7 @@
   }
   const fmtRate = (bps) => (bps < 1000 ? `${bps} B/s` : bps < 1e6 ? `${(bps / 1000).toFixed(1)} kB/s` : `${(bps / 1e6).toFixed(2)} MB/s`);
   function showNet(n) { if (!n) return; $("t-net").textContent = fmtRate(n.bps); $("t-users").textContent = String(n.users); }
-  function led(el, mode) { if (el) el.className = "led" + (mode === 2 ? " on" : mode === 1 ? " mid" : ""); }
+  function led(el, mode) { if (el) { el.classList.toggle("on", mode === 2); el.classList.toggle("mid", mode === 1); } } // keeps the other classes (l-lock, l-sync, ...): they are how the LEDs are found
 
   function showMeters(m) {
     state.meters = m;
@@ -80,6 +80,10 @@
     const cr = S(i, ".c-carrier");
     if (document.activeElement !== cr && m.audio) cr.placeholder = m.audio.toFixed(0);
   }
+  function showInprog() {
+    const el = $("inprog-ch"), c = state.chans[state.sel].controls;
+    el.textContent = secondOn() && c ? " \u2013 " + (c.label || c.name || `Channel ${state.sel + 1}`) : "";
+  }
   function showChan(i) {
     const c = state.chans[i].controls;
     if (!c) return;
@@ -91,6 +95,7 @@
     if (!c.autotune) set(cr, c.carrier); else if (document.activeElement !== cr) cr.value = "";
     const chip = L(i, ".chip");
     chip.textContent = c.label || c.name || `Channel ${i + 1}`;
+    if (i === state.sel) showInprog();
     chip.classList.toggle("on", i === state.sel);
     L(i, ".chfreq").textContent = c.channel + " kHz";
     const cm = L(i, ".chcmt"); cm.textContent = c.note || ""; cm.title = c.note ? "Channel comment: " + c.note : "Channel comment (change it in Options)";
@@ -110,6 +115,7 @@
     $("b-addchan").hidden = two || !admin;
     for (let i = 0; i < 2; i++) { const ch = L(i, ".chip"); if (ch) ch.classList.toggle("on", i === state.sel); }
     document.body.classList.toggle("two", two);
+    showInprog();
     scheduleSpec();
   }
 
@@ -346,6 +352,11 @@
       g.strokeStyle = cssVar("--spec-car"); g.lineWidth = adminManual ? 2 : 1; g.setLineDash([4, 3]); g.beginPath(); g.moveTo(x, T); g.lineTo(x, T + ph); g.stroke(); g.setLineDash([]); g.lineWidth = 1;
       g.fillStyle = cssVar("--spec-car"); g.textBaseline = "top"; g.textAlign = "left"; g.fillText(car.toFixed(0) + " Hz" + (adminManual && !mini ? "  \u2194" : "") + (searching && !mini ? "  searching\u2026" : ""), x + 4, T + 2); g.globalAlpha = 1;
     }
+    if (secondOn()) { // which channel this graph shows
+      const nm = (CH.controls && (CH.controls.label || CH.controls.name)) || `Channel ${ch + 1}`;
+      g.font = (mini ? "bold 10px " : "bold 12px ") + FONT; g.textBaseline = "top"; g.textAlign = "right"; g.fillStyle = cssVar("--spec-ink"); g.globalAlpha = 0.9;
+      g.fillText(nm, L + pw - (mini ? 4 : 96), T + 2); g.globalAlpha = 1; g.textAlign = "left";
+    }
   }
   // dragging the carrier marker (only while autotune is off)
   (() => {
@@ -465,6 +476,7 @@
     if (n.meters) showMeters(n.meters);
     drawText(); renderLines();
     for (let i = 0; i < 2; i++) { showChan(i); showLeds(i); showInfo(i); }
+    showInprog();
     fire("channel", state.sel);
   }
   function selectChan(i) {
