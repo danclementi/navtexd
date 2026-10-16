@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -84,11 +85,13 @@ type meterMsg struct {
 	Quality float64 `json:"q"`
 	Sync    int     `json:"sync"` // 0 lost, 1 pre-sync, 2 sync
 	Data    bool    `json:"data"`
-	Have    bool    `json:"have"`  // carrier present
-	Auto    bool    `json:"auto"`  // autotune
-	Offset  float64 `json:"off"`   // carrier offset from the channel, Hz
-	Audio   float64 `json:"audio"` // carrier on the audio axis, Hz
-	CPU     float64 `json:"cpu"`
+	Have    bool    `json:"have"`          // carrier present
+	Auto    bool    `json:"auto"`          // autotune
+	Offset  float64 `json:"off"`           // carrier offset from the channel, Hz
+	Audio   float64 `json:"audio"`         // carrier on the audio axis, Hz
+	CPU     float64 `json:"cpu"`           // this program, percent of all cores
+	Sys     float64 `json:"sys"`           // the whole machine, percent (-1 = not available)
+	Cores   int     `json:"cores"`         // number of CPU cores
 	Rcv     int     `json:"rcv,omitempty"` // decoding channel (0 = the first)
 }
 
@@ -225,7 +228,7 @@ func (s *Server) Hooks() app.Hooks {
 			pk, rm := s.smoothLevel(f.Rcv, f.Level.Peak, f.Level.RMS, f.Time)
 			m := &meterMsg{T: f.Time.UnixMilli(), Peak: round(pk, 4), RMS: round(rm, 4), Clip: f.Level.Clip, Quality: round(q, 1),
 				Sync: int(f.Sync), Data: f.Data, Have: f.Carrier.Have, Auto: f.Carrier.Autotune, Offset: round(f.Carrier.OffsetHz, 1),
-				Audio: round(f.Carrier.AudioHz, 1), CPU: round(f.CPU, 1), Rcv: f.Rcv}
+				Audio: round(f.Carrier.AudioHz, 1), CPU: round(f.CPU, 1), Sys: round(f.Sys, 1), Cores: runtime.NumCPU(), Rcv: f.Rcv}
 			s.mu.Lock()
 			s.last[f.Rcv] = m
 			s.mu.Unlock()
@@ -738,8 +741,8 @@ func (s *Server) control(w http.ResponseWriter, r *http.Request, id Identity) {
 	case "carrier":
 		var f float64
 		if f, err = asFloat(); err == nil {
-			if f < 200 || f > 2600 {
-				err = errors.New("carrier must be between 200 and 2600 Hz")
+			if lo, hi := s.run.CarrierRange(ch); f < lo || f > hi {
+				err = fmt.Errorf("carrier must be between %.0f and %.0f Hz for this input", lo, hi)
 			} else {
 				err = s.run.SetCarrier(ch, f)
 			}

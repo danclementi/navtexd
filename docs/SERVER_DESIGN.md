@@ -329,7 +329,7 @@ clamped it while the focused cell was replaced, and Escape no longer scrolls the
 - The page (`app.js`) keeps each channel's controls, meters, run state, spectrum, text and lines in `state.chans[i]`; `state.*`
   is the selected channel's (`state.sel`), so the existing display code is unchanged. One line per enabled channel under the header selects
   the channel (plus a "+ Add channel" chip for administrators that opens that channel's Options tab). The header has one small spectrum per enabled
-  channel (LOG/LIN per spectrum, saved per box); each channel's line carries its Auto (auto-tune carrier) checkbox and LOCK LED
+  channel (LOG/LIN is a per-channel setting made on the Spectrum tab; a click on a small spectrum selects its channel and opens that tab; the small ones have no carrier readout or drag); each channel's line carries its Auto (auto-tune carrier) checkbox and LOCK LED
   (greyed out while Auto is off). Each spectrum's tooltip describes its own channel.
   The header controls, Save clip, the Signal tab and the Schedule/Ephemeris frequency follow the selected channel; the choice
   is remembered per browser (`nx-chan`). The Log tab has a Channel filter and a channel badge on the frequency, and the

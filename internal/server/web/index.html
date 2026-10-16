@@ -18,21 +18,21 @@
         <div class="dials">
           <div class="dial" data-id="level" data-label="INP.LEVEL" data-red="0.9" title="Input level (dBFS); red = near clipping"></div>
           <div class="dial" data-id="q" data-label="QUALITY" data-red="0" title="Signal quality (inverse of the crest factor)"></div>
-          <div class="dial" data-id="cpu" data-label="CPU LOAD" data-red="0.85" title="CPU load of the decoder"></div>
+          <div class="dial" data-id="cpu" data-label="CPU LOAD" data-red="0.85" data-two="1" title="CPU load: green needle = navtexd, amber needle = the whole computer (percent of all cores)"></div>
         </div>
       </div>
       <div class="timerow"><span id="date">&nbsp;</span><span id="clock">--:--:-- UTC</span></div>
       <div class="sunrow"><span id="sun" class="msun" title="Receive location">Sunrise: --:-- / Sunset: --:--</span><button id="b-clip" title="Save the last minute of input audio (and a few seconds more) of the active channel as a WAV file for later analysis">Save clip</button></div>
     </fieldset>
     <fieldset class="grp specgrp" id="grp-spec" data-ch="0">
-      <div class="specwrap2"><canvas id="spec-mini"></canvas><div class="seg mini-scale" title="Vertical scale of this spectrum"><button type="button" data-sc="log">LOG</button><button type="button" data-sc="lin">LIN</button></div></div>
+      <div class="specwrap2"><canvas id="spec-mini"></canvas></div>
     </fieldset>
   </div>
   <div id="chlines" class="chlines">
     <div class="chline" data-ch="0">
       <button type="button" class="chip" title="Make this the active channel (text, big spectrum, log, Save clip)"></button>
       <span class="chfreq"></span>
-      <select class="c-device" title="Where the signal comes from: an audio input, or a radio on the network (OpenHPSDR / Metis). Radios you have used successfully are listed, most recent first."><option value="">-</option></select>
+      <span class="chinput" title="Input of this channel (change it in Options)"></span>
       <span class="chcmt" title="Channel comment (change it in Options)"></span>
       <span class="chinfo" title="Format of the input"></span>
       <label class="check" title="auto-tune carrier"><input class="c-autotune" type="checkbox"> Auto</label>

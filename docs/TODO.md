@@ -26,6 +26,10 @@ Four channels exist (`extra.*`, SERVER_DESIGN section 33); still to do:
 - **Same frequency on both channels:** records show up twice in the shared tabs until a combiner exists (see the combining
   experiment: only separate receivers or antennas have independent errors worth combining).
 
+## UI ideas (not started; build only when asked)
+- **Ephemeris:** the NAVAREA drop-down does not list all NAVAREAs.
+  (Seen in the station table: NAVAREAs V, X, XIV and XVII have no stations in it, so they are not offered; to be confirmed.)
+
 ## Next (radio input) - ON HOLD
 Wait until we have an approach for several receivers (or several audio inputs) in the GUI.
 

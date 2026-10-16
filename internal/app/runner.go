@@ -36,7 +36,8 @@ const SettingsFile = "settings.json"
 type Frame struct {
 	engine.Meters
 	Time time.Time // wall-clock (UTC) time of the frame
-	CPU  float64   // this process's CPU use, percent of the machine
+	CPU  float64   // this program's CPU use, percent of the machine (all cores)
+	Sys  float64   // CPU use of the whole machine, percent (-1 = not available)
 	Rcv  int       // the decoding channel (0 or 1)
 }
 
@@ -67,6 +68,8 @@ type chain struct {
 	scope atomic.Pointer[engine.Scope]
 	ring  atomic.Pointer[clip.Ring]
 	carr  atomic.Uint64 // last carrier position (audio Hz, float64 bits), for the clip description
+	rate  atomic.Uint64 // sample rate of the running source (float64 bits; 0 = not running)
+	isIQ  atomic.Bool   // the running source delivers I/Q (not real audio)
 
 	// guarded by Runner.mu
 	state State
@@ -376,6 +379,21 @@ func (r *Runner) SetCarrier(ch int, hz float64) error {
 	return err
 }
 
+// CarrierRange is the range of carrier positions (Hz on the spectrum's axis) that a channel accepts, from its running
+// input: real audio 300 Hz to 300 Hz below Nyquist; I/Q the same margin from the band edges as the channel itself.
+func (r *Runner) CarrierRange(ch int) (lo, hi float64) {
+	c := r.chains[ch]
+	fs := math.Float64frombits(c.rate.Load())
+	if fs <= 0 {
+		fs = 48000
+	}
+	nyq := fs / 2
+	if c.isIQ.Load() {
+		return -nyq + 1500, nyq - 1500
+	}
+	return 300, nyq - 300
+}
+
 // SetComment changes the operational comment stored with new records (all channels).
 func (r *Runner) SetComment(s string) error {
 	_, err := r.Modify(func(c *config.Config) error { c.Operator.Comment = s; return nil })
@@ -416,6 +434,8 @@ func (r *Runner) run(ctx context.Context, c *chain, cfg config.Config, cmds chan
 		return src.Start.UTC().Add(time.Duration(streamS * float64(time.Second)))
 	}
 	var cpu sysinfo.CPUMeter
+	var sysCPU sysinfo.SystemMeter
+	sysVal := -1.0
 	var cpuVal float64
 	var cpuAt time.Time
 	stored := 0
@@ -446,9 +466,12 @@ func (r *Runner) run(ctx context.Context, c *chain, cfg config.Config, cmds chan
 			}
 			if time.Since(cpuAt) >= time.Second {
 				cpuVal, cpuAt = cpu.Percent(), time.Now()
+				if p, ok := sysCPU.Percent(); ok {
+					sysVal = p
+				}
 			}
 			if r.h.Frame != nil {
-				r.h.Frame(Frame{Meters: m, Time: now, CPU: cpuVal, Rcv: c.idx})
+				r.h.Frame(Frame{Meters: m, Time: now, CPU: cpuVal, Sys: sysVal, Rcv: c.idx})
 			}
 		},
 	})
@@ -457,6 +480,8 @@ func (r *Runner) run(ctx context.Context, c *chain, cfg config.Config, cmds chan
 		return
 	}
 	c.scope.Store(eng.Scope())
+	c.rate.Store(math.Float64bits(src.SampleRate()))
+	c.isIQ.Store(src.Kind() != iq.Real)
 	form := "audio"
 	if src.Kind() != iq.Real {
 		form = "I/Q"

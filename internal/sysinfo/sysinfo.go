@@ -30,3 +30,23 @@ func (m *CPUMeter) Percent() float64 {
 	}
 	return p
 }
+
+// SystemMeter measures the CPU use of the whole machine (all programs, all cores) between calls.
+type SystemMeter struct {
+	lastBusy, lastTotal uint64
+	have                bool
+}
+
+// Percent returns the machine's CPU use since the previous call; ok is false when it cannot be measured (first call,
+// unsupported system).
+func (m *SystemMeter) Percent() (p float64, ok bool) {
+	busy, total, err := systemTimes()
+	if err != nil {
+		return 0, false
+	}
+	defer func() { m.lastBusy, m.lastTotal, m.have = busy, total, true }()
+	if !m.have || total <= m.lastTotal {
+		return 0, false
+	}
+	return 100 * float64(busy-m.lastBusy) / float64(total-m.lastTotal), true
+}

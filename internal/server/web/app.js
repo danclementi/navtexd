@@ -48,7 +48,7 @@
     d.innerHTML = `<svg viewBox="0 0 80 68" role="img" aria-label="${d.dataset.label}"><rect x=".5" y=".5" width="79" height="67" rx="7" fill="#0a3524" stroke="#000"/>
       <text x="40" y="10" class="dl">${d.dataset.label}</text>
       <path d="${arc(0, 1, DIAL.r)}" fill="none" stroke="#dfe9e3" stroke-width="1.6"/>${red ? `<path d="${arc(red, 1, DIAL.r)}" fill="none" stroke="#ff5a4f" stroke-width="2.6"/>` : ""}${ticks}
-      <line id="g-${id}" x1="${DIAL.cx}" y1="${DIAL.cy}" x2="${dpt(0, DIAL.r - 3)[0]}" y2="${dpt(0, DIAL.r - 3)[1]}" stroke="#7fe3c4" stroke-width="2" stroke-linecap="round"/>
+      ${d.dataset.two ? `<line id="g2-${id}" x1="${DIAL.cx}" y1="${DIAL.cy}" x2="${dpt(0, DIAL.r - 6)[0]}" y2="${dpt(0, DIAL.r - 6)[1]}" stroke="#ffd166" stroke-width="1.6" stroke-linecap="round" visibility="hidden"/>` : ""}<line id="g-${id}" x1="${DIAL.cx}" y1="${DIAL.cy}" x2="${dpt(0, DIAL.r - 3)[0]}" y2="${dpt(0, DIAL.r - 3)[1]}" stroke="#7fe3c4" stroke-width="2" stroke-linecap="round"/>
       <circle cx="${DIAL.cx}" cy="${DIAL.cy}" r="3.2" fill="#7fe3c4"/>
       <text id="t-${id}" x="40" y="63" class="dv">-</text></svg>`;
   });
@@ -57,6 +57,14 @@
     const n = $("g-" + id);
     n.setAttribute("x2", x.toFixed(1)); n.setAttribute("y2", y.toFixed(1));
     $("t-" + id).textContent = text;
+  }
+  function setCpu(m) { // green needle: this program; amber needle: the whole computer
+    const f1 = (v) => (v < 10 ? v.toFixed(1) : v.toFixed(0));
+    const n2 = $("g2-cpu"), sys = m.sys >= 0 ? m.sys : null;
+    setBar("cpu", m.cpu / 100, sys === null ? f1(m.cpu) + "%" : f1(m.cpu) + " / " + f1(sys) + "%");
+    if (sys !== null) { const [x, y] = dpt(Math.max(0, Math.min(1, sys / 100)), DIAL.r - 6); n2.setAttribute("x2", x.toFixed(1)); n2.setAttribute("y2", y.toFixed(1)); n2.setAttribute("visibility", "visible"); } else n2.setAttribute("visibility", "hidden");
+    const cores = m.cores || 1;
+    $("t-cpu").closest(".dial").title = `navtexd: ${m.cpu.toFixed(1)}% of all ${cores} cores (= ${(m.cpu * cores).toFixed(0)}% of one core)` + (sys === null ? "" : `\nWhole computer: ${sys.toFixed(1)}% of all cores`) + "\nGreen needle: navtexd; amber needle: the whole computer";
   }
   const fmtRate = (bps) => (bps < 1000 ? `${bps} B/s` : bps < 1e6 ? `${(bps / 1000).toFixed(1)} kB/s` : `${(bps / 1e6).toFixed(2)} MB/s`);
   function showNet(n) { if (!n) return; $("t-net").textContent = fmtRate(n.bps); $("t-users").textContent = String(n.users); }
@@ -67,9 +75,10 @@
     const db = m.peak > 0 ? 20 * Math.log10(m.peak) : -90;
     setBar("level", (db + 60) / 60, m.peak > 0 ? db.toFixed(0) + " dB" : "-", m.clip ? cssVar("--bad") : db > -6 ? cssVar("--warn") : "");
     setBar("q", m.q / 100, m.q.toFixed(0), m.q < 25 ? cssVar("--bad") : m.q < 50 ? cssVar("--warn") : "");
-    setBar("cpu", m.cpu / 100, m.cpu.toFixed(0) + "%", m.cpu > 80 ? cssVar("--bad") : "");
+    setCpu(m);
   }
   // ---- per-channel header: the channel line (chip, frequency, input, comment, format, RESYNC, LEDs, UoS, polarity) and the small spectrum's controls ----
+  for (let i = 0; i < N; i++) state.chans.push({ controls: null, meters: null, run: null, spec: null, text: "", lines: [], tail: "" });
   // one small spectrum per channel in the header (box 0 is in the page, the others are copies); each has its own LOG/LIN choice
   const miniId = (i) => (i ? "spec-mini" + i : "spec-mini");
   for (let i = 1; i < N; i++) {
@@ -139,19 +148,20 @@
     if (!k || !k.enabled) return;
     try {
       const i = await api("GET", "/api/input" + (ch ? "?ch=" + ch : ""));
-      state.chans[ch].inputWanted = i.source === "hpsdr" ? "r:" + i.radio : "a:" + i.device;
+      state.chans[ch].input = i;
       showInput(ch);
     } catch (e) { /* not available */ }
   }
-  // The Input box: audio inputs ("a:name") and radios ("r:address"; "r:" searches the network).
+  // The input of a channel, shown read-only (it is changed in Options)
   function showInput(ch) {
-    const sel = L(ch, ".c-device"), want = state.chans[ch].inputWanted;
-    if (want === undefined || document.activeElement === sel) return;
-    if (![...sel.options].some((o) => o.value === want)) { // a radio that has not delivered data yet, or an unlisted device
-      const o = new Option(want.startsWith("r:") ? want.slice(2) + "  (not confirmed yet)" : want.slice(2), want);
-      (want.startsWith("r:") ? sel.querySelector("optgroup.radios") : sel.querySelector("optgroup.audio"))?.prepend(o);
-    }
-    sel.value = want;
+    const i = state.chans[ch].input, el = L(ch, ".chinput");
+    if (!i) { el.textContent = ""; return; }
+    let t;
+    if (i.source === "hpsdr") { const r = (NX.knownRadios || []).find((x) => x.addr === i.radio); t = r ? r.label : i.radio ? "Radio " + i.radio : "Radio (searching the network)"; }
+    else if (i.source === "file") t = "WAV file";
+    else if (i.source === "stdin") t = "Raw stream";
+    else t = i.device || "(default audio input)";
+    el.textContent = t; el.title = "Input of this channel: " + t + " (change it in Options)";
   }
 
   function showSun(s) {
@@ -186,7 +196,7 @@
     for (let i = 0; i < N; i++) {
       const b = box(i), r = state.chans[i].run; if (!b) continue;
       const t = r ? (r.running ? "" : "Not running. ") + (r.error ? "\u26a0 " + r.error : r.info || "") : "";
-      b.title = (t ? t + "\n" : "") + `Carrier: found automatically while Auto is on. To set it by hand, switch Auto off and drag the dashed line (administrators), or enter it in Options \u203a Channel ${i + 1}.`;
+      b.title = (t ? t + "\n" : "") + `Click to open this channel's Spectrum tab.\nCarrier: found automatically while Auto is on. To set it by hand, switch Auto off and drag the dashed line on the Spectrum tab, or enter it in Options \u203a Channel ${i + 1}.`;
     }
   }
 
@@ -272,12 +282,12 @@
     }).catch(() => {});
   }
 
+  let showScale = () => {};
   // ---- spectrum ----
   // LOG / LIN is chosen separately for the big spectrum and for each small one in the header
   const specPref = (key) => ({ get() { try { return localStorage.getItem(key) === "lin" ? "lin" : "log"; } catch (e) { return "log"; } }, set(v) { try { localStorage.setItem(key, v); } catch (e) { /* no storage */ } } });
-  const PREF = { spec: specPref("navtex.spec.scale") };
-  const PREFM = []; for (let i = 0; i < N; i++) { PREFM.push(specPref(i ? "navtex.mini" + i + ".scale" : "navtex.mini.scale")); state.view[miniId(i)].scale = PREFM[i].get(); }
-  state.view.spec.scale = PREF.spec.get();
+  // each channel has its own LOG/LIN choice (kept in this browser); the Spectrum tab sets it and the header spectrum of the channel follows
+  const PREF = []; for (let i = 0; i < N; i++) { PREF.push(specPref(i ? "navtex.spec.scale." + i : "navtex.spec.scale")); state.chans[i].scale = PREF[i].get(); }
   state.drag = null; state.specGeom = null;
   const niceTop = (v) => { const e = Math.pow(10, Math.floor(Math.log10(v))); const m = v / e; return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * e; };
   function drawSpectrum() { drawSpec($("spec"), false, state.sel); for (const i of activeList()) drawSpec($(miniId(i)), true, i); }
@@ -293,7 +303,7 @@
     g.fillStyle = cssVar("--spec-bg"); g.fillRect(0, 0, w, h);
     const s = CH.spec;
     if (!s) return;
-    const lin = V.scale === "lin";
+    const lin = CH.scale === "lin";
     const L = mini ? 26 : 44, R = mini ? 4 : 8, T = mini ? 4 : 8, B = mini ? 14 : 20, pw = w - L - R, ph = h - T - B;
     const n = s.filt.length, f0 = s.start, f1 = s.start + s.step * (n - 1);
     V.geom = { L, pw, f0, f1 };
@@ -369,7 +379,7 @@
       const searching = CH.controls && CH.controls.autotune && CH.meters && !CH.meters.have;
       g.globalAlpha = searching ? 0.45 : 1;
       g.strokeStyle = cssVar("--spec-car"); g.lineWidth = adminManual ? 2 : 1; g.setLineDash([4, 3]); g.beginPath(); g.moveTo(x, T); g.lineTo(x, T + ph); g.stroke(); g.setLineDash([]); g.lineWidth = 1;
-      g.fillStyle = cssVar("--spec-car"); g.textBaseline = "top"; g.textAlign = "left"; g.fillText(car.toFixed(0) + " Hz" + (adminManual && !mini ? "  \u2194" : "") + (searching && !mini ? "  searching\u2026" : ""), x + 4, T + 2); g.globalAlpha = 1;
+      g.fillStyle = cssVar("--spec-car"); g.textBaseline = "top"; g.textAlign = "left"; if (!mini) g.fillText(car.toFixed(0) + " Hz" + (adminManual && !mini ? "  \u2194" : "") + (searching && !mini ? "  searching\u2026" : ""), x + 4, T + 2); g.globalAlpha = 1;
     }
     if (multiOn()) { // which channel this graph shows
       const nm = (CH.controls && (CH.controls.label || CH.controls.name)) || `Channel ${ch + 1}`;
@@ -401,16 +411,12 @@
       });
       cv.addEventListener("pointercancel", () => { state.drag = null; scheduleSpec(); });
     };
-    attach($("spec")); for (let i = 0; i < N; i++) attach($(miniId(i)));
-    // LOG/LIN: one choice for the big spectrum and one for each small one
-    const bind = (btns, cids, pref) => {
-      btns.forEach((bt) => {
-        bt.classList.toggle("on", bt.dataset.sc === state.view[cids[0]].scale);
-        bt.onclick = () => { for (const c of cids) state.view[c].scale = bt.dataset.sc; pref.set(bt.dataset.sc); btns.forEach((x) => x.classList.toggle("on", x.dataset.sc === bt.dataset.sc)); scheduleSpec(); };
-      });
-    };
-    bind(document.querySelectorAll("#spec-scale button"), ["spec"], PREF.spec);
-    for (let i = 0; i < N; i++) bind(box(i).querySelectorAll(".mini-scale button"), [miniId(i)], PREFM[i]);
+    attach($("spec")); // (the small spectra have no carrier drag)
+    // LOG/LIN of the Spectrum tab: kept per channel
+    const btns = document.querySelectorAll("#spec-scale button");
+    showScale = () => btns.forEach((x) => x.classList.toggle("on", x.dataset.sc === state.chans[state.sel].scale));
+    btns.forEach((bt) => { bt.onclick = () => { state.chans[state.sel].scale = bt.dataset.sc; PREF[state.sel].set(bt.dataset.sc); showScale(); scheduleSpec(); }; });
+    showScale();
   })();
   let specPending = false;
   function scheduleSpec() { if (!specPending) { specPending = true; requestAnimationFrame(() => { specPending = false; drawSpectrum(); }); } }
@@ -481,7 +487,8 @@
   // ---- decoding channels ----
   // The server decodes up to N channels (config.Channels). state.* holds the selected channel's live data; state.chans[i] holds each
   // channel's own (controls, meters, run, spectrum, text, lines), kept up to date from the events.
-  for (let i = 0; i < N; i++) state.chans.push({ controls: null, meters: null, run: null, spec: null, text: "", lines: [], tail: "" });
+  // a click on a small spectrum selects its channel and shows the Spectrum tab
+  for (let i = 0; i < N; i++) box(i).addEventListener("click", () => { selectChan(i); document.querySelector("#tabs button[data-tab=spectrum]").click(); });
   // the channel lines: the first is in the page, the others are copies of it
   { const first = document.querySelector('.chline[data-ch="0"]'); for (let i = 1; i < N; i++) { const c = first.cloneNode(true); c.dataset.ch = i; c.hidden = true; first.parentNode.insertBefore(c, $("b-addchan")); } }
   const enabledCh = (i) => i === 0 || !!(state.chans[i].controls && state.chans[i].controls.enabled);
@@ -499,7 +506,7 @@
     if (n.meters) showMeters(n.meters);
     drawText(); renderLines();
     for (let i = 0; i < N; i++) { showChan(i); showLeds(i); showInfo(i); }
-    showInprog();
+    showInprog(); showScale();
     fire("channel", state.sel);
   }
   function selectChan(i) {
@@ -515,31 +522,23 @@
     L(i, ".c-autotune").onchange = (e) => control("autotune", e.target.checked, i);
     L(i, ".c-uos").onchange = (e) => control("uos", e.target.checked, i);
     L(i, ".b-resync").onclick = () => control("resync", undefined, i);
-    L(i, ".c-device").onchange = (e) => {
-      const v = e.target.value;
-      if (v.startsWith("r:")) control("radio", v.slice(2), i);
-      else if (v.startsWith("a:")) control("device", v.slice(2), i);
-    };
-    L(i, ".chip").onclick = () => selectChan(i);
+    // clicking any of the first five columns selects the channel; double-clicking also opens its Options tab
+    const ln = document.querySelector(`.chline[data-ch="${i}"]`);
+    ln.addEventListener("click", (e) => { if (e.target.closest(".chip, .chfreq, .chinput, .chcmt, .chinfo")) selectChan(i); });
+    ln.addEventListener("dblclick", (e) => {
+      if (!e.target.closest(".chip, .chfreq, .chinput, .chcmt, .chinfo")) return;
+      selectChan(i); optPage = "channel" + (i + 1); document.querySelector("#tabs button[data-tab=options]").click();
+    });
   }
   $("b-addchan").onclick = () => { const k = activeList().length, free = []; for (let i = 1; i < N; i++) if (!enabledCh(i)) free.push(i); optPage = "channel" + ((free[0] || 1) + 1); document.querySelector("#tabs button[data-tab=options]").click(); };
   $("b-login").onclick = async () => {
     try { await api("POST", "/api/login", { token: $("tok").value }); location.reload(); } catch (e) { alert(e.message); }
   };
-  async function loadDevices() {
+  async function loadDevices() { // the radios used so far (names the inputs of HPSDR channels and feeds the address list in Options)
     if (state.role !== "admin") return;
     try {
-      const [devs, radios] = await Promise.all([api("GET", "/api/audio-devices"), api("GET", "/api/radios")]);
-      if (document.activeElement && document.activeElement.classList.contains("c-device")) return;
-      const audio = document.createElement("optgroup"); audio.label = "Audio input"; audio.className = "audio";
-      audio.append(new Option("(default)", "a:"));
-      for (const d of devs) audio.append(new Option(d.name, "a:" + d.name));
-      const rg = document.createElement("optgroup"); rg.label = "Radio (OpenHPSDR)"; rg.className = "radios";
-      for (const r of radios) rg.append(new Option(r.label, "r:" + r.addr));
-      rg.append(new Option("Radio: search the network", "r:"));
-      for (let i = 0; i < N; i++) { const sel = L(i, ".c-device"); sel.replaceChildren(audio.cloneNode(true), rg.cloneNode(true)); }
-      NX.knownRadios = radios;
-      for (let i = 0; i < N; i++) refreshInput(i);
+      NX.knownRadios = await api("GET", "/api/radios");
+      for (let i = 0; i < N; i++) { showInput(i); refreshInput(i); }
     } catch (e) { /* not available */ }
   }
 
@@ -746,6 +745,6 @@
 
   connect();
   setTimeout(loadDevices, 800);
-  setInterval(() => { if (state.role === "admin" && L(0, ".c-device").options.length <= 1) loadDevices(); }, 5000);
+  setInterval(() => { if (state.role === "admin" && !NX.knownRadios) loadDevices(); }, 5000);
   setInterval(() => { if (state.role === "admin") loadDevices(); }, 20000); // a radio joins the list once it has delivered data
 })();
