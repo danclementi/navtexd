@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,31 +25,32 @@ const TimeFormat = "2006-01-02 15:04:05"
 
 // Config is the complete option set.
 type Config struct {
-	Input       Input              `json:"input"`
-	Channel     Channel            `json:"channel"`
-	DDC         DDC                `json:"ddc"`
-	Receiver    fsk.ReceiverConfig `json:"receiver"`
-	Decoder     sitor.Config       `json:"decoder"`
-	Segment     segment.Config     `json:"segment"`
-	Meters      Meters             `json:"meters"`
-	Operator    Operator           `json:"operator"`
-	Logging     Logging            `json:"logging"`
-	Autocorrect Autocorrect        `json:"autocorrect"`
-	Server      Server             `json:"server"`
-	Clips       Clips              `json:"clips"`
-	Output      Output             `json:"output"`
-	Second      Second             `json:"second"`
+	Input       Input               `json:"input"`
+	Channel     Channel             `json:"channel"`
+	DDC         DDC                 `json:"ddc"`
+	Receiver    fsk.ReceiverConfig  `json:"receiver"`
+	Decoder     sitor.Config        `json:"decoder"`
+	Segment     segment.Config      `json:"segment"`
+	Meters      Meters              `json:"meters"`
+	Operator    Operator            `json:"operator"`
+	Logging     Logging             `json:"logging"`
+	Autocorrect Autocorrect         `json:"autocorrect"`
+	Server      Server              `json:"server"`
+	Clips       Clips               `json:"clips"`
+	Output      Output              `json:"output"`
+	Extra       [Channels - 1]Extra `json:"extra"`
 }
 
-// Channels is the number of decoding channels. Channel 0 uses the top-level input, channel, ddc, receiver, decoder and
-// segment groups; channel 1 uses the same groups inside "second". Everything else (operator, logging, autocorrection,
-// meters, server, clips, output) is shared.
-const Channels = 2
+// Channels is the maximum number of decoding channels. Channel 0 uses the top-level input, channel, ddc, receiver,
+// decoder and segment groups; channel n (1 and up) uses the same groups inside Extra[n-1] ("extra.<n-1>.*" in the
+// settings). Everything else (operator, logging, autocorrection, meters, server, clips, output) is shared. Raising the
+// constant is all it takes to allow more: settings files with fewer entries load fine (the rest get their defaults).
+const Channels = 4
 
-// Second holds the options of the second decoding channel: the same groups as the top level, so that it has its own
+// Extra holds the options of one more decoding channel: the same groups as the top level, so that it has its own
 // input, frequency, filter, blanker, timing, framing and decoder settings.
-type Second struct {
-	Enabled  bool               `json:"enabled" doc:"Decode a second channel at the same time, with its own input and settings (the groups below)"`
+type Extra struct {
+	Enabled  bool               `json:"enabled" doc:"Decode this channel at the same time as the others, with its own input and settings (the groups below)"`
 	Input    Input              `json:"input"`
 	Channel  Channel            `json:"channel"`
 	DDC      DDC                `json:"ddc"`
@@ -57,23 +59,23 @@ type Second struct {
 	Segment  segment.Config     `json:"segment"`
 }
 
-// ForChannel returns the configuration of one decoding channel as a single-channel configuration: channel 1's groups
+// ForChannel returns the configuration of one decoding channel as a single-channel configuration: that channel's groups
 // stand in for the top-level ones, and the shared options are kept. Everything that decodes (source, engine, runner)
 // works on such a configuration.
 func (c Config) ForChannel(ch int) Config {
-	if ch == 1 {
-		s := c.Second
+	if ch >= 1 && ch < Channels {
+		s := c.Extra[ch-1]
 		c.Input, c.Channel, c.DDC, c.Receiver, c.Decoder, c.Segment = s.Input, s.Channel, s.DDC, s.Receiver, s.Decoder, s.Segment
 	}
-	c.Second = Second{}
+	c.Extra = [Channels - 1]Extra{}
 	return c
 }
 
 // SetChannel stores the per-channel groups of d (a configuration from ForChannel, possibly changed) back as channel ch.
 func (c *Config) SetChannel(ch int, d Config) {
-	if ch == 1 {
-		c.Second.Input, c.Second.Channel, c.Second.DDC, c.Second.Receiver, c.Second.Decoder, c.Second.Segment =
-			d.Input, d.Channel, d.DDC, d.Receiver, d.Decoder, d.Segment
+	if ch >= 1 && ch < Channels {
+		e := &c.Extra[ch-1]
+		e.Input, e.Channel, e.DDC, e.Receiver, e.Decoder, e.Segment = d.Input, d.Channel, d.DDC, d.Receiver, d.Decoder, d.Segment
 		return
 	}
 	c.Input, c.Channel, c.DDC, c.Receiver, c.Decoder, c.Segment = d.Input, d.Channel, d.DDC, d.Receiver, d.Decoder, d.Segment
@@ -87,9 +89,22 @@ func (c *Config) EditChannel(ch int, f func(*Config)) {
 }
 
 // ChannelEnabled reports whether channel ch is decoded (channel 0 always is).
-func (c Config) ChannelEnabled(ch int) bool { return ch == 0 || (ch == 1 && c.Second.Enabled) }
+func (c Config) ChannelEnabled(ch int) bool {
+	return ch == 0 || (ch > 0 && ch < Channels && c.Extra[ch-1].Enabled)
+}
 
-// Label is a short name for channel ch: its name option if set, else "Channel 1" / "Channel 2".
+// ActiveChannels is the number of channels that are decoded.
+func (c Config) ActiveChannels() int {
+	n := 1
+	for i := range c.Extra {
+		if c.Extra[i].Enabled {
+			n++
+		}
+	}
+	return n
+}
+
+// Label is a short name for channel ch: its name option if set, else "Channel 1", "Channel 2" ...
 func (c Config) Label(ch int) string {
 	d := c.ForChannel(ch)
 	if n := strings.TrimSpace(d.Channel.Name); n != "" {
@@ -295,13 +310,30 @@ type Output struct {
 }
 
 // Default returns the default configuration.
+func defaultInput() Input {
+	return Input{Source: "device", BlockSize: 16384, WatchdogS: 10,
+		Device: DeviceInput{SampleRateHz: 48000, Channels: 1, Autotune: true, ManualCarrierHz: DefaultCarrierHz},
+		HPSDR:  HPSDRInput{SampleRateHz: 48000, Autotune: true, ManualCarrierHz: HPSDRCarrierHz},
+		Stdin:  StdinInput{SampleRateHz: 48000, Channels: 1, PCMFormat: "s16le", Autotune: true, ManualCarrierHz: DefaultCarrierHz},
+		File:   FileInput{Autotune: true, ManualCarrierHz: DefaultCarrierHz}}
+}
+
+func defaultExtra(i int) Extra { // channel i+2: 490 kHz from an audio input, switched off
+	return Extra{Input: defaultInput(), Channel: Channel{FrequencyHz: 490000, Name: fmt.Sprintf("Channel %d", i+2)},
+		DDC: DDC{TargetRateHz: 4000}, Receiver: fsk.DefaultReceiverConfig(0), Decoder: sitor.DefaultConfig(), Segment: segment.DefaultConfig()}
+}
+
 func Default() Config {
+	c := defaultConfig()
+	for i := range c.Extra {
+		c.Extra[i] = defaultExtra(i)
+	}
+	return c
+}
+
+func defaultConfig() Config {
 	return Config{
-		Input: Input{Source: "device", BlockSize: 16384, WatchdogS: 10,
-			Device: DeviceInput{SampleRateHz: 48000, Channels: 1, Autotune: true, ManualCarrierHz: DefaultCarrierHz},
-			HPSDR:  HPSDRInput{SampleRateHz: 48000, Autotune: true, ManualCarrierHz: HPSDRCarrierHz},
-			Stdin:  StdinInput{SampleRateHz: 48000, Channels: 1, PCMFormat: "s16le", Autotune: true, ManualCarrierHz: DefaultCarrierHz},
-			File:   FileInput{Autotune: true, ManualCarrierHz: DefaultCarrierHz}},
+		Input:       defaultInput(),
 		Channel:     Channel{FrequencyHz: 518000, Name: "Channel 1"},
 		DDC:         DDC{TargetRateHz: 4000},
 		Receiver:    fsk.DefaultReceiverConfig(0),
@@ -314,18 +346,6 @@ func Default() Config {
 		Clips:   Clips{BeforeS: 60, AfterS: 10, Dir: "clips"},
 		Server:  Server{Listen: "127.0.0.1:8080", OpenBrowser: true},
 		Output:  Output{Format: "text", IncompleteMessages: true},
-		Second: Second{
-			Input: Input{Source: "device", BlockSize: 16384, WatchdogS: 10,
-				Device: DeviceInput{SampleRateHz: 48000, Channels: 1, Autotune: true, ManualCarrierHz: DefaultCarrierHz},
-				HPSDR:  HPSDRInput{SampleRateHz: 48000, Autotune: true, ManualCarrierHz: HPSDRCarrierHz},
-				Stdin:  StdinInput{SampleRateHz: 48000, Channels: 1, PCMFormat: "s16le", Autotune: true, ManualCarrierHz: DefaultCarrierHz},
-				File:   FileInput{Autotune: true, ManualCarrierHz: DefaultCarrierHz}},
-			Channel:  Channel{FrequencyHz: 490000, Name: "Channel 2"},
-			DDC:      DDC{TargetRateHz: 4000},
-			Receiver: fsk.DefaultReceiverConfig(0),
-			Decoder:  sitor.DefaultConfig(),
-			Segment:  segment.DefaultConfig(),
-		},
 	}
 }
 
@@ -412,9 +432,11 @@ func (c Config) Validate() error {
 	if d.MinRun < 2 || d.MaxBad < 1 || d.VoteAgree < 1 || d.VoteFactor < 1 || d.ShiftHz <= 0 {
 		bad("decoder settings out of range")
 	}
-	if c.Second.Enabled {
-		if err := c.ForChannel(1).Validate(); err != nil {
-			errs = append(errs, fmt.Errorf("second channel: %w", err))
+	for ch := 1; ch < Channels; ch++ {
+		if c.Extra[ch-1].Enabled {
+			if err := c.ForChannel(ch).Validate(); err != nil {
+				errs = append(errs, fmt.Errorf("channel %d: %w", ch+1, err))
+			}
 		}
 	}
 	return errors.Join(errs...)
@@ -451,10 +473,16 @@ func Load(path string) (Config, error) {
 	if b, err = migrateInput(b); err != nil {
 		return Config{}, fmt.Errorf("%s: %w", path, err)
 	}
+	b = migrateSecond(b)
 	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&c); err != nil {
 		return Config{}, fmt.Errorf("%s: %w", path, err)
+	}
+	for i := range c.Extra { // a file with fewer channels than we support: the rest keep their defaults (a short JSON array zeroes them)
+		if c.Extra[i] == (Extra{}) {
+			c.Extra[i] = defaultExtra(i)
+		}
 	}
 	for ch := 0; ch < Channels; ch++ { // a channel without a name (older settings files) gets the default one
 		if strings.TrimSpace(c.ForChannel(ch).Channel.Name) == "" {
@@ -513,6 +541,12 @@ func walk(v reflect.Value, prefix string, out *[]Field) {
 			walk(fv, path, out)
 			continue
 		}
+		if fv.Kind() == reflect.Array && fv.Type().Elem().Kind() == reflect.Struct { // extra.0.*, extra.1.* ...
+			for k := 0; k < fv.Len(); k++ {
+				walk(fv.Index(k), fmt.Sprintf("%s.%d", path, k), out)
+			}
+			continue
+		}
 		f := Field{Path: path, Doc: sf.Tag.Get("doc"), Unit: sf.Tag.Get("unit")}
 		if ch := sf.Tag.Get("choices"); ch != "" {
 			f.Choices = strings.Split(ch, ",")
@@ -560,6 +594,16 @@ func Set(c *Config, path, value string) error {
 	}
 	doc := raw
 	for i := len(parts) - 1; i >= 0; i-- {
+		if n, err := strconv.Atoi(parts[i]); err == nil && n >= 0 && n < Channels-1 && i > 0 && parts[i-1] == "extra" {
+			// an array element: null leaves an element as it is (a shorter array would reset the others)
+			el := make([]string, Channels-1)
+			for k := range el {
+				el[k] = "null"
+			}
+			el[n] = doc
+			doc = "[" + strings.Join(el, ",") + "]"
+			continue
+		}
 		doc = fmt.Sprintf("{%q:%s}", parts[i], doc)
 	}
 	dec := json.NewDecoder(strings.NewReader(doc))
@@ -608,8 +652,11 @@ var liveFields = []string{
 // blanker on or off is the one exception inside a live option; RestartNeeded decides that). Server options are not
 // live either: they need navtexd restarted.
 func IsLive(path string) bool {
-	if p, ok := strings.CutPrefix(path, "second."); ok { // the second channel has the same options
-		return p != "enabled" && IsLive(p)
+	if rest, ok := strings.CutPrefix(path, "extra."); ok { // the other channels have the same options
+		if _, p, ok := strings.Cut(rest, "."); ok {
+			return p != "enabled" && IsLive(p)
+		}
+		return false
 	}
 	if path == "decoder.shift_hz" {
 		return false
@@ -630,17 +677,22 @@ func IsLive(path string) bool {
 // the down-converter, the baud rate, the tone spacing, the channel filter and timing block length, and switching the
 // impulse blanker on or off.
 func RestartNeeded(a, b Config) bool {
-	return RestartNeededFor(a, b, 0) || RestartNeededFor(a, b, 1)
-}
-
-// RestartNeededFor is RestartNeeded for one channel. Switching the second channel on or off needs its restart (it
-// starts or stops); while it is off nothing in it matters.
-func RestartNeededFor(a, b Config, ch int) bool {
-	if ch == 1 {
-		if a.Second.Enabled != b.Second.Enabled {
+	for ch := 0; ch < Channels; ch++ {
+		if RestartNeededFor(a, b, ch) {
 			return true
 		}
-		if !b.Second.Enabled {
+	}
+	return false
+}
+
+// RestartNeededFor is RestartNeeded for one channel. Switching an extra channel on or off needs its restart (it
+// starts or stops); while it is off nothing in it matters.
+func RestartNeededFor(a, b Config, ch int) bool {
+	if ch >= 1 && ch < Channels {
+		if a.Extra[ch-1].Enabled != b.Extra[ch-1].Enabled {
+			return true
+		}
+		if !b.Extra[ch-1].Enabled {
 			return false
 		}
 	}
@@ -771,4 +823,25 @@ func migrateInput(b []byte) ([]byte, error) {
 		}
 	}
 	return json.MarshalIndent(top, "", "  ")
+}
+
+// migrateSecond moves the "second" group of settings files from before channels were a list into extra[0].
+func migrateSecond(b []byte) []byte {
+	var top map[string]json.RawMessage
+	if json.Unmarshal(b, &top) != nil {
+		return b
+	}
+	sec, ok := top["second"]
+	if !ok {
+		return b
+	}
+	delete(top, "second")
+	if _, have := top["extra"]; !have {
+		top["extra"], _ = json.Marshal([]json.RawMessage{sec})
+	}
+	out, err := json.Marshal(top)
+	if err != nil {
+		return b
+	}
+	return out
 }

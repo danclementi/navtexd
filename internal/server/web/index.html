@@ -59,17 +59,6 @@
       <label class="check"><input class="c-uos" type="checkbox"> UoS</label>
       <select class="c-polarity" title="Signal polarity"><option value="normal">Normal (USB)</option><option value="inverted">Inverted (LSB)</option><option value="auto">Auto</option></select>
     </div>
-    <div class="chline" data-ch="1" hidden>
-      <button type="button" class="chip" title="Make this the active channel (text, big spectrum, log, Save clip)"></button>
-      <span class="chfreq"></span>
-      <select class="c-device" title="Where the signal comes from: an audio input, or a radio on the network (OpenHPSDR / Metis)."><option value="">-</option></select>
-      <span class="chcmt" title="Channel comment (change it in Options)"></span>
-      <span class="chinfo" title="Format of the input"></span>
-      <button type="button" class="b-resync" title="Resynchronise the decoder">RESYNC</button>
-      <span class="led l-sync"><i></i>SYNC</span><span class="led l-data"><i></i>DATA</span>
-      <label class="check"><input class="c-uos" type="checkbox"> UoS</label>
-      <select class="c-polarity" title="Signal polarity"><option value="normal">Normal (USB)</option><option value="inverted">Inverted (LSB)</option><option value="auto">Auto</option></select>
-    </div>
     <button type="button" class="chip add" id="b-addchan" hidden title="Decode a second channel at the same time, from another input">+ Add second channel</button>
   </div>
   <div id="login" class="row" hidden>
@@ -110,7 +99,7 @@
   </section>
   <section id="tab-log" hidden>
     <div class="fbar" id="filters">
-      <label class="check fswitch" title="Switch the filter on or off; its settings are kept"><input id="f-on" type="checkbox" checked> Filter</label>
+      <label class="check fswitch" title="Switch the filter on or off; its settings are kept"><input id="f-on" type="checkbox" autocomplete="off"> Filter</label>
       <button id="f-edit" type="button" title="Choose what the list shows">Edit&hellip;</button>
       <span class="fsum" id="f-sum"></span>
       <span class="filtind" id="f-ind" title="A filter is applied: only matching records are listed"><i></i><b>FILTER ON</b><span id="f-stat" class="small"></span></span>
@@ -285,8 +274,8 @@
   <div class="dlghead"><b>Filter the log</b></div>
   <div class="fform">
     <div class="fcol fleft">
-      <label class="field">Frequency <select id="f-freq"><option value="">both</option><option value="518">518</option><option value="490">490</option><option value="424">424</option></select></label>
-      <label class="field" id="f-rcv-wrap" hidden>Channel <select id="f-rcv"><option value="">both</option><option value="1">1</option><option value="2">2</option></select></label>
+      <label class="field">Frequency <select id="f-freq"><option value="">any</option><option value="518">518</option><option value="490">490</option><option value="424">424</option></select></label>
+      <label class="field" id="f-rcv-wrap" hidden>Channel <select id="f-rcv"><option value="">any</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></label>
       <label class="field">NAVAREA <select id="f-area"><option value="">ALL</option></select></label>
       <label class="field">ID letter <select id="f-b1"><option value="">ALL</option></select></label>
       <label class="field">Kind <select id="f-kind"><option value="">all</option><option value="message">message</option><option value="incomplete">incomplete</option><option value="fragment">fragment</option></select></label>

@@ -311,29 +311,30 @@ clamped it while the focused cell was replaced, and Escape no longer scrolls the
 
 ## 33. Decoding channels
 
-- There are two decoding channels, each with its own input, frequency, filter, blanker, timing, framing and decoder
-  settings, and its own engine, scope, clip buffer, carrier and state. The second is optional (`second.enabled`).
-- Configuration: channel 0 is the top-level `input`, `channel`, `ddc`, `receiver`, `decoder`, `segment` groups; channel 1 is the
-  same groups inside `second`. `Config.ForChannel(i)` returns a single-channel configuration (the groups of channel i plus
+- There are four decoding channels (`config.Channels`), each with its own input, frequency, filter, blanker, timing, framing and decoder
+  settings, and its own engine, scope, clip buffer, carrier and state. Channel 0 always runs; channels 1..3 are optional (`extra.N.enabled`).
+- Configuration: channel 0 is the top-level `input`, `channel`, `ddc`, `receiver`, `decoder`, `segment` groups; channels 1..3 are the
+  same groups inside `extra[0..2]` (JSON `extra`, settings paths `extra.<n>.*`; `Set` pads the array with nulls so other entries stay; `Load` migrates an old `second` group into `extra[0]`). `Config.ForChannel(i)` returns a single-channel configuration (the groups of channel i plus
   the shared options), which is what the source, the engine and the runner work on; `EditChannel` / `SetChannel` write it
   back. `channel.name` and `channel.comment` describe a channel: the name is shown in the system log tag and the channel
   selector, the comment is stored with every record received on it (after the operator comment, separated by "; ").
 - Restarts are per channel (`RestartNeededFor`): a change that needs a restart restarts only the channel it concerns;
-  switching `second.enabled` starts or stops the second channel. `Runner.Modify` marks the channels, `Runner.Restart`
-  restarts the marked ones. While the second channel is off, its settings are not validated and do not matter.
-- API: the per-channel requests take the query `?ch=0|1` (default 0): `POST /api/control/{name}`, `GET /api/scope`,
-  `POST /api/clips`, `GET /api/input`. `/api/state` (hello) has `chans`, an array of two objects (`controls`, `run`, `meters`,
+  switching `extra.N.enabled` starts or stops that channel. `Runner.Modify` marks the channels, `Runner.Restart`
+  restarts the marked ones. While a channel is off, its settings are not validated and do not matter.
+- API: the per-channel requests take the query `?ch=0..3` (default 0): `POST /api/control/{name}`, `GET /api/scope`,
+  `POST /api/clips`, `GET /api/input`. `/api/state` (hello) has `chans`, an array of `config.Channels` objects (`controls`, `run`, `meters`,
   `text`, `lines`); the old top-level `run`, `controls`, `meters`, `text` and `lines` are channel 0 and stay for now.
 - Events: `meters`, `spectrum`, `text`, `line`, `run` (state) and `controls` carry `rcv` (omitted = 0); a `record` event and
-  stored records carry it too (`rcv` in the JSON-lines store; absent = 0). `GET /api/messages` takes `rcv=1|2` to filter.
+  stored records carry it too (`rcv` in the JSON-lines store; absent = 0). `GET /api/messages` takes `rcv=1..4` to filter.
 - The page (`app.js`) keeps each channel's controls, meters, run state, spectrum, text and lines in `state.chans[i]`; `state.*`
-  is the selected channel's (`state.sel`), so the existing display code is unchanged. A row of chips under the header selects
-  the channel (hidden with one channel, except a "+ Add second channel" chip for administrators that opens Options, Channels).
+  is the selected channel's (`state.sel`), so the existing display code is unchanged. One line per enabled channel under the header selects
+  the channel (plus a "+ Add channel" chip for administrators that opens that channel's Options tab). The two small spectra in the
+  header show the last two channels selected (`state.slots`); their controls act on the channel they show.
   The header controls, Save clip, the Signal tab and the Schedule/Ephemeris frequency follow the selected channel; the choice
   is remembered per browser (`nx-chan`). The Log tab has a Channel filter and a channel badge on the frequency, and the
-  Status tab's recent records carry the channel, all only while the second channel is on. The header Comment is shared.
-- The system log tags the lines of a channel with its name or `ch1` / `ch2` (for example `[ch2] lock pol=+1 align=3`) as soon
-  as the second channel is on; with one channel nothing changes. The quality history (Statistics) is channel 0's.
-- Two channels need two inputs (two sound devices, or two radios); both on the same device fail in the operating system, not
-  in navtexd. A WAV file can be used for either channel, which makes the feature testable without radios.
+  Status tab's recent records carry the channel, all only while more than one channel is on. The header Comment is shared.
+- The system log tags the lines of a channel with its name or `ch1`..`ch4` (for example `[ch2] lock pol=+1 align=3`) as soon
+  as more than one channel is on; with one channel nothing changes. The quality history (Statistics) is channel 0's.
+- Each channel opens its own input. Two channels can open the same sound device when the driver shares it (virtual audio cables
+  usually do); a radio serves one stream per address, so several channels from one radio need the shared-input feature (TODO). A WAV file can be used for either channel, which makes the feature testable without radios.
 

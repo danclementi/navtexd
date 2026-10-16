@@ -172,6 +172,8 @@
     sc.scrollTop = i * ROW;
     render();
     selectIndex(i);
+    if (document.activeElement && document.activeElement !== sc) document.activeElement.blur();
+    sc.focus({ preventScroll: true }); // the arrow keys now move through the records
   }
 
   // ---- selection and record text ----

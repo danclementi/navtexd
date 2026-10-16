@@ -320,8 +320,8 @@ func displayAddr(a string) string {
 
 func apply(r *app.Runner, line string) {
 	f := strings.Fields(line)
-	ch := 0 // a leading "ch2" addresses the second channel
-	if len(f) > 0 && (strings.EqualFold(f[0], "ch1") || strings.EqualFold(f[0], "ch2")) {
+	ch := 0 // a leading "ch2", "ch3" ... addresses another channel
+	if len(f) > 0 && len(f[0]) == 3 && strings.EqualFold(f[0][:2], "ch") && f[0][2] >= '1' && int(f[0][2]-'1') < config.Channels {
 		ch = int(f[0][2] - '1')
 		f = f[1:]
 	}

@@ -629,24 +629,25 @@ func (s *Server) publishControls() {
 	}
 }
 
-// chTag prefixes a system-log line about channel ch once the second channel is on.
+// chTag prefixes a system-log line about channel ch once more than one channel is on.
 func (s *Server) chTag(ch int) string {
-	if c := s.run.Config(); c.Second.Enabled {
+	if c := s.run.Config(); c.ActiveChannels() > 1 {
 		return "[" + c.Label(ch) + "] "
 	}
 	return ""
 }
 
-// rcvOf reads the decoding channel a request is about (query "ch", 0 or 1; default 0).
+// rcvOf reads the decoding channel a request is about (query "ch", 0 to Channels-1; default 0).
 func rcvOf(r *http.Request) (int, error) {
-	switch v := r.URL.Query().Get("ch"); v {
-	case "", "0":
+	v := r.URL.Query().Get("ch")
+	if v == "" {
 		return 0, nil
-	case "1":
-		return 1, nil
-	default:
-		return 0, fmt.Errorf("ch must be 0 or 1, not %q", v)
 	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 || n >= config.Channels {
+		return 0, fmt.Errorf("ch must be 0 to %d, not %q", config.Channels-1, v)
+	}
+	return n, nil
 }
 
 func (s *Server) devices(w http.ResponseWriter, r *http.Request, id Identity) {

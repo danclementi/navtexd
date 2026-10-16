@@ -24,8 +24,9 @@ server and a multi-client browser UI, comparable to YaND. Public GPL v3 project.
     `SetTuning()` / `SampleRate()` for the selected source; do not read another source's group. `Config` and `Input` must
     stay comparable (`==`), so lists such as the remembered radios live in their own file, not in the config.
 
-12. Two decoding channels (`config.Channels`): channel 0 uses the top-level `input`, `channel`, `ddc`, `receiver`, `decoder`
-    and `segment` groups, channel 1 the same groups inside `second` (plus `second.enabled`); everything else is shared. Code
+12. Four decoding channels (`config.Channels`): channel 0 uses the top-level `input`, `channel`, `ddc`, `receiver`, `decoder`
+    and `segment` groups, channels 1..3 the same groups inside `extra[0..2]` (plus `extra.N.enabled`; the old `second` group is
+    migrated to `extra[0]` on load); everything else is shared. Code
     that decodes works on `cfg.ForChannel(i)`, a single-channel `Config`; change one channel with `cfg.EditChannel(i, ...)`.
     Anything sent to clients or stored carries its channel as `rcv` (absent = 0). Never use `cfg.Channel` etc. for "the"
     channel in code that serves both. Design: `docs/SERVER_DESIGN.md` section 33.

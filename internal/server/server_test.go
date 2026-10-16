@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -288,8 +289,8 @@ func TestSecondChannelOffAndOn(t *testing.T) {
 	cfg := config.Default()
 	cfg.Input.File.Path = "/nonexistent.wav"
 	cfg.Input.Source = "file"
-	cfg.Second.Input.Source = "file"
-	cfg.Second.Input.File.Path = "/nonexistent2.wav"
+	cfg.Extra[0].Input.Source = "file"
+	cfg.Extra[0].Input.File.Path = "/nonexistent2.wav"
 	s, r, st, _ := setup(t, cfg)
 	ts := httptest.NewServer(s.handler(false))
 	defer ts.Close()
@@ -299,7 +300,7 @@ func TestSecondChannelOffAndOn(t *testing.T) {
 		t.Fatal(code)
 	}
 	chans, _ := h["chans"].([]any)
-	if len(chans) != 2 {
+	if len(chans) != config.Channels {
 		t.Fatalf("chans: %v", h["chans"])
 	}
 	c1 := chans[1].(map[string]any)["controls"].(map[string]any)
@@ -310,7 +311,7 @@ func TestSecondChannelOffAndOn(t *testing.T) {
 		t.Errorf("a disabled channel must not run: %+v", r.State(1))
 	}
 	hdr := map[string]string{"X-Navtex": "1"}
-	code, _ = do(t, ts, "PUT", "/api/settings", map[string]any{"changes": map[string]any{"second.enabled": true, "second.channel.name": "Loop"}}, hdr)
+	code, _ = do(t, ts, "PUT", "/api/settings", map[string]any{"changes": map[string]any{"extra.0.enabled": true, "extra.0.channel.name": "Loop"}}, hdr)
 	if code != 200 {
 		t.Fatalf("enable second: %d", code)
 	}
@@ -337,11 +338,18 @@ func TestSecondChannelOffAndOn(t *testing.T) {
 	if code, _ = do(t, ts, "POST", "/api/control/polarity?ch=1", map[string]any{"value": "inverted"}, hdr); code != 200 {
 		t.Fatalf("polarity ch=1: %d", code)
 	}
-	if c := r.Config(); c.Second.Decoder.Polarity == c.Decoder.Polarity {
-		t.Errorf("polarity went to the wrong channel: %v / %v", c.Decoder.Polarity, c.Second.Decoder.Polarity)
+	if c := r.Config(); c.Extra[0].Decoder.Polarity == c.Decoder.Polarity {
+		t.Errorf("polarity went to the wrong channel: %v / %v", c.Decoder.Polarity, c.Extra[0].Decoder.Polarity)
 	}
-	if code, _ = do(t, ts, "POST", "/api/control/polarity?ch=2", map[string]any{"value": "inverted"}, hdr); code != 400 {
-		t.Errorf("ch=2 must be refused: %d", code)
+	// a third channel works the same way, and a channel beyond the last is refused
+	if code, _ = do(t, ts, "POST", "/api/control/polarity?ch=2", map[string]any{"value": "inverted"}, hdr); code != 200 {
+		t.Errorf("ch=2: %d", code)
+	}
+	if c := r.Config(); c.Extra[1].Decoder.Polarity != c.Extra[0].Decoder.Polarity || c.Extra[1].Decoder.Polarity == c.Decoder.Polarity {
+		t.Error("polarity of channel 3 was not set")
+	}
+	if code, _ = do(t, ts, "POST", "/api/control/polarity?ch="+strconv.Itoa(config.Channels), map[string]any{"value": "inverted"}, hdr); code != 400 {
+		t.Errorf("a channel beyond the last must be refused: %d", code)
 	}
 }
 
@@ -353,10 +361,10 @@ func TestTwoChannelsDecode(t *testing.T) {
 	}
 	cfg := config.Default()
 	cfg.Input.Source, cfg.Input.File.Path = "file", recording
-	cfg.Second.Enabled = true
-	cfg.Second.Input.Source, cfg.Second.Input.File.Path = "file", recording
-	cfg.Second.Channel.FrequencyHz = 518000
-	cfg.Second.Channel.Comment = "second loop"
+	cfg.Extra[0].Enabled = true
+	cfg.Extra[0].Input.Source, cfg.Extra[0].Input.File.Path = "file", recording
+	cfg.Extra[0].Channel.FrequencyHz = 518000
+	cfg.Extra[0].Channel.Comment = "second loop"
 	s, r, st, _ := setup(t, cfg)
 	ts := httptest.NewServer(s.handler(false))
 	defer ts.Close()

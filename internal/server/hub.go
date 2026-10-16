@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"navtex/internal/config"
 	"sync"
 	"time"
 )
@@ -15,8 +16,8 @@ type event struct {
 type client struct {
 	ch       chan event
 	role     Role
-	specGap  time.Duration // minimum time between spectrum frames of one channel for this client
-	lastSpec [2]time.Time  // when the last spectrum frame of each decoding channel was sent
+	specGap  time.Duration              // minimum time between spectrum frames of one channel for this client
+	lastSpec [config.Channels]time.Time // when the last spectrum frame of each decoding channel was sent
 }
 
 // Hub fans events out to the connected clients. A client that cannot keep up loses live meter frames; if it also misses
@@ -25,9 +26,9 @@ type Hub struct {
 	mu      sync.Mutex
 	clients map[*client]struct{}
 
-	recent  [2][]textChunk // newest text of each decoding channel, for new clients
-	recentN [2]int
-	lines   [2][]lineMsg // newest completed lines
+	recent  [config.Channels][]textChunk // newest text of each decoding channel, for new clients
+	recentN [config.Channels]int
+	lines   [config.Channels][]lineMsg // newest completed lines
 }
 
 // LineKeep is how many completed lines a new client is given.

@@ -52,7 +52,7 @@ type Hooks struct {
 
 // State describes one decoding channel.
 type State struct {
-	Rcv     int       `json:"rcv"` // 0 = the first channel, 1 = the second
+	Rcv     int       `json:"rcv"` // decoding channel: 0 = the first
 	Running bool      `json:"running"`
 	Info    string    `json:"info"`  // what is being decoded
 	Error   string    `json:"error"` // why it is not running, if it failed
@@ -75,7 +75,7 @@ type chain struct {
 	done  chan struct{}
 }
 
-// Runner owns the decoding channels (config.Channels of them; the second is optional), the configuration they share and
+// Runner owns the decoding channels (up to config.Channels of them; all but the first are optional), the configuration they share and
 // what they produce.
 type Runner struct {
 	dir string
@@ -149,7 +149,7 @@ func (r *Runner) State(ch int) State {
 	return s
 }
 
-// log writes to the system log. Once the second channel is on, lines from a channel carry its label ("[ch1] ...").
+// log writes to the system log. Once more than one channel is on, lines from a channel carry its label ("[Channel 1] ...").
 func (r *Runner) log(level, text string) {
 	e := r.st.Log(level, text)
 	if r.h.Log != nil {
@@ -158,7 +158,7 @@ func (r *Runner) log(level, text string) {
 }
 
 func (r *Runner) logc(ch int, level, text string) {
-	if c := r.Config(); c.Second.Enabled {
+	if c := r.Config(); c.ActiveChannels() > 1 {
 		text = "[" + c.Label(ch) + "] " + text
 	}
 	r.log(level, text)
@@ -174,7 +174,7 @@ func (r *Runner) setState(ch int, s State) {
 	}
 }
 
-// Start begins decoding with the current configuration: the first channel, and the second one if it is enabled.
+// Start begins decoding with the current configuration: the first channel, and the others that are enabled.
 // Failures (no such file, no such audio device) are reported in the state and the system log, not returned, so that
 // the server can still be used to fix the settings.
 func (r *Runner) Start() {
@@ -669,7 +669,7 @@ func (r *Runner) finishClip(c *chain, ring *clip.Ring, src *source.Opened) {
 	// the settings that matter for decoding; the network and personal options stay out
 	var all map[string]json.RawMessage
 	if json.Unmarshal(cfg.JSON(), &all) == nil {
-		for _, k := range []string{"server", "operator", "logging", "output", "meters", "clips", "second"} {
+		for _, k := range []string{"server", "operator", "logging", "output", "meters", "clips", "extra"} {
 			delete(all, k)
 		}
 		m.Settings, _ = json.Marshal(all)

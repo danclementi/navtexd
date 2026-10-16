@@ -100,17 +100,16 @@ way is to unpack the zip into a second folder (for example `C:\navtexd2`) and st
 and messages next to its own program, and takes the next free web port (8081, ...). Set a different audio input and
 frequency in each copy, for example 518 kHz in one and 490 kHz in the other.
 
-### Second channel
+### More channels
 
-One copy can also decode two channels at once, each from its own input (two sound cards or virtual cables, two radios, a
-file for testing), with its own frequency, filter, blanker, timing and decoder settings. Switch it on with `enabled`
-on the Options page (Channels tab), or with the "+ Add second channel" chip under the header, then give it an input and frequency. `channel.name` and `channel.comment` (and
-`second.channel.name` / `.comment`) label a channel; the comment is stored with each record received on it, and records carry
-the channel that received them. While it is on, system-log lines are tagged `[ch1]` / `[ch2]` (or the channel's name). Two chips under the header
-select the channel the page shows: the header controls, spectrum, meters, in-progress text, Save clip and the Signal tab
-follow it, and the Log tab gets a Channel filter and a channel badge on each record. The Options page has a Channels tab with
-both channels' settings (everything about channel 2 is under it; channel 1's input and decoder settings stay on the Input and
-Decoder tabs).
+One copy can also decode up to four channels at once, each from its own input (sound cards or virtual cables, radios, a
+file for testing; a sound card that other programs can share, such as a virtual cable, may feed several channels), with its own frequency, filter, blanker, timing and decoder settings. Switch it on with `enabled`
+on the Options page (Channels tab), or with the "+ Add channel" chip under the header, then give it an input and frequency. `channel.name` and `channel.comment` (and
+`extra.0.channel.name` / `.comment`, and so on) label a channel; the comment is stored with each record received on it, and records carry
+the channel that received them. While it is on, system-log lines are tagged with the channel's name. One line per channel under the header (click its name)
+selects the channel the page shows: the header controls, spectrum, meters, in-progress text, Save clip and the Signal tab
+follow it, and the Log tab gets a Channel filter and a channel badge on each record. The two small spectra in the header show the last two channels selected. The Options page has a tab per channel (Channel 1 to
+Channel 4) with that channel's settings. Settings from an older version's `second` group are carried over automatically.
 
 ## Security notes
 

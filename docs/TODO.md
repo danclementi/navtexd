@@ -15,12 +15,12 @@ A running list. Move finished items to the bottom or delete them.
   Cloudflare does not buffer it), fewer bins or frames for remote viewers. Revisit once remote use is common.
 - **Retest** the packet-loss burst reporting and the `swap_iq` note on the other radios when they are available.
 
-## Next (two channels)
-Backend and options exist (`second.*`, SERVER_DESIGN section 33); still to do:
+## Next (channels)
+Four channels exist (`extra.*`, SERVER_DESIGN section 33); still to do:
 - **UI left:** channel badge and filter in Report, Database and Statistics (the Log tab and Status recent records have them);
-  Statistics follows channel 0 only; a Channels tab that is friendlier than the generic option groups (input, decoder settings
-  of channel 2 are plain option groups for now).
-- **Synchronized clips:** one click saves both channels' audio clips for the same time span (the two inputs have their
+  Statistics follows channel 0 only (Report and Database are meant to stay channel-agnostic).
+- **Spectrum tab:** show several channels at once (2x2 grid); the header shows the last two channels selected.
+- **Synchronized clips:** one click saves all channels' audio clips for the same time span (the two inputs have their
   own clocks and buffers, so start times must be aligned and recorded in each clip's .json).
 - **Quality history** per channel (Statistics shows channel 0 only), clips named per channel, per-channel log file option.
 - **Same frequency on both channels:** records show up twice in the shared tabs until a combiner exists (see the combining
