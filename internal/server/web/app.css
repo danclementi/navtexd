@@ -230,7 +230,6 @@ div.midbox.grp { flex: 1 1 auto; }
 #date { font-size: 12px; color: var(--dim); }
 #clock { font: 600 20px/1.1 var(--font); font-variant-numeric: tabular-nums; }
 .msun { font-size: 12px; }
-#grp-spec { flex: 1 1 220px; min-width: 200px; flex-direction: column; align-items: stretch; gap: 4px; }
 .specbar { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 14px; }
 .specbar .check { font-size: 11px; font-weight: 700; letter-spacing: .05em; color: var(--dim); }
 .specbar input[type=number] { width: 64px; font: inherit; color: var(--ink); background: var(--entry); border: 1px solid var(--line); border-radius: 4px; padding: 1px 4px; }
@@ -290,13 +289,8 @@ body.noloc .km, body.noloc #f-km-wrap { display: none; }
 .sunrow { text-align: center; white-space: nowrap; }
 .commentrow { display: flex; align-items: center; gap: 6px; }
 .commentrow input { flex: 1 1 auto; min-width: 0; }
-#grp-spec { flex: 1 1 160px; min-width: 150px; flex-direction: row; align-items: stretch; gap: 8px; }
 .specwrap2 { position: relative; flex: 1 1 auto; min-width: 90px; min-height: 120px; }
 #spec-mini { position: absolute; inset: 0; width: 100%; height: 100%; }
-.tunecol { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; width: 74px; }
-.tunecol .check { font-size: 12px; font-weight: 700; letter-spacing: .04em; color: var(--dim); }
-.tunecol input[type=number] { width: 100%; font: inherit; color: var(--ink); background: var(--entry); border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; }
-.tunecol .spacer { flex: 1 1 auto; }
 #grp-set { min-width: 240px; }
 #grp-set .sub { flex-wrap: wrap; }
 
@@ -340,9 +334,6 @@ footer.schedbar { position: static; flex: 0 0 auto; width: 100%; }
 .revd { background: color-mix(in srgb, #f2c230 30%, transparent); border-bottom: 1px dashed #f2c230; cursor: help; }
 textarea#rev-out { font-family: var(--mono); font-size: 13px; }
 #rev-list { margin: 4px 0; }
-.tunecol .seg { position: static; margin-top: 2px; }
-.tunecol .seg button { font-size: 10px; padding: 1px 6px; color: var(--dim); border-color: var(--line); }
-.tunecol .seg button.on { background: var(--line); color: var(--ink); }
 fieldset.radios { display: inline-flex; align-items: center; gap: 10px; margin: 0; padding: 2px 10px 4px; border-radius: 6px; }
 fieldset.radios legend { font-size: 11px; padding: 0 4px; color: var(--dim); text-transform: none; font-weight: 400; }
 dialog#rec-dlg { width: min(900px, 94vw); height: min(640px, 88vh); padding: 0; border: 2px solid var(--tabline); border-radius: 8px; background: var(--panel); color: var(--ink); }
@@ -429,10 +420,13 @@ dialog#rp-dlg::backdrop { background: rgba(0, 0, 0, .45); }
 fieldset.specgrp { flex: 1 1 200px; min-width: 150px; padding: 4px 8px 6px; flex-direction: row; align-items: stretch; }
 .specgrp[hidden] { display: none; }
 .specwrap2 { min-height: 90px; }
-.specgrp .tunecol { justify-content: flex-start; gap: 3px; }
 .specgrp .specwrap2 { min-height: 0; }
-.specgrp .tunecol .seg { margin-top: auto; }
-.chlines { display: grid; grid-template-columns: max-content max-content minmax(150px, 1.2fr) minmax(60px, 1fr) max-content max-content max-content max-content max-content max-content; gap: 4px 10px; margin: 0 auto 6px; }
+/* LOG / LIN sits in the graph, just below the channel name */
+.specwrap2 .mini-scale { position: absolute; right: 4px; top: 20px; margin: 0; z-index: 1; }
+.specwrap2 .mini-scale button { font-size: 10px; padding: 1px 6px; color: var(--spec-ink); border-color: var(--spec-grid); }
+.specwrap2 .mini-scale button.on { background: var(--spec-grid); color: #fff; }
+.led.off { opacity: .4; }
+.chlines { display: grid; grid-template-columns: max-content max-content minmax(150px, 1.2fr) minmax(60px, 1fr) max-content max-content max-content max-content max-content max-content max-content max-content; gap: 4px 10px; margin: 0 auto 6px; }
 .chline { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; column-gap: 10px; align-items: center; padding: 3px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); } /* same columns in every row, one frame per row */
 .chline[hidden] { display: none; }
 .chline:has(.chip.on) { border-color: var(--accent, #2a6fdb); box-shadow: inset 0 0 0 1px var(--accent, #2a6fdb); }
@@ -448,7 +442,7 @@ fieldset.specgrp { flex: 1 1 200px; min-width: 150px; padding: 4px 8px 6px; flex
 .chfreq { font-variant-numeric: tabular-nums; font-size: 13px; white-space: nowrap; }
 .chcmt, .chinfo { font-size: 12px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .chinfo.bad { color: var(--bad); }
-@media (max-width: 1000px) { .chlines { grid-template-columns: max-content max-content 1fr max-content max-content max-content max-content max-content; } .chcmt, .chinfo { display: none; } }
+@media (max-width: 1000px) { .chlines { grid-template-columns: max-content max-content 1fr max-content max-content max-content max-content max-content max-content max-content; } .chcmt, .chinfo { display: none; } }
 /* both small spectra: the canvas fills its box and never sizes it (otherwise a scaled display makes the header grow) */
 .specwrap2 canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; border-radius: 4px; background: var(--spec-bg); }
 .chb { display: inline-block; margin-left: 4px; padding: 0 5px; border-radius: 8px; font-size: 10px; line-height: 14px; background: color-mix(in srgb, var(--accent, #2a6fdb) 22%, transparent); vertical-align: 1px; }

@@ -108,7 +108,7 @@ on the Options page (Channels tab), or with the "+ Add channel" chip under the h
 `extra.0.channel.name` / `.comment`, and so on) label a channel; the comment is stored with each record received on it, and records carry
 the channel that received them. While it is on, system-log lines are tagged with the channel's name. One line per channel under the header (click its name)
 selects the channel the page shows: the header controls, spectrum, meters, in-progress text, Save clip and the Signal tab
-follow it, and the Log tab gets a Channel filter and a channel badge on each record. The two small spectra in the header show the last two channels selected. The Options page has a tab per channel (Channel 1 to
+follow it, and the Log tab gets a Channel filter and a channel badge on each record. The header has one small spectrum per channel; each has its own LOG/LIN button, and the Auto (carrier auto-tune) checkbox and LOCK light are on the channel's line (LOCK is greyed out while Auto is off). To enter a carrier by hand, switch Auto off and drag the dashed line, or use Options. The Options page has a tab per channel (Channel 1 to
 Channel 4) with that channel's settings. Settings from an older version's `second` group are carried over automatically.
 
 ## Security notes

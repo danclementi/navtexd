@@ -3,7 +3,7 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const N = 4; // decoding channels the server offers (config.Channels)
-  const state = { sel: 0, chans: [], role: "viewer", offset: 0, text: "", controls: null, sun: null, meters: null, tab: "status", loc: false, spec: null, yTop: -20, view: { spec: { yTop: -20, yTopLin: 0, geom: null, carX: null }, "spec-mini": { yTop: -20, yTopLin: 0, geom: null, carX: null }, "spec-mini2": { yTop: -20, yTopLin: 0, geom: null, carX: null } } };
+  const state = { sel: 0, chans: [], role: "viewer", offset: 0, text: "", controls: null, sun: null, meters: null, tab: "status", loc: false, spec: null, yTop: -20, view: { spec: { yTop: -20, yTopLin: 0, geom: null, carX: null }, "spec-mini": { yTop: -20, yTopLin: 0, geom: null, carX: null } } };
 
   // ---- helpers ----
   const NX = (window.NX = { $, state, tabs: {}, hooks: {} });
@@ -70,17 +70,23 @@
     setBar("cpu", m.cpu / 100, m.cpu.toFixed(0) + "%", m.cpu > 80 ? cssVar("--bad") : "");
   }
   // ---- per-channel header: the channel line (chip, frequency, input, comment, format, RESYNC, LEDs, UoS, polarity) and the small spectrum's controls ----
+  // one small spectrum per channel in the header (box 0 is in the page, the others are copies); each has its own LOG/LIN choice
+  const miniId = (i) => (i ? "spec-mini" + i : "spec-mini");
+  for (let i = 1; i < N; i++) {
+    const first = $("grp-spec"), c = first.cloneNode(true); c.id = "grp-spec" + i; c.dataset.ch = i; c.hidden = true;
+    c.querySelector("canvas").id = miniId(i); first.parentNode.insertBefore(c, $(i > 1 ? "grp-spec" + (i - 1) : "grp-spec").nextSibling);
+    state.view[miniId(i)] = { yTop: -20, yTopLin: 0, geom: null, carX: null };
+  }
   const L = (i, sel) => document.querySelector(`.chline[data-ch="${i}"] ${sel}`);
-  // The two small spectra in the header show the last two channels selected (state.slots); S() finds a channel's box, or a detached stand-in when it has none.
-  const S = (i, sel) => document.querySelector(`.specgrp[data-ch="${i}"] ${sel}`) || document.createElement("input");
+  // box(i): channel i's small spectrum in the header
+  const box = (i) => document.querySelector(`.specgrp[data-ch="${i}"]`);
   function showLeds(i) {
     const m = state.chans[i].meters;
     if (!m) return;
     led(L(i, ".l-sync"), m.sync);
     led(L(i, ".l-data"), m.data ? 2 : 0);
-    led(S(i, ".l-lock"), m.have ? 2 : 0);
-    const cr = S(i, ".c-carrier");
-    if (document.activeElement !== cr && m.audio) cr.placeholder = m.audio.toFixed(0);
+    const c = state.chans[i].controls, auto = !c || c.autotune;
+    const lk = L(i, ".l-lock"); led(lk, auto && m.have ? 2 : 0); lk.classList.toggle("off", !auto); // greyed out while Auto is off
   }
   function showInprog() {
     const el = $("inprog-ch"), c = state.chans[state.sel].controls;
@@ -92,9 +98,8 @@
     const set = (el, v) => { if (document.activeElement !== el) { if (el.type === "checkbox") el.checked = v; else el.value = v; } };
     set(L(i, ".c-polarity"), c.polarity);
     set(L(i, ".c-uos"), c.uos);
-    set(S(i, ".c-autotune"), c.autotune);
-    const cr = S(i, ".c-carrier");
-    if (!c.autotune) set(cr, c.carrier); else if (document.activeElement !== cr) cr.value = "";
+    set(L(i, ".c-autotune"), c.autotune);
+    showLeds(i);
     const chip = L(i, ".chip");
     chip.textContent = c.label || c.name || `Channel ${i + 1}`;
     if (i === state.sel) showInprog();
@@ -108,36 +113,21 @@
     el.textContent = r.error ? "\u26a0 " + r.error : (r.format || "");
     el.classList.toggle("bad", !!r.error);
     el.title = (r.running ? "" : "Not running. ") + (r.info || "");
+    showTips();
   }
   // lines, boxes and the add chip follow the number of channels
   function renderLines() {
     const act = activeList(), many = act.length > 1, admin = state.role === "admin";
     for (let i = 0; i < N; i++) { const ln = document.querySelector(`.chline[data-ch="${i}"]`); ln.hidden = !act.includes(i); ln.querySelector(".chip").classList.toggle("on", i === state.sel); }
-    fixSlots(act);
-    const b0 = $("grp-spec"), b1 = $("grp-spec2");
-    b0.dataset.ch = state.slots[0]; b1.dataset.ch = state.slots[1] === null ? "" : state.slots[1];
-    b1.hidden = state.slots[1] === null;
+    for (let i = 0; i < N; i++) box(i).hidden = !act.includes(i);
     const free = act.length < N;
     $("b-addchan").hidden = !free || !admin;
     $("b-addchan").textContent = act.length < 2 ? "+ Add second channel" : "+ Add channel";
     document.body.classList.toggle("two", many);
-    for (const i of act) { showChan(i); showLeds(i); }
-    showInprog();
+    for (const i of act) showChan(i);
+    showInprog(); showTips();
     scheduleSpec();
   }
-  // Keep the two spectrum slots on enabled channels: the selected one is always shown, the other is the previously selected (or the next enabled one).
-  function fixSlots(act) {
-    let [a, b] = state.slots;
-    if (!act.includes(a)) a = null;
-    if (!act.includes(b) || b === a) b = null;
-    if (a === null && b !== null) { a = b; b = null; }
-    if (a === null) a = act[0];
-    if (!act.length || act.length === 1) b = null;
-    else if (!(a === state.sel || b === state.sel)) { if (b === null) b = state.sel; else if (state.prevSel === a) b = state.sel; else a = state.sel; }
-    if (b === null && act.length > 1) b = act.find((x) => x !== a);
-    state.slots = [a, b];
-  }
-
   function showControls(c) {
     state.controls = c;
     scheduleText();
@@ -188,7 +178,16 @@
     let t = r.info || "";
     if (r.error) t = "⚠ " + r.error;
     const tip = (r.running ? "" : "Not running. ") + t;
-    document.querySelectorAll("#hdr .grp").forEach((g) => { g.title = tip; });
+    document.querySelectorAll("#hdr .grp:not(.specgrp)").forEach((g) => { g.title = tip; });
+    showTips();
+  }
+  // each small spectrum describes its own channel
+  function showTips() {
+    for (let i = 0; i < N; i++) {
+      const b = box(i), r = state.chans[i].run; if (!b) continue;
+      const t = r ? (r.running ? "" : "Not running. ") + (r.error ? "\u26a0 " + r.error : r.info || "") : "";
+      b.title = (t ? t + "\n" : "") + `Carrier: found automatically while Auto is on. To set it by hand, switch Auto off and drag the dashed line (administrators), or enter it in Options \u203a Channel ${i + 1}.`;
+    }
   }
 
   function clock() {
@@ -274,13 +273,14 @@
   }
 
   // ---- spectrum ----
-  // LOG / LIN is chosen separately for the big spectrum and the small one in the header
+  // LOG / LIN is chosen separately for the big spectrum and for each small one in the header
   const specPref = (key) => ({ get() { try { return localStorage.getItem(key) === "lin" ? "lin" : "log"; } catch (e) { return "log"; } }, set(v) { try { localStorage.setItem(key, v); } catch (e) { /* no storage */ } } });
-  const PREF = { spec: specPref("navtex.spec.scale"), "spec-mini": specPref("navtex.mini.scale") };
-  state.view.spec.scale = PREF.spec.get(); state.view["spec-mini"].scale = state.view["spec-mini2"].scale = PREF["spec-mini"].get();
+  const PREF = { spec: specPref("navtex.spec.scale") };
+  const PREFM = []; for (let i = 0; i < N; i++) { PREFM.push(specPref(i ? "navtex.mini" + i + ".scale" : "navtex.mini.scale")); state.view[miniId(i)].scale = PREFM[i].get(); }
+  state.view.spec.scale = PREF.spec.get();
   state.drag = null; state.specGeom = null;
   const niceTop = (v) => { const e = Math.pow(10, Math.floor(Math.log10(v))); const m = v / e; return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * e; };
-  function drawSpectrum() { drawSpec($("spec"), false, state.sel); drawSpec($("spec-mini"), true, state.slots[0]); if (state.slots[1] !== null) drawSpec($("spec-mini2"), true, state.slots[1]); }
+  function drawSpectrum() { drawSpec($("spec"), false, state.sel); for (const i of activeList()) drawSpec($(miniId(i)), true, i); }
   function drawSpec(cv, mini, ch) {
     const CH = state.chans[ch];
     const V = state.view[cv.id];
@@ -381,7 +381,7 @@
   (() => {
     const attach = (cv) => {
       const V = state.view[cv.id];
-      const chOf = () => (cv.id === "spec" ? state.sel : cv.id === "spec-mini" ? state.slots[0] : state.slots[1]);
+      const chOf = () => (cv.id === "spec" ? state.sel : Number(cv.closest(".specgrp").dataset.ch));
       const freqAt = (e) => { const r = cv.getBoundingClientRect(), G = V.geom; if (!G) return null; const f = G.f0 + (e.clientX - r.left - G.L) / G.pw * (G.f1 - G.f0); return Math.max(G.f0, Math.min(G.f1, f)); };
       const canDrag = () => { const k = state.chans[chOf()].controls; return state.role === "admin" && k && k.autotune === false; };
       cv.addEventListener("pointermove", (e) => {
@@ -401,8 +401,8 @@
       });
       cv.addEventListener("pointercancel", () => { state.drag = null; scheduleSpec(); });
     };
-    attach($("spec")); attach($("spec-mini")); attach($("spec-mini2"));
-    // LOG/LIN: one choice for the big spectrum, one shared by the small ones
+    attach($("spec")); for (let i = 0; i < N; i++) attach($(miniId(i)));
+    // LOG/LIN: one choice for the big spectrum and one for each small one
     const bind = (btns, cids, pref) => {
       btns.forEach((bt) => {
         bt.classList.toggle("on", bt.dataset.sc === state.view[cids[0]].scale);
@@ -410,7 +410,7 @@
       });
     };
     bind(document.querySelectorAll("#spec-scale button"), ["spec"], PREF.spec);
-    bind(document.querySelectorAll(".mini-scale button"), ["spec-mini", "spec-mini2"], PREF["spec-mini"]);
+    for (let i = 0; i < N; i++) bind(box(i).querySelectorAll(".mini-scale button"), [miniId(i)], PREFM[i]);
   })();
   let specPending = false;
   function scheduleSpec() { if (!specPending) { specPending = true; requestAnimationFrame(() => { specPending = false; drawSpectrum(); }); } }
@@ -456,7 +456,7 @@
     const rc = (m) => m.rcv || 0;
     on("meters", (m) => { const i = rc(m); state.chans[i].meters = m; showLeds(i); if (i === state.sel) showMeters(m); });
     on("net", showNet);
-    on("spectrum", (s) => { const i = rc(s); state.chans[i].spec = s; if (i === state.sel) state.spec = s; if (i === state.sel || state.slots.includes(i)) scheduleSpec(); });
+    on("spectrum", (s) => { const i = rc(s); state.chans[i].spec = s; if (i === state.sel) state.spec = s; if (enabledCh(i)) scheduleSpec(); });
     on("text", (c) => { const i = rc(c); if (i === state.sel) addText(c.x); else addTextTo(state.chans[i], c.x); });
     on("line", (l) => { const i = rc(l); if (i === state.sel) addLine(l); else addLineTo(state.chans[i], l); });
     on("controls", (c) => {
@@ -482,7 +482,6 @@
   // The server decodes up to N channels (config.Channels). state.* holds the selected channel's live data; state.chans[i] holds each
   // channel's own (controls, meters, run, spectrum, text, lines), kept up to date from the events.
   for (let i = 0; i < N; i++) state.chans.push({ controls: null, meters: null, run: null, spec: null, text: "", lines: [], tail: "" });
-  state.slots = [0, null]; state.prevSel = 0;
   // the channel lines: the first is in the page, the others are copies of it
   { const first = document.querySelector('.chline[data-ch="0"]'); for (let i = 1; i < N; i++) { const c = first.cloneNode(true); c.dataset.ch = i; c.hidden = true; first.parentNode.insertBefore(c, $("b-addchan")); } }
   const enabledCh = (i) => i === 0 || !!(state.chans[i].controls && state.chans[i].controls.enabled);
@@ -505,7 +504,7 @@
   }
   function selectChan(i) {
     if (i === state.sel) return;
-    saveSel(); state.prevSel = state.sel; state.sel = i;
+    saveSel(); state.sel = i;
     try { localStorage.setItem("nx-chan", String(i)); } catch (e) { /* no storage */ }
     applySel();
   }
@@ -513,6 +512,7 @@
   // ---- controls ----
   for (let i = 0; i < N; i++) {
     L(i, ".c-polarity").onchange = (e) => control("polarity", e.target.value, i);
+    L(i, ".c-autotune").onchange = (e) => control("autotune", e.target.checked, i);
     L(i, ".c-uos").onchange = (e) => control("uos", e.target.checked, i);
     L(i, ".b-resync").onclick = () => control("resync", undefined, i);
     L(i, ".c-device").onchange = (e) => {
@@ -521,12 +521,6 @@
       else if (v.startsWith("a:")) control("device", v.slice(2), i);
     };
     L(i, ".chip").onclick = () => selectChan(i);
-  }
-  // the two spectrum boxes act on whichever channel they currently show
-  for (const box of [$("grp-spec"), $("grp-spec2")]) {
-    const ch = () => Number(box.dataset.ch);
-    box.querySelector(".c-autotune").onchange = (e) => control("autotune", e.target.checked, ch());
-    box.querySelector(".c-carrier").onchange = (e) => { const v = Number(e.target.value); if (v) control("carrier", v, ch()); };
   }
   $("b-addchan").onclick = () => { const k = activeList().length, free = []; for (let i = 1; i < N; i++) if (!enabledCh(i)) free.push(i); optPage = "channel" + ((free[0] || 1) + 1); document.querySelector("#tabs button[data-tab=options]").click(); };
   $("b-login").onclick = async () => {

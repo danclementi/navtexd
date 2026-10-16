@@ -25,26 +25,7 @@
       <div class="sunrow"><span id="sun" class="msun" title="Receive location">Sunrise: --:-- / Sunset: --:--</span><button id="b-clip" title="Save the last minute of input audio (and a few seconds more) of the active channel as a WAV file for later analysis">Save clip</button></div>
     </fieldset>
     <fieldset class="grp specgrp" id="grp-spec" data-ch="0">
-      <div class="specwrap2"><canvas id="spec-mini"></canvas></div>
-      <div class="tunecol">
-        <label class="check"><input class="c-autotune" type="checkbox"> Auto</label>
-        <span class="led l-lock"><i></i>LOCK</span>
-        <span class="small">Carrier (Hz)</span>
-        <input class="c-carrier" type="number" min="200" max="2600" step="1">
-        <span class="spacer"></span>
-        <div class="seg mini-scale" title="Vertical scale of the small spectra"><button type="button" data-sc="log">LOG</button><button type="button" data-sc="lin">LIN</button></div>
-      </div>
-    </fieldset>
-    <fieldset class="grp specgrp" id="grp-spec2" data-ch="1" hidden>
-      <div class="specwrap2"><canvas id="spec-mini2"></canvas></div>
-      <div class="tunecol">
-        <label class="check"><input class="c-autotune" type="checkbox"> Auto</label>
-        <span class="led l-lock"><i></i>LOCK</span>
-        <span class="small">Carrier (Hz)</span>
-        <input class="c-carrier" type="number" min="200" max="2600" step="1">
-        <span class="spacer"></span>
-        <div class="seg mini-scale" title="Vertical scale of the small spectra"><button type="button" data-sc="log">LOG</button><button type="button" data-sc="lin">LIN</button></div>
-      </div>
+      <div class="specwrap2"><canvas id="spec-mini"></canvas><div class="seg mini-scale" title="Vertical scale of this spectrum"><button type="button" data-sc="log">LOG</button><button type="button" data-sc="lin">LIN</button></div></div>
     </fieldset>
   </div>
   <div id="chlines" class="chlines">
@@ -54,6 +35,8 @@
       <select class="c-device" title="Where the signal comes from: an audio input, or a radio on the network (OpenHPSDR / Metis). Radios you have used successfully are listed, most recent first."><option value="">-</option></select>
       <span class="chcmt" title="Channel comment (change it in Options)"></span>
       <span class="chinfo" title="Format of the input"></span>
+      <label class="check" title="auto-tune carrier"><input class="c-autotune" type="checkbox"> Auto</label>
+      <span class="led l-lock" title="Carrier found (only while Auto is on)"><i></i>LOCK</span>
       <button type="button" class="b-resync" title="Resynchronise the decoder">RESYNC</button>
       <span class="led l-sync"><i></i>SYNC</span><span class="led l-data"><i></i>DATA</span>
       <label class="check"><input class="c-uos" type="checkbox"> UoS</label>
