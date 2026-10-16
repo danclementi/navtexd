@@ -596,7 +596,11 @@
       if (!gs.some((g) => groups.has(g)) && id !== "logging") continue;
       const btn = document.createElement("button"); btn.type = "button"; btn.textContent = label; btn.dataset.page = id; btn.onclick = () => showPage(id); bar.appendChild(btn);
       const page = document.createElement("div"); page.className = "optpage"; page.hidden = true; form.appendChild(page); pageEls.set(id, page);
-      if (id === "logging") { extra.box = document.createElement("div"); extra.box.id = "opt-extra"; }
+      if (id === "logging") {
+        const n = document.createElement("p"); n.className = "small"; n.textContent = "These settings are shared by all channels. Dropping fragments (min_fragment_chars, min_fragment_words and the related settings under Message segmentation) is set separately for each channel, on its Channel tab.";
+        page.appendChild(n);
+        extra.box = document.createElement("div"); extra.box.id = "opt-extra";
+      }
       for (const g of gs) {
         if (!groups.has(g)) continue;
         const fs = document.createElement("fieldset"); fs.className = "optgrp"; if (g.startsWith("input.")) fs.dataset.src = g.slice(6);

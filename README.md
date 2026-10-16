@@ -87,8 +87,8 @@ The default expects the carrier near 1000 Hz of audio.
 Run `navtexd -h` for the complete list.
 
 ### Fewer junk fragments in the Log
-Text received outside any ZCZC...NNNN message is kept as a "fragment". Much of it is noise. On the Options page (Decoder tab,
-Message segmentation) two settings thin it out: `min_fragment_chars` (fewer visible characters than this: dropped) and the word
+Text received outside any ZCZC...NNNN message is kept as a "fragment". Much of it is noise. On the Options page (the Channel tab of each channel,
+Message segmentation; every channel has its own settings) two settings thin it out: `min_fragment_chars` (fewer visible characters than this: dropped) and the word
 test, `min_fragment_words` words of at least `min_fragment_word_letters` letters (0 = no word test, the default). With
 `fragment_words_after_autocorrect` on, words repaired from the vocabulary count too. Dropped fragments are not stored; the System
 Log notes each one ("fragment not stored (N words ...)") so that you can tune the numbers. Messages are never affected.
