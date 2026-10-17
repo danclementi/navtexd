@@ -339,3 +339,15 @@ clamped it while the focused cell was replaced, and Escape no longer scrolls the
 - Each channel opens its own input. Two channels can open the same sound device when the driver shares it (virtual audio cables
   usually do); a radio serves one stream per address, so several channels from one radio need the shared-input feature (TODO). A WAV file can be used for either channel, which makes the feature testable without radios.
 
+## 34. Damaged message starts and forced ID
+- `segment.damagedStart` looks at each finished line of a fragment: if it ends with an identification group (two letters, two
+  figures, each may be an unreadable mark) after a space, and the 3 or 4 characters before the space are ZCZC with marks for
+  some characters or one character missing (at least two characters equal), the text before the token stays a fragment and a
+  message starts at the token. `Record.StartFix` (store `sfix`) holds the token as received; the raw first line is kept.
+  `Body()`, the header parser and the catalog skip the first line of such a record. `Runner.Correct` shows the token as
+  `[ZCZC]` in the corrected text. Damaged starts inside a message (no NNNN yet) are not looked for.
+- The reader pop-up lists the stations of the record's frequency that are on air at the minute it was received (a slot is 10
+  minutes from a start time) and a drop-down of the other stations of that frequency. Use sends `PATCH {station}` for any
+  record. `catalog.Enrich` marks a station that the text does not support (not among the candidates, or any station given to a
+  fragment) with identification method `forced ID`.
+

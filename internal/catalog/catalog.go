@@ -176,8 +176,8 @@ func (c *Catalog) Stations() (version string, list []stations.Station) {
 
 func bodyText(r *store.Record) string {
 	var sb strings.Builder
-	for _, l := range r.Lines {
-		if strings.HasPrefix(l.Text, "ZCZC") || l.Text == "NNNN" {
+	for i, l := range r.Lines {
+		if strings.HasPrefix(l.Text, "ZCZC") || l.Text == "NNNN" || i == 0 && r.StartFix != "" {
 			continue
 		}
 		sb.WriteString(l.Text)
@@ -196,7 +196,21 @@ func (c *Catalog) Enrich(r *store.Record) {
 	c.mu.Lock() // the identifier's History hook is shared
 	defer c.mu.Unlock()
 	r.Station, r.StationID, r.DistanceKm, r.BearingDeg, r.IdentMethod, r.IdentScore, r.Candidates = "UNID", 0, 0, 0, "", 0, nil
+	place := func(s stations.Station, idx int, method string, score float64) {
+		r.Station, r.StationID, r.IdentMethod, r.IdentScore = Label(s), idx+1, method, store.F2(score)
+		if r.NavArea == 0 || !r.Manual {
+			r.NavArea = s.NavArea
+		}
+		if lat, lon, ok := c.opPos(); ok {
+			r.DistanceKm = math.Round(geo.DistanceKm(lat, lon, s.Lat, s.Lon))
+			r.BearingDeg = math.Round(geo.BearingDeg(lat, lon, s.Lat, s.Lon))
+		}
+	}
 	if r.Kind == "fragment" {
+		// only the operator can give a fragment a station: a "forced ID"
+		if r.Picked >= 1 && r.Picked <= len(c.tab.Stations) && c.tab.Stations[r.Picked-1].FreqKHz == r.Channel {
+			place(c.tab.Stations[r.Picked-1], r.Picked-1, "forced ID", 0)
+		}
 		return
 	}
 	in := ident.Input{FreqKHz: r.Channel, B1: r.B1, When: r.Received, Text: bodyText(r)}
@@ -213,25 +227,24 @@ func (c *Catalog) Enrich(r *store.Record) {
 	}
 	if r.Picked >= 1 && r.Picked <= len(c.tab.Stations) && c.tab.Stations[r.Picked-1].FreqKHz == r.Channel {
 		// the operator chose this station among the candidates (needed when several share frequency, B1 and NAVAREA)
-		res.Index, res.Method, res.Score = r.Picked-1, "manual", 0
+		res.Index, res.Method, res.Score = r.Picked-1, "forced ID", 0 // not among the candidates: a forced ID
 		for _, cd := range res.Candidates {
 			if cd.Index == res.Index {
-				res.Score = cd.Score
+				res.Method, res.Score = "manual", cd.Score
 			}
 		}
 	}
 	if res.Index < 0 {
 		return
 	}
-	s := c.tab.Stations[res.Index]
-	r.Station, r.StationID, r.IdentMethod, r.IdentScore = Label(s), res.Index+1, res.Method, store.F2(res.Score)
-	if r.NavArea == 0 || !r.Manual {
-		r.NavArea = s.NavArea
+	place(c.tab.Stations[res.Index], res.Index, res.Method, res.Score)
+}
+
+func (c *Catalog) opPos() (lat, lon float64, ok bool) {
+	if c.Position == nil {
+		return 0, 0, false
 	}
-	if in.HaveOp {
-		r.DistanceKm = math.Round(geo.DistanceKm(in.OpLat, in.OpLon, s.Lat, s.Lon))
-		r.BearingDeg = math.Round(geo.BearingDeg(in.OpLat, in.OpLon, s.Lat, s.Lon))
-	}
+	return c.Position()
 }
 
 func (c *Catalog) save() error {

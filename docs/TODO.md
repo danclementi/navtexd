@@ -34,12 +34,6 @@ Four channels exist (`extra.*`, SERVER_DESIGN section 33); still to do:
   marker is dragged to an edge, and can pan by dragging the axis; zooming in is client side only (with limits), no wider data.
   Check first that the receiver passes a carrier far from the channel position (DDC filtering, DC spike, 1/f noise).
 
-- **Damaged message starts (ZCZC corrupted; design agreed):** (1) find the start of a message by position (right after the phasing
-  signal) and by the structure that follows (space, two letters, two digits, CR LF), so `ZCZ~`, `CZC`, `~BR~ZCZ~` are still taken as
-  starts; the repaired ZCZC is shown as autocorrected, like other repaired words, with the received text still visible. (2) In the "Use" dialog, list the stations
-  that normally transmit in that time slot (frequency, B1, schedule) for the operator to choose from; no automatic assignment (US
-  stations often transmit outside their slots). (3) "Use" works for any record, also when no header could be read, and such an
-  assignment is marked "forced ID". Optionally later: serial-number continuity per station.
 
 
 ## Next (radio input) - ON HOLD

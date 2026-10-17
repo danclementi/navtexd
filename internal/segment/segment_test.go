@@ -83,3 +83,24 @@ func TestLongLineBreaks(t *testing.T) {
 		t.Errorf("lines: %d", len(r[0].Lines))
 	}
 }
+
+func TestDamagedStarts(t *testing.T) {
+	for _, c := range []struct{ line, tok string }{{"ZCZ~ EA78", "ZCZ~"}, {"CZC EA78", "CZC"}, {"~BR~ZCZ~ E~78", "ZCZ~"}, {"~C~C EA7~", "~C~C"}} {
+		recs := run(t, DefaultConfig(), "some earlier noise text here ok\n", c.line+"\n", "BODY LINE ONE\n", "NNNN")
+		if len(recs) != 2 || recs[1].Kind != Message || recs[1].StartFix != c.tok {
+			t.Errorf("%q: %+v", c.line, recs)
+			continue
+		}
+		if recs[1].Body() != "BODY LINE ONE" || recs[1].Serial == "" && !strings.Contains(c.line, "~78") && !strings.Contains(c.line, "7~") {
+			t.Errorf("%q: body %q serial %q", c.line, recs[1].Body(), recs[1].Serial)
+		}
+	}
+	// ordinary text is left alone
+	for _, l := range []string{"ZCAB EA78", "SEE ATTACHED FIG AB12", "ABC DEFG HIJK 1234"} {
+		for _, r := range run(t, DefaultConfig(), l+"\n", "more text of the fragment\n") {
+			if r.Kind != Fragment {
+				t.Errorf("%q became %v", l, r.Kind)
+			}
+		}
+	}
+}

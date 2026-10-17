@@ -133,6 +133,15 @@ func (r *Runner) Corrector() (*autocorr.Corrector, autocorr.Config) {
 func (r *Runner) Correct(rec *store.Record) []string {
 	c, cfg := r.Corrector()
 	body, notes := c.Body(rec.EffectiveLines(), cfg) // the operator's revisions count, the raw lines are not touched
+	if f := rec.StartFix; f != "" { // the repaired start is shown like any repaired word
+		if body == "" {
+			body = strings.Join(rec.EffectiveLines(), "\n")
+		}
+		if strings.HasPrefix(body, f) {
+			body = "[ZCZC]" + body[len(f):]
+			notes = append(notes, f+" corrected to ZCZC")
+		}
+	}
 	rec.Corrected = body
 	return notes
 }
@@ -652,7 +661,7 @@ func toStore(r segment.Record, cfg config.Config, wallAt func(float64) time.Time
 	rec := store.Record{
 		Channel:  int(cfg.Channel.FrequencyHz/1000 + 0.5),
 		Received: wallAt(r.StartS), End: wallAt(r.EndS),
-		Kind: r.Kind.String(), B1: r.B1, B2: r.B2, Serial: r.Serial, Quality: store.F2(r.Quality), Comment: comment,
+		Kind: r.Kind.String(), B1: r.B1, B2: r.B2, Serial: r.Serial, StartFix: r.StartFix, Quality: store.F2(r.Quality), Comment: comment,
 	}
 	for _, l := range r.Lines {
 		rec.Lines = append(rec.Lines, store.Line{Time: wallAt(l.StreamS), Quality: store.F2(l.Quality), Text: l.Text})

@@ -34,6 +34,7 @@ type Record struct {
 	Lines        []Line
 	B1, B2       string // station and subject letters ("" for fragments or damaged headers)
 	Serial       string
+	StartFix     string  // the damaged start as received ("ZCZ~", "CZC") when it was recognized by its position and structure; "" = a clean ZCZC
 	Quality      float64 // mean over the record
 }
 
@@ -42,7 +43,7 @@ func (r Record) Body() string {
 	var b strings.Builder
 	for i, l := range r.Lines {
 		t := l.Text
-		if i == 0 && r.Kind != Fragment && strings.HasPrefix(t, "ZCZC") {
+		if i == 0 && r.Kind != Fragment && (strings.HasPrefix(t, "ZCZC") || r.StartFix != "") {
 			continue
 		}
 		if r.Kind == Message && i == len(r.Lines)-1 && strings.TrimSpace(t) == "NNNN" {
@@ -181,7 +182,76 @@ func (s *Segmenter) startMessage(t float64) {
 	s.bufT = append(s.bufT[:0], zStart, zStart, t, t)
 }
 
+// damagedStart finds a message start whose ZCZC was not decoded correctly: the line ends with the identification group
+// (two letters, two figures, either may contain unreadable marks) preceded by a space and by something that is ZCZC
+// with up to two characters unreadable or one character missing ("ZCZ~", "CZC", "~Z~C"). It returns where that token
+// begins and its length.
+func damagedStart(rs []rune) (idx, n int, ok bool) {
+	for len(rs) > 0 && rs[len(rs)-1] == ' ' {
+		rs = rs[:len(rs)-1]
+	}
+	if len(rs) < 8 {
+		return 0, 0, false
+	}
+	mark := func(r rune) bool { return r == '~' || r == '*' }
+	id := rs[len(rs)-4:]
+	for i, r := range id {
+		if i < 2 && !(r >= 'A' && r <= 'Z' || mark(r)) || i >= 2 && !(r >= '0' && r <= '9' || mark(r)) {
+			return 0, 0, false
+		}
+	}
+	j := len(rs) - 5
+	if rs[j] != ' ' {
+		return 0, 0, false
+	}
+	const z = "ZCZC"
+	fit := func(t []rune, want string) bool {
+		m := 0
+		for i, r := range t {
+			switch {
+			case r == rune(want[i]):
+				m++
+			case mark(r):
+			default:
+				return false
+			}
+		}
+		return m >= 2
+	}
+	if j >= 4 {
+		if t := rs[j-4 : j]; string(t) != z && fit(t, z) {
+			return j - 4, 4, true
+		}
+	}
+	if j >= 3 {
+		t := rs[j-3 : j]
+		for k := 0; k < 4; k++ {
+			if fit(t, z[:k]+z[k+1:]) {
+				return j - 3, 3, true
+			}
+		}
+	}
+	return 0, 0, false
+}
+
 func (s *Segmenter) endLine(t float64) {
+	if s.cur != nil && s.cur.Kind == Fragment {
+		if idx, n, ok := damagedStart(s.buf); ok {
+			tok := string(s.buf[idx : idx+n])
+			rest, restT := append([]rune(nil), s.buf[idx:]...), append([]float64(nil), s.bufT[idx:]...)
+			s.buf, s.bufT = s.buf[:idx], s.bufT[:idx]
+			if strings.TrimSpace(string(s.buf)) != "" {
+				s.addLine(t)
+			}
+			s.close(restT[0], false)
+			s.cur = &Record{Kind: Message, StartS: restT[0], StartFix: tok}
+			s.buf, s.bufT = rest, restT
+		}
+	}
+	s.addLine(t)
+}
+
+func (s *Segmenter) addLine(t float64) {
 	if s.cur == nil {
 		s.buf, s.bufT = s.buf[:0], s.bufT[:0]
 		return
@@ -236,6 +306,9 @@ func (s *Segmenter) close(t float64, nnnn bool) {
 	}
 	if r.Kind != Fragment {
 		head := strings.TrimPrefix(r.Lines[0].Text, "ZCZC")
+		if r.StartFix != "" {
+			head = strings.TrimPrefix(r.Lines[0].Text, r.StartFix)
+		}
 		r.B1, r.B2, r.Serial, _ = navtex.SplitHeader(head)
 	}
 	s.emit(*r)

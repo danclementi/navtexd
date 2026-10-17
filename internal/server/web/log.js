@@ -284,6 +284,7 @@
       return inp;
     };
     add("B1 / NAVAREA", el("span", { class: "nowrap" }, fieldIn("b1", r.b1 || "", 1, (v) => /^[A-Za-z?]$/.test(v), "Station ID letter (B1) set by the operator"), " / ", fieldIn("area", String(r.area || ""), 2, (v) => /^\d{1,2}$/.test(v), "NAVAREA number set by the operator")));
+    if (r.sfix) add("Start", `${r.sfix} read as ZCZC (recognized by its position and what follows)`);
     if (r.man) add("Set by", "operator (B1 / NAVAREA)");
     if (r.rev && r.rev.length) add("Revised", `${r.rev.length} stretch${r.rev.length > 1 ? "es" : ""} replaced by the operator (shown in <angle brackets>)`);
     const cm = el("input", { type: "text", value: r.cmt || "", maxlength: "120", disabled: !admin(), placeholder: "comment" });
@@ -301,6 +302,36 @@
         cands.append(el("span", { class: "cand" }, `${c.label}  (${c.score.toFixed(1)}) `, b));
       }
     }
+    slotStations(r, box).catch(() => {});
+  }
+
+  // Stations that normally transmit at the time the record was received (the operator picks; US stations often keep
+  // to their slots only loosely, so nothing is assigned automatically). Works for any record: the result is a "forced ID".
+  async function slotStations(r, box) {
+    const id = r.id;
+    const byId = await NX.loadStations();
+    if (!L.rec || L.rec.id !== id) return;
+    const d = new Date(r.rx), m = d.getUTCHours() * 60 + d.getUTCMinutes();
+    const mins = (t) => { const [h, mm] = String(t).split(":").map(Number); return h * 60 + mm; };
+    const on = (s) => s.times.some((t) => t && !isNaN(mins(t)) && ((m - mins(t)) % 1440 + 1440) % 1440 < 10);
+    const same = [...byId.values()].filter((s) => s.freq === r.ch);
+    const slot = same.filter(on);
+    const lab = (s) => `${s.area}${s.b1} ${s.name},${s.cc}`;
+    const wrap = el("div", { class: "cands" }, el("span", { class: "small", text: slot.length ? `On air at ${NX.pad(d.getUTCHours())}:${NX.pad(d.getUTCMinutes())} UTC on ${r.ch} kHz:` : `No station scheduled at ${NX.pad(d.getUTCHours())}:${NX.pad(d.getUTCMinutes())} UTC on ${r.ch} kHz.` }));
+    const tip = "Identify the record as this station (sets B1 and NAVAREA to its own). The identification is marked \"forced ID\" when the message text does not support it.";
+    for (const st of slot) {
+      const b = el("button", { text: "Use", disabled: !admin(), title: tip });
+      b.onclick = () => useCandidate(st.id);
+      wrap.append(el("span", { class: "cand" }, lab(st) + (st.km ? `  ${st.km.toFixed(0)} km ` : " "), b));
+    }
+    if (same.length) {
+      const sel = el("select", { disabled: !admin(), title: "Any station of this frequency" }, el("option", { value: "", text: "other station\u2026" }));
+      for (const st of same.filter((x) => !on(x)).sort((a, b) => a.area - b.area || a.b1.localeCompare(b.b1))) sel.append(el("option", { value: String(st.id), text: lab(st) }));
+      const b = el("button", { text: "Use", disabled: !admin(), title: tip });
+      b.onclick = () => { if (sel.value) useCandidate(Number(sel.value)); };
+      wrap.append(el("span", { class: "cand" }, sel, " ", b));
+    }
+    box.append(wrap);
   }
 
   // The server sets B1 and NAVAREA from the station and remembers the choice (several stations can share all three)

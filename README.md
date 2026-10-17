@@ -29,6 +29,10 @@ It is a single self-contained program written in pure Go (standard library only,
 - Multi-client web interface: **Status**, **Spectrum**, **Log**, **Schedule**, **Signal**, **Report**,
   **Statistics**, **Ephemeris**, **Options**, **Database** and **System Log** tabs.
 - Message log with filters (station, subject, text, distance), a reader pop-up, and de-duplication.
+- A message whose `ZCZC` was damaged (`ZCZ~`, `CZC`, `~BR~ZCZ~` ...) is still recognized as a message start by its position and the
+  identification group that follows; the repaired start is shown as `[ZCZC]` like other autocorrected words. In the reader pop-up the
+  operator can give any record (also a fragment) a station from the list of stations scheduled at that time, or any station of the
+  frequency; the identification is then marked `forced ID` when the message text does not support it.
 - Station identification from a YaND-format station table (`YAND_STATIONS.txt`), with distance and bearing from the
   operator position.
 - Two access roles: **admin** (direct connections from the local machine or private network) and **view-only**

@@ -65,6 +65,7 @@ type Record struct {
 	Manual      bool        `json:"man"`            // B1 / NAVAREA set by the operator: never re-identified
 	Picked      int         `json:"pick,omitempty"` // station chosen by the operator among the candidates (ID); 0 = none
 	Lines       []Line      `json:"lines"`
+	StartFix    string      `json:"sfix,omitempty"` // the damaged ZCZC as received, when the start was recognized by position and structure
 	Corrected   string      `json:"cor,omitempty"` // body after word autocorrection (of the effective text)
 	Revs        []Revision  `json:"rev,omitempty"` // stretches the operator replaced, e.g. text decoded in the wrong shift
 }

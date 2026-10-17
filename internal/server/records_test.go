@@ -70,6 +70,12 @@ func TestRecordsAndStations(t *testing.T) {
 	if _, l = do(t, admin, "GET", "/api/messages?minkm=1&maxkm=100000", nil, nil); l["total"].(float64) != 1 {
 		t.Errorf("distance window: %v", l["total"])
 	}
+	// a date bound combined with others: "to" is the whole day
+	for q, want := range map[string]float64{"maxkm=100000&to=2026-09-28": 1, "maxkm=100000&to=2026-09-27": 0, "to=2026-09-28": 2, "maxkm=100000&to=2026-09-29&freq=518": 1, "maxkm=100000&to=2026-09-29&freq=490": 0} {
+		if _, l = do(t, admin, "GET", "/api/messages?"+q, nil, nil); l["total"].(float64) != want {
+			t.Errorf("%s: total %v, want %v", q, l["total"], want)
+		}
+	}
 	if _, l = do(t, admin, "GET", "/api/messages?minkm=100000", nil, nil); l["total"].(float64) != 0 {
 		t.Errorf("minkm beyond every record: %v", l["total"])
 	}
@@ -456,5 +462,30 @@ func TestPickCandidateStation(t *testing.T) {
 	v = int(p["v"].(float64))
 	if code, _ = do(t, admin, "PATCH", url, map[string]any{"v": v, "station": 1}, nil); code != 400 {
 		t.Fatalf("station on another frequency: %d", code)
+	}
+}
+
+// Any record can be given a station by the operator, also a fragment: the identification is marked "forced ID".
+func TestForcedIDOnFragment(t *testing.T) {
+	cfg := config.Default()
+	cfg.Input.File.Path = "/nonexistent.wav"
+	cfg.Input.Source = "file"
+	cfg.Operator.LatDeg, cfg.Operator.LonDeg = 36.85, -76.3
+	s, _, st, _ := setup(t, cfg)
+	admin := httptest.NewServer(s.handler(false))
+	defer admin.Close()
+	rec := addMsg(t, st, s.cat, "C", time.Date(2026, 9, 28, 3, 20, 0, 0, time.UTC), "NOTHING USEFUL")
+	if len(rec.Candidates) == 0 {
+		t.Fatal("no candidates")
+	}
+	rec.Kind, rec.B1 = "fragment", ""
+	rec, err := st.Update(rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	url := fmt.Sprintf("/api/messages/%d", rec.ID)
+	code, p := do(t, admin, "PATCH", url, map[string]any{"v": rec.Version, "station": rec.Candidates[0].StationID}, nil)
+	if code != 200 || p["im"] != "forced ID" || p["sid"] == float64(0) || p["kind"] != "fragment" {
+		t.Fatalf("forced ID on a fragment: %d im=%v sid=%v", code, p["im"], p["sid"])
 	}
 }
