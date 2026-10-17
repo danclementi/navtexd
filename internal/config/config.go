@@ -425,6 +425,9 @@ func (c Config) Validate() error {
 	if c.Segment.IdleCloseS < 5 || c.Segment.MinFragmentChars < 0 {
 		bad("segment: idle_close_s must be at least 5 and min_fragment_chars not negative")
 	}
+	if v := c.Segment.FragVocab; v != "" && v != "auto" && v != "on" && v != "off" {
+		bad("segment: fragment_words_vocabulary must be auto, on or off")
+	}
 	if c.Segment.MinFragmentWords < 0 || c.Segment.MinFragmentWords > 100 || c.Segment.FragWordLetters < 1 || c.Segment.FragWordLetters > 40 {
 		bad("segment: min_fragment_words 0..100 and min_fragment_word_letters 1..40")
 	}

@@ -32,24 +32,45 @@ func TestWordCount(t *testing.T) {
 func TestFragmentKept(t *testing.T) {
 	frag := store.Record{Kind: "fragment", Lines: []store.Line{{Text: "XQ WAT~S ZZ KJHG"}}, Corrected: "XQ [WATERS] ZZ KJHG"}
 	cfg := segment.Config{MinFragmentWords: 2, FragWordLetters: 4, FragWordsCorrect: false}
-	if keep, n := fragmentKept(frag, cfg); keep || n != 1 {
+	if keep, n := fragmentKept(frag, cfg, nil); keep || n != 1 {
 		t.Errorf("raw text: keep=%v n=%d, want dropped with 1 word", keep, n)
 	}
 	cfg.FragWordsCorrect = true
-	if keep, n := fragmentKept(frag, cfg); !keep || n != 2 {
+	if keep, n := fragmentKept(frag, cfg, nil); !keep || n != 2 {
 		t.Errorf("after autocorrect: keep=%v n=%d, want kept with 2 words", keep, n)
 	}
 	cfg.MinFragmentWords = 0
 	frag.Lines[0].Text, frag.Corrected = "~~ ** ~", ""
-	if keep, _ := fragmentKept(frag, cfg); !keep {
+	if keep, _ := fragmentKept(frag, cfg, nil); !keep {
 		t.Error("test off must keep everything")
 	}
 	cfg.MinFragmentWords = 1
-	if keep, _ := fragmentKept(frag, cfg); keep {
+	if keep, _ := fragmentKept(frag, cfg, nil); keep {
 		t.Error("noise without a word should be dropped")
 	}
 	msg := store.Record{Kind: "message", Lines: []store.Line{{Text: "~~"}}}
-	if keep, _ := fragmentKept(msg, cfg); !keep {
+	if keep, _ := fragmentKept(msg, cfg, nil); !keep {
 		t.Error("messages are never tested")
+	}
+}
+
+func TestFragmentVocab(t *testing.T) {
+	known := func(w string) bool { return w == "WATERS" || w == "STORM" }
+	frag := store.Record{Kind: "fragment", Lines: []store.Line{{Text: "ABCDEF waters QWERTY storm"}}}
+	cfg := segment.Config{MinFragmentWords: 2, FragWordLetters: 4}
+	if keep, n := fragmentKept(frag, cfg, known); !keep || n != 2 {
+		t.Errorf("vocab: keep=%v n=%d, want 2 words", keep, n)
+	}
+	if _, n := fragmentKept(frag, cfg, nil); n != 4 {
+		t.Errorf("letters only: n=%d, want 4", n)
+	}
+	for _, c := range []struct {
+		m string
+		f float64
+		w bool
+	}{{"auto", 518000, true}, {"auto", 490000, false}, {"", 424000, false}, {"on", 490000, true}, {"off", 518000, false}} {
+		if useVocab(c.m, c.f) != c.w {
+			t.Errorf("useVocab(%q,%v) != %v", c.m, c.f, c.w)
+		}
 	}
 }

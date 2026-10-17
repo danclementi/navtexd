@@ -41,12 +41,6 @@ Four channels exist (`extra.*`, SERVER_DESIGN section 33); still to do:
   stations often transmit outside their slots). (3) "Use" works for any record, also when no header could be read, and such an
   assignment is marked "forced ID". Optionally later: serial-number continuity per station.
 
-- **Fragment word test against the vocabulary:** today `min_fragment_words` counts any run of letters of the given length, so noise
-  such as AFXJU or TRWS counts as a "word" (record 1486 was kept that way). Count only words that are in the vocabulary (or that
-  autocorrect repaired into one). There is no good vocabulary for the 490 kHz local languages, so the check is switched separately for
-  518 and 490 kHz: on for 518, off for 490 (and 424). Idea: one per-channel setting with the choices auto (on at 518 kHz only), on,
-  off, so that retuning a channel changes the default. Also fix the option text ("recognisable" suggests a check that does not exist
-  today) and use American spelling in it.
 
 ## Next (radio input) - ON HOLD
 Wait until we have an approach for several receivers (or several audio inputs) in the GUI.

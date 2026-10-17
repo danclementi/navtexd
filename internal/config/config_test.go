@@ -187,6 +187,8 @@ func TestLiveListMatchesRestartRule(t *testing.T) {
 			v = "0.5"
 		case "output.format":
 			v = "json"
+		case "segment.fragment_words_vocabulary":
+			v = "on"
 		}
 		if err := Set(&next, f.Path, v); err != nil {
 			t.Errorf("%s: %v", f.Path, err)

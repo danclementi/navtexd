@@ -85,6 +85,14 @@ func (c *Corrector) set(v vocab.Vocabulary) {
 	c.mu.Unlock()
 }
 
+// Known reports whether w (upper case) is a vocabulary word.
+func (c *Corrector) Known(w string) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	_, ok := c.words[w]
+	return ok
+}
+
 // Size is the number of words known.
 func (c *Corrector) Size() int { c.mu.RLock(); defer c.mu.RUnlock(); return len(c.words) }
 

@@ -595,7 +595,11 @@ func (r *Runner) storeRecord(ch int, sr segment.Record, wallAt func(float64) tim
 	}
 	notes := r.Correct(&rec)
 	sc := cfg.Segment
-	if keep, n := fragmentKept(rec, sc); !keep {
+	var known func(string) bool
+	if rec.Kind == "fragment" && sc.MinFragmentWords > 0 && useVocab(sc.FragVocab, cfg.Channel.FrequencyHz) {
+		known = r.corr.Known
+	}
+	if keep, n := fragmentKept(rec, sc, known); !keep {
 		r.log("info", fmt.Sprintf("DATABASE: fragment not stored (%d word(s) of %d+ letters, %d needed).", n, sc.FragWordLetters, sc.MinFragmentWords))
 		return false
 	}
