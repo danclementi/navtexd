@@ -345,3 +345,37 @@ func TestCancelThenClose(t *testing.T) {
 		f.mu.Unlock()
 	}
 }
+
+// A host that answers with something that is not a discovery reply, or not at all, is described in the error.
+func TestDiscoverNote(t *testing.T) {
+	srv, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	port := srv.LocalAddr().(*net.UDPAddr).Port
+	got := make(chan int, 4)
+	go func() {
+		b := make([]byte, 2048)
+		for {
+			n, from, err := srv.ReadFromUDP(b)
+			if err != nil {
+				return
+			}
+			got <- n
+			srv.WriteToUDP([]byte("hello"), from)
+		}
+	}()
+	found, note, err := discover(context.Background(), "127.0.0.1", port, 300*time.Millisecond)
+	if err != nil || len(found) != 0 || !strings.Contains(note, "not with an HPSDR discovery reply") {
+		t.Fatalf("found=%v note=%q err=%v", found, note, err)
+	}
+	if n := <-got; n != 63 {
+		t.Fatalf("discovery request is %d bytes, want 63", n)
+	}
+	srv.Close()
+	_, note, _ = discover(context.Background(), "127.0.0.1", port, 300*time.Millisecond)
+	if note == "" {
+		t.Fatal("no note for a silent host")
+	}
+}

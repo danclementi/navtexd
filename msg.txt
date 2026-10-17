@@ -1,42 +1,14 @@
-Second decoding channel, two-line channel header, decoder lock logging
+HPSDR: 63-byte discovery request and clearer discovery errors; TODO updates
 
-Second channel
-- Decode two channels at once, each with its own input (audio, I/Q, radio,
-  file), frequency, DDC, receiver, decoder and segmentation settings.
-  Channel 1 keeps the existing top-level config groups; channel 2 uses the
-  same groups under "second" (plus second.enabled). Fixed at two channels.
-- Runner manages one chain per channel; settings changes restart only the
-  channel that needs it. Resync, polarity, UoS, autotune, carrier, clips
-  and the scope take a channel (?ch=0|1).
-- Events, records, hello and /api/state carry the channel (rcv, omitted = 0).
-  Records store rcv; the record comment is the operator comment plus the
-  channel comment. Log lines get a "[Name] " prefix when channel 2 is on.
-  Report/log filter by channel.
-- New per-channel channel.name and channel.comment (live-editable); names
-  default to "Channel 1" / "Channel 2".
-- Per-channel input format reported in run state (e.g. "audio 48 kHz,
-  LO 517.000 kHz").
+Send the standard 63-byte Metis/Hermes discovery request (some radios and
+emulators, such as the UberSDR bridge, need the full length). When no radio
+answers, the error now says what the address did: replied with something
+that is not a discovery reply (with the first bytes), refused the UDP port,
+or stayed silent. Test for both.
 
-UI
-- Header redesign: Comment field removed; Save clip moved next to the sun
-  times; two small spectra side by side (each with Auto, LOCK, carrier,
-  LOG/LIN); one line per channel under them with name chip (selects the
-  active channel), frequency, input, comment, input format, RESYNC,
-  SYNC/DATA LEDs, UoS and polarity; "+ Add second channel" chip.
-- Options: Input/Decoder/Channels pages replaced by "Channel 1" and
-  "Channel 2" tabs (named after the channel names), each holding that
-  channel's channel/input/receiver/decoder/segment/ddc groups.
+docs/TODO.md: record the agreed designs for the spectrum view center and
+manual carrier, the fragment word test against the vocabulary (per
+frequency), and damaged message starts with forced ID.
 
-Decoder diagnostics
-- Framing lock/unlock events are logged with duration, word count and
-  invalid-word count: "unlock (lost signal) after 40.4 s, 587 words,
-  185 invalid"; relocks are labelled "(re-lock after fade)".
-- "Carrier tracking" log lines are suppressed unless the carrier moved at
-  least 10 Hz from the last logged value.
-
-Tests and docs
-- New TestSecondChannel, TestRestartPerChannel, TestSecondChannelOffAndOn,
-  TestTwoChannelsDecode (skips without the recording); live-list test
-  covers second.* options.
-- CLAUDE.md (rule 12), README ("Second channel"), SERVER_DESIGN (section 33,
-  decoding channels) and TODO (synchronized two-channel clips) updated.
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01NtdzyoDL7BwYD4fLhAcepE

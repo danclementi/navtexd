@@ -91,8 +91,10 @@ func ParseDiscoveryReply(b []byte, from *net.UDPAddr) (Radio, bool) {
 	return r, true
 }
 
+// discoveryPacket is the 63-byte discovery request of the Metis / Hermes protocol (some radios and emulators insist on the
+// full length).
 func discoveryPacket() []byte {
-	p := make([]byte, 60)
+	p := make([]byte, 63)
 	p[0], p[1], p[2] = 0xef, 0xfe, 0x02
 	return p
 }
@@ -100,16 +102,23 @@ func discoveryPacket() []byte {
 // Discover looks for radios. If addr is not empty it asks only that host (a bare address or host:port); otherwise it
 // broadcasts on every network interface. It collects replies until timeout.
 func Discover(ctx context.Context, addr string, port int, timeout time.Duration) ([]Radio, error) {
+	found, _, err := discover(ctx, addr, port, timeout)
+	return found, err
+}
+
+// discover is Discover plus a note about what else was seen when nothing answered properly (packets that are not
+// discovery replies, or a refusal), to be shown with the error.
+func discover(ctx context.Context, addr string, port int, timeout time.Duration) (found []Radio, note string, err error) {
 	conn, err := net.ListenUDP("udp4", &net.UDPAddr{})
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer conn.Close()
 	var targets []*net.UDPAddr
 	if addr != "" {
 		t, err := resolve(addr, port)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		targets = []*net.UDPAddr{t}
 	} else {
@@ -119,22 +128,51 @@ func Discover(ctx context.Context, addr string, port int, timeout time.Duration)
 	for _, t := range targets {
 		conn.WriteToUDP(pkt, t) // an interface that cannot send is simply skipped
 	}
-	var found []Radio
 	seen := map[string]bool{}
+	var other, errs int
+	var first string
+	var lastErr error
 	deadline := time.Now().Add(timeout)
 	buf := make([]byte, 2048)
 	for time.Now().Before(deadline) && ctx.Err() == nil {
 		conn.SetReadDeadline(deadline)
 		n, from, err := conn.ReadFromUDP(buf)
 		if err != nil {
-			break
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				break
+			}
+			// e.g. Windows reports "connection forcibly closed" when the host answers that nothing listens on the port
+			lastErr = err
+			if errs++; errs > 10 {
+				break
+			}
+			continue
 		}
-		if r, ok := ParseDiscoveryReply(buf[:n], from); ok && !seen[r.MAC.String()] {
-			seen[r.MAC.String()] = true
-			found = append(found, r)
+		if r, ok := ParseDiscoveryReply(buf[:n], from); ok {
+			if !seen[r.MAC.String()] {
+				seen[r.MAC.String()] = true
+				found = append(found, r)
+			}
+			continue
+		}
+		if other++; other == 1 {
+			m := n
+			if m > 12 {
+				m = 12
+			}
+			first = fmt.Sprintf("%d bytes from %s, starting % x", n, from, buf[:m])
 		}
 	}
-	return found, nil
+	switch {
+	case len(found) > 0:
+	case other > 0:
+		note = fmt.Sprintf("something answered, but not with an HPSDR discovery reply (%d packet(s); first: %s)", other, first)
+	case lastErr != nil:
+		note = "the host answered that nothing listens on that UDP port (" + lastErr.Error() + ")"
+	default:
+		note = "no reply at all"
+	}
+	return found, note, nil
 }
 
 func resolve(addr string, port int) (*net.UDPAddr, error) {
@@ -327,13 +365,13 @@ func Open(ctx context.Context, o Options) (*Source, error) {
 	if _, err := CommandPacket(0, o.RateHz, o.FreqHz); err != nil {
 		return nil, err
 	}
-	radios, err := Discover(ctx, o.Addr, o.Port, o.Timeout)
+	radios, note, err := discover(ctx, o.Addr, o.Port, o.Timeout)
 	if err != nil {
 		return nil, err
 	}
 	if len(radios) == 0 {
 		if o.Addr != "" {
-			return nil, fmt.Errorf("no HPSDR radio answered at %s (check the address, that the radio is on, and that nothing blocks UDP port %d)", o.Addr, o.Port)
+			return nil, fmt.Errorf("no HPSDR radio answered at %s: %s (check the address, that the radio is on, and that nothing blocks UDP port %d)", o.Addr, note, o.Port)
 		}
 		return nil, errors.New("no HPSDR radio found on the local network; set input.radio to its address")
 	}

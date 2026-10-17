@@ -27,8 +27,26 @@ Four channels exist (`extra.*`, SERVER_DESIGN section 33); still to do:
   experiment: only separate receivers or antennas have independent errors worth combining).
 
 ## UI ideas (not started; build only when asked)
-- **Ephemeris:** the NAVAREA drop-down does not list all NAVAREAs.
-  (Seen in the station table: NAVAREAs V, X, XIV and XVII have no stations in it, so they are not offered; to be confirmed.)
+- **Spectrum x-axis and the manual carrier (design agreed):** each channel has one "view centre" for its spectrum, set by
+  administrators only and shared by everyone watching (remote viewers only watch). The server moves the slice (about the same width as
+  now) when a manual carrier is set near or beyond an edge, and when an administrator pans: I/Q down to and below 0 Hz, real audio
+  between about 300 Hz and Nyquist. A channel restart for large moves is acceptable. The page shows the axis panning while the
+  marker is dragged to an edge, and can pan by dragging the axis; zooming in is client side only (with limits), no wider data.
+  Check first that the receiver passes a carrier far from the channel position (DDC filtering, DC spike, 1/f noise).
+
+- **Damaged message starts (ZCZC corrupted; design agreed):** (1) find the start of a message by position (right after the phasing
+  signal) and by the structure that follows (space, two letters, two digits, CR LF), so `ZCZ~`, `CZC`, `~BR~ZCZ~` are still taken as
+  starts; the repaired ZCZC is shown as autocorrected, like other repaired words, with the received text still visible. (2) In the "Use" dialog, list the stations
+  that normally transmit in that time slot (frequency, B1, schedule) for the operator to choose from; no automatic assignment (US
+  stations often transmit outside their slots). (3) "Use" works for any record, also when no header could be read, and such an
+  assignment is marked "forced ID". Optionally later: serial-number continuity per station.
+
+- **Fragment word test against the vocabulary:** today `min_fragment_words` counts any run of letters of the given length, so noise
+  such as AFXJU or TRWS counts as a "word" (record 1486 was kept that way). Count only words that are in the vocabulary (or that
+  autocorrect repaired into one). There is no good vocabulary for the 490 kHz local languages, so the check is switched separately for
+  518 and 490 kHz: on for 518, off for 490 (and 424). Idea: one per-channel setting with the choices auto (on at 518 kHz only), on,
+  off, so that retuning a channel changes the default. Also fix the option text ("recognisable" suggests a check that does not exist
+  today) and use American spelling in it.
 
 ## Next (radio input) - ON HOLD
 Wait until we have an approach for several receivers (or several audio inputs) in the GUI.
