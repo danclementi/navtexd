@@ -28,6 +28,10 @@ It is a single self-contained program written in pure Go (standard library only,
   after `input.watchdog_s` seconds (default 10, 0 = off).
 - Multi-client web interface: **Status**, **Spectrum**, **Log**, **Schedule**, **Signal**, **Report**,
   **Statistics**, **Ephemeris**, **Options**, **Database** and **System Log** tabs.
+- The big spectrum can be zoomed (mouse wheel) and moved (drag); double-click shows the whole slice again. Administrators can drag
+  beyond the received slice, or drag the carrier marker to an edge, and the channel restarts with the spectrum and the receiver's
+  frequency window centered on the new place (`channel.view_offset_hz`; double-click resets it). A manual carrier more than 1000 Hz
+  from the center of the slice moves it too. The receiver decodes a carrier up to about 1800 Hz from the center of its window.
 - Message log with filters (station, subject, text, distance), a reader pop-up, and de-duplication.
 - A message whose `ZCZC` was damaged (`ZCZ~`, `CZC`, `~BR~ZCZ~` ...) is still recognized as a message start by its position and the
   identification group that follows; the repaired start is shown as `[ZCZC]` like other autocorrected words. In the reader pop-up the

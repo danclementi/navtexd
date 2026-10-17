@@ -27,12 +27,6 @@ Four channels exist (`extra.*`, SERVER_DESIGN section 33); still to do:
   experiment: only separate receivers or antennas have independent errors worth combining).
 
 ## UI ideas (not started; build only when asked)
-- **Spectrum x-axis and the manual carrier (design agreed):** each channel has one "view centre" for its spectrum, set by
-  administrators only and shared by everyone watching (remote viewers only watch). The server moves the slice (about the same width as
-  now) when a manual carrier is set near or beyond an edge, and when an administrator pans: I/Q down to and below 0 Hz, real audio
-  between about 300 Hz and Nyquist. A channel restart for large moves is acceptable. The page shows the axis panning while the
-  marker is dragged to an edge, and can pan by dragging the axis; zooming in is client side only (with limits), no wider data.
-  Check first that the receiver passes a carrier far from the channel position (DDC filtering, DC spike, 1/f noise).
 
 
 

@@ -137,7 +137,7 @@ func New(fs, centreHz float64, kind iq.Kind, cfg config.Config, h Handlers) (*En
 		return nil, err
 	}
 	chHz := cfg.Channel.FrequencyHz
-	shift := chHz - centreHz
+	shift := chHz - centreHz + cfg.Channel.ViewOffset // the spectrum slice and the receiver's window are centered here
 	nyq := fs / 2
 	if kind == iq.Real {
 		if shift < 300 || shift > nyq-300 {
@@ -184,6 +184,9 @@ func New(fs, centreHz float64, kind iq.Kind, cfg config.Config, h Handlers) (*En
 	}
 	return e, nil
 }
+
+// ShiftHz is the frequency (relative to the source's center, or audio frequency) that the spectrum and the receiver are centered on.
+func (e *Engine) ShiftHz() float64 { return e.shift }
 
 // Scope returns the oscilloscope recorder of this engine.
 func (e *Engine) Scope() *Scope { return e.scope }

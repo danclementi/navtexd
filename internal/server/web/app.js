@@ -306,7 +306,10 @@
     const lin = CH.scale === "lin";
     const L = mini ? 26 : 44, R = mini ? 4 : 8, T = mini ? 4 : 8, B = mini ? 14 : 20, pw = w - L - R, ph = h - T - B;
     const n = s.filt.length, f0 = s.start, f1 = s.start + s.step * (n - 1);
-    V.geom = { L, pw, f0, f1 };
+    // the big spectrum can be zoomed and panned (CH.vr = the range shown, Hz); beyond the received slice there is no data
+    let d0 = f0, d1 = f1;
+    if (!mini && CH.vr) { d0 = CH.vr.lo; d1 = CH.vr.hi; }
+    V.geom = { L, pw, f0: d0, f1: d1, s0: f0, s1: f1, step: s.step };
     const fsDB = s.fs === undefined ? null : s.fs;
     // values in dB (tenths on the wire); linear mode shows amplitude as a fraction of a full-scale tone
     const dbv = (arr, i) => arr[i] / 10;
@@ -327,7 +330,7 @@
       Y = (d) => T + (top - d) / range * ph;
       labels = []; for (let d = Math.floor(top / 10) * 10; d > top - range; d -= 10) labels.push(d);
     }
-    const X = (f) => L + (f - f0) / (f1 - f0) * pw;
+    const X = (f) => L + (f - d0) / (d1 - d0) * pw;
     g.font = `${mini ? 9 : 11}px ${FONT}`; g.fillStyle = cssVar("--spec-ink"); g.strokeStyle = cssVar("--spec-grid"); g.lineWidth = 1;
     g.textAlign = "right"; g.textBaseline = "middle";
     if (mini) labels = labels.filter((_, i) => i % 2 === 0);
@@ -336,9 +339,17 @@
       g.fillText(lin ? (d >= 0.1 ? d.toFixed(2) : d.toPrecision(2)) : String(d), L - 4, y);
     }
     g.textAlign = "center"; g.textBaseline = "top";
-    for (let f = Math.ceil(f0 / 200) * 200; f <= f1; f += 200) {
+    const gs = d1 - d0 > 1500 ? 200 : d1 - d0 > 600 ? 100 : d1 - d0 > 250 ? 50 : 20;
+    for (let f = Math.ceil(d0 / gs) * gs; f <= d1; f += gs) {
       const x = Math.round(X(f)) + .5; g.beginPath(); g.moveTo(x, T); g.lineTo(x, T + ph); g.stroke();
-      if (f % (mini ? 800 : 400) === 0) g.fillText(String(f), x, T + ph + 4);
+      if (f % (mini ? 800 : gs * 2) === 0) g.fillText(String(f), x, T + ph + 4);
+    }
+    g.save(); g.beginPath(); g.rect(L, T, pw, ph); g.clip();
+    if (d0 < f0 || d1 > f1) { // outside the received slice: no data
+      g.fillStyle = cssVar("--spec-grid"); g.globalAlpha = 0.3;
+      if (d0 < f0) g.fillRect(L, T, Math.max(0, X(f0) - L), ph);
+      if (d1 > f1) g.fillRect(X(f1), T, L + pw - X(f1), ph);
+      g.globalAlpha = 1;
     }
     const trace = (arr, colour, width) => {
       g.beginPath();
@@ -357,6 +368,7 @@
       trace(s.chan, cssVar("--spec-chan"), 1.5);
       if (!mini) { g.font = `11px ${FONT}`; g.fillStyle = cssVar("--spec-chan"); g.textAlign = "left"; g.textBaseline = "bottom"; g.fillText("\u2014 after channel filter", L + 6, T + ph - 4); g.fillStyle = cssVar("--spec-filt"); g.fillText("\u2014 input", L + 6, T + ph - 18); }
     }
+    g.restore();
     // level of a full-scale single tone: if the signal is far below it, there is gain to spare
     if (fsDB !== null && !mini) {
       const fv = lin ? 1 : fsDB, y = Y(fv), rx = L + pw - 84, below = (fsDB - mxDb).toFixed(0);
@@ -374,12 +386,12 @@
     const adminManual = state.role === "admin" && CH.controls && CH.controls.autotune === false;
     if (state.drag !== null && state.dragCh === ch) car = state.drag;
     V.carX = null;
-    if (car >= f0 && car <= f1) {
+    if (car >= d0 && car <= d1) {
       const x = Math.round(X(car)) + .5; V.carX = x;
       const searching = CH.controls && CH.controls.autotune && CH.meters && !CH.meters.have;
       g.globalAlpha = searching ? 0.45 : 1;
       g.strokeStyle = cssVar("--spec-car"); g.lineWidth = adminManual ? 2 : 1; g.setLineDash([4, 3]); g.beginPath(); g.moveTo(x, T); g.lineTo(x, T + ph); g.stroke(); g.setLineDash([]); g.lineWidth = 1;
-      g.fillStyle = cssVar("--spec-car"); g.textBaseline = "top"; g.textAlign = "left"; if (!mini) g.fillText(car.toFixed(0) + " Hz" + (adminManual && !mini ? "  \u2194" : "") + (searching && !mini ? "  searching\u2026" : ""), x + 4, T + 2); g.globalAlpha = 1;
+      g.fillStyle = cssVar("--spec-car"); g.textBaseline = "top"; const late = x > L + pw - 150; g.textAlign = late ? "right" : "left"; if (!mini) g.fillText(car.toFixed(0) + " Hz" + (adminManual && !mini ? "  \u2194" : "") + (searching && !mini ? "  searching\u2026" : ""), late ? x - 4 : x + 4, T + 2); g.globalAlpha = 1;
     }
     if (multiOn()) { // which channel this graph shows
       const nm = (CH.controls && (CH.controls.label || CH.controls.name)) || `Channel ${ch + 1}`;
@@ -387,29 +399,97 @@
       g.fillText(nm, L + pw - (mini ? 4 : 96), T + 2); g.globalAlpha = 1; g.textAlign = "left";
     }
   }
-  // dragging the carrier marker (only while autotune is off)
+  // The big spectrum: drag the carrier marker (administrators, autotune off), drag the background to pan, wheel to zoom,
+  // double-click to reset. Zooming and panning inside the received slice are done here. Panning beyond it, or putting
+  // the carrier far from the middle, asks the server to center the slice (and the receiver's window) elsewhere.
   (() => {
     const attach = (cv) => {
       const V = state.view[cv.id];
       const chOf = () => (cv.id === "spec" ? state.sel : Number(cv.closest(".specgrp").dataset.ch));
-      const freqAt = (e) => { const r = cv.getBoundingClientRect(), G = V.geom; if (!G) return null; const f = G.f0 + (e.clientX - r.left - G.L) / G.pw * (G.f1 - G.f0); return Math.max(G.f0, Math.min(G.f1, f)); };
-      const canDrag = () => { const k = state.chans[chOf()].controls; return state.role === "admin" && k && k.autotune === false; };
+      const isAdmin = () => state.role === "admin";
+      const posHz = (e, clamp) => { const r = cv.getBoundingClientRect(), G = V.geom; if (!G) return null; const f = G.f0 + (e.clientX - r.left - G.L) / G.pw * (G.f1 - G.f0); return clamp ? Math.max(G.f0, Math.min(G.f1, f)) : f; };
+      const canDrag = () => { const k = state.chans[chOf()].controls; return isAdmin() && k && k.autotune === false; };
+      const cur = () => state.chans[chOf()];
+      const range = () => { const G = V.geom; return { lo: G.f0, hi: G.f1 }; };
+      const slice = () => { const G = V.geom; return { lo: G.s0, hi: G.s1 }; };
+      // keep a view range inside the received slice (everyone) or let administrators go beyond it
+      const place = (lo, w) => { const S = slice(); if (!isAdmin()) lo = Math.max(S.lo, Math.min(S.hi - w, lo)); return { lo, hi: lo + w }; };
+      let pan = null, scroller = 0, lastE = null;
+      const stopScroll = () => { if (scroller) { cancelAnimationFrame(scroller); scroller = 0; } V.scrollT = 0; };
+      const scroll = () => { // the carrier marker is held near an edge: the axis moves under it, visibly
+        scroller = 0;
+        if (state.drag === null || !lastE || !V.geom) return;
+        const r = cv.getBoundingClientRect(), G = V.geom, x = lastE.clientX - r.left - G.L, edge = 28;
+        const dir = x < edge ? -1 : x > G.pw - edge ? 1 : 0;
+        if (dir) {
+          const now = performance.now(), dt = Math.min(0.1, (now - (V.scrollT || now)) / 1000); V.scrollT = now;
+          const R = range(), w = R.hi - R.lo, step = dir * w * 0.1 * dt * (1 + (dir < 0 ? edge - x : x - (G.pw - edge)) / edge);
+          cur().vr = { lo: R.lo + step, hi: R.hi + step };
+          scheduleSpec();
+          scroller = requestAnimationFrame(scroll);
+        }
+        state.drag = posHz(lastE, false);
+      };
       cv.addEventListener("pointermove", (e) => {
-        if (state.drag !== null) { state.drag = freqAt(e); scheduleSpec(); return; }
+        if (state.drag !== null) {
+          lastE = e; state.drag = posHz(e, false);
+          const r = cv.getBoundingClientRect(), G = V.geom, x = e.clientX - r.left - G.L;
+          if (isAdmin() && (x < 28 || x > G.pw - 28) && !scroller) { if (!cur().vr) cur().vr = range(); scroller = requestAnimationFrame(scroll); }
+          scheduleSpec(); return;
+        }
+        if (pan) {
+          const G = V.geom, w = pan.hi - pan.lo, df = -(e.clientX - pan.x) / G.pw * w;
+          if (Math.abs(e.clientX - pan.x) > 3) pan.moved = true;
+          cur().vr = place(pan.lo + df, w); scheduleSpec(); return;
+        }
         const r = cv.getBoundingClientRect();
-        cv.style.cursor = canDrag() && V.carX !== null && Math.abs(e.clientX - r.left - V.carX) < 8 ? "ew-resize" : "";
+        cv.style.cursor = canDrag() && V.carX !== null && Math.abs(e.clientX - r.left - V.carX) < 8 ? "ew-resize" : "grab";
       });
       cv.addEventListener("pointerdown", (e) => {
         const r = cv.getBoundingClientRect();
-        if (!canDrag() || e.button !== 0 || V.carX === null || Math.abs(e.clientX - r.left - V.carX) >= 10) return;
-        cv.setPointerCapture(e.pointerId); state.dragCh = chOf(); state.drag = freqAt(e); scheduleSpec(); e.preventDefault();
+        if (e.button !== 0 || !V.geom) return;
+        if (canDrag() && V.carX !== null && Math.abs(e.clientX - r.left - V.carX) < 10) {
+          cv.setPointerCapture(e.pointerId); state.dragCh = chOf(); state.drag = posHz(e, false); lastE = e; scheduleSpec(); e.preventDefault(); return;
+        }
+        const R = range();
+        pan = { x: e.clientX, lo: R.lo, hi: R.hi, moved: false };
+        cv.setPointerCapture(e.pointerId); cv.style.cursor = "grabbing"; e.preventDefault();
       });
       cv.addEventListener("pointerup", (e) => {
-        if (state.drag === null) return;
-        const f = Math.round(freqAt(e) * 10) / 10; state.drag = null;
-        control("carrier", f, state.dragCh); scheduleSpec();
+        stopScroll();
+        if (state.drag !== null) {
+          const CH = state.chans[state.dragCh], f = Math.round(posHz(e, false) * 10) / 10, G = V.geom; state.drag = null;
+          const w = CH.vr ? CH.vr.hi - CH.vr.lo : 0;
+          const far = f < G.s0 || f > G.s1 || Math.abs(f - (G.s0 + G.s1) / 2) > 1000;
+          control("carrier", f, state.dragCh);
+          if (CH.vr) CH.vr = w >= (G.s1 - G.s0) * 0.999 ? null : far ? { lo: f - w / 2, hi: f + w / 2 } : CH.vr; // the view follows the carrier
+          scheduleSpec(); return;
+        }
+        if (pan) {
+          const p = pan; pan = null; cv.style.cursor = "grab";
+          const CH = cur(), R = CH.vr, S = slice();
+          if (p.moved && R && isAdmin() && (R.lo < S.lo - V.geom.step || R.hi > S.hi + V.geom.step)) {
+            control("view", (R.lo + R.hi) / 2, chOf());
+            if (R.hi - R.lo >= (S.hi - S.lo) * 0.999) CH.vr = null; // not zoomed: the new slice fills the graph
+          }
+          scheduleSpec();
+        }
       });
-      cv.addEventListener("pointercancel", () => { state.drag = null; scheduleSpec(); });
+      cv.addEventListener("pointercancel", () => { state.drag = null; pan = null; stopScroll(); scheduleSpec(); });
+      cv.addEventListener("wheel", (e) => {
+        if (!V.geom) return;
+        e.preventDefault();
+        const G = V.geom, r = cv.getBoundingClientRect(), a = Math.max(0, Math.min(1, (e.clientX - r.left - G.L) / G.pw));
+        const S = slice(), full = S.hi - S.lo, w0 = G.f1 - G.f0, w = Math.max(150, Math.min(full, w0 * (e.deltaY < 0 ? 0.8 : 1.25)));
+        const at = G.f0 + a * w0, CH = cur();
+        if (w >= full * 0.999) { CH.vr = null; } else { const lo = Math.max(S.lo, Math.min(S.hi - w, at - a * w)); CH.vr = { lo, hi: lo + w }; }
+        scheduleSpec();
+      }, { passive: false });
+      cv.addEventListener("dblclick", () => {
+        cur().vr = null;
+        if (isAdmin()) control("viewreset", undefined, chOf());
+        scheduleSpec();
+      });
     };
     attach($("spec")); // (the small spectra have no carrier drag)
     // LOG/LIN of the Spectrum tab: kept per channel

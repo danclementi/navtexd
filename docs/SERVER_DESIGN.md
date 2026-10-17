@@ -351,3 +351,17 @@ clamped it while the focused cell was replaced, and Escape no longer scrolls the
   record. `catalog.Enrich` marks a station that the text does not support (not among the candidates, or any station given to a
   fragment) with identification method `forced ID`.
 
+## 35. Spectrum view center
+- `channel.view_offset_hz` (per channel, not live: changing it restarts the channel) is added to the channel's shift
+  (channel frequency minus the source center). The engine's `shift` is therefore the center of both the spectrum slice and the
+  DDC / receiver window; a real-audio slice is now centered on it too (but never starts below 0 Hz or passes Nyquist, so
+  channels with the carrier near 1000 Hz look as before). The carrier search (+-`search_range_hz`) is made around it.
+- Controls (administrators): `view` (axis Hz; the offset changes by the difference to the running center, the value is limited
+  to the carrier range of the input), `viewreset`, and `carrier`, which also moves the view when the carrier is more than
+  `viewEdgeHz` (1000 Hz) from the running center. The runner keeps the running center (`chain.shift`).
+- Measured on a recorded real-audio clip: the receiver decoded a message with the carrier 1800 Hz off the window center and
+  failed at 2200 Hz (decimated rate about 4 kHz).
+- Client: `CH.vr` is the range shown by the big spectrum (zoom and pan inside the slice, everyone); beyond the slice only
+  administrators can pan, which sends `view` when the mouse is released. Dragging the carrier marker within 28 px of an edge
+  scrolls the axis. The area outside the received slice is shaded.
+

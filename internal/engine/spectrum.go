@@ -57,7 +57,10 @@ func newSpec(fs float64, kind iq.Kind, shift float64, m config.Meters) *specStat
 	s.buf = make([]complex128, n)
 	maxHz := math.Min(m.SpectrumMaxHz, fs/2)
 	if kind == iq.Real {
-		s.k0, s.bins = 0, int(maxHz/s.step)+1
+		// the slice is centered on the view center (the carrier's place), but never starts below 0 Hz nor passes Nyquist
+		s.bins = int(maxHz/s.step) + 1
+		s.k0 = int(math.Round((shift - maxHz/2) / s.step))
+		s.k0 = max(0, min(s.k0, n/2-s.bins))
 	} else {
 		half := math.Min(maxHz/2, fs/2-1)
 		s.k0 = int(math.Round((shift - half) / s.step))

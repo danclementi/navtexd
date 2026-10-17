@@ -295,6 +295,7 @@ type Channel struct {
 	FrequencyHz float64 `json:"frequency_hz" unit:"Hz" doc:"RF frequency of the NAVTEX channel: 518000 (international), 490000 (local language) or 424000 (Japan)"`
 	Name        string  `json:"name" doc:"A short name for this channel, shown on its chip in the header and in the system log (e.g. the antenna or receiver)"`
 	Comment     string  `json:"comment" doc:"A note about this channel (receiver, antenna, location ...); it is stored with every record received on it"`
+	ViewOffset  float64 `json:"view_offset_hz" unit:"Hz" doc:"Moves the center of this channel's spectrum, and of the receiver's frequency window (the carrier search is made around it), away from the channel frequency. Set by dragging the spectrum or the carrier marker to the edge; 0 = centered on the channel. Changing it restarts the channel"`
 }
 
 // DDC controls the digital down-converter.

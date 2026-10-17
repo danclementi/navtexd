@@ -69,6 +69,7 @@ type chain struct {
 	ring  atomic.Pointer[clip.Ring]
 	carr  atomic.Uint64 // last carrier position (audio Hz, float64 bits), for the clip description
 	rate  atomic.Uint64 // sample rate of the running source (float64 bits; 0 = not running)
+	shift atomic.Uint64 // center of the running engine's spectrum and receiver window (float64 bits)
 	isIQ  atomic.Bool   // the running source delivers I/Q (not real audio)
 
 	// guarded by Runner.mu
@@ -133,7 +134,7 @@ func (r *Runner) Corrector() (*autocorr.Corrector, autocorr.Config) {
 func (r *Runner) Correct(rec *store.Record) []string {
 	c, cfg := r.Corrector()
 	body, notes := c.Body(rec.EffectiveLines(), cfg) // the operator's revisions count, the raw lines are not touched
-	if f := rec.StartFix; f != "" { // the repaired start is shown like any repaired word
+	if f := rec.StartFix; f != "" {                  // the repaired start is shown like any repaired word
 		if body == "" {
 			body = strings.Join(rec.EffectiveLines(), "\n")
 		}
@@ -403,6 +404,41 @@ func (r *Runner) CarrierRange(ch int) (lo, hi float64) {
 	return 300, nyq - 300
 }
 
+// ViewCenter is the frequency the running channel's spectrum is centered on (Hz on the spectrum's axis).
+func (r *Runner) ViewCenter(ch int) (float64, bool) {
+	c := r.chains[ch]
+	if c.rate.Load() == 0 {
+		return 0, false
+	}
+	return math.Float64frombits(c.shift.Load()), true
+}
+
+// MoveView centers the spectrum and receiver window of channel ch on hz (axis Hz), or back on the channel frequency
+// (reset). It needs a restart of the channel, which Modify arranges (the caller calls Restart). When carrier is not nil
+// the manual carrier is set in the same step.
+func (r *Runner) MoveView(ch int, hz float64, reset bool, carrier *float64) (bool, error) {
+	cur, ok := r.ViewCenter(ch)
+	if !ok && !reset {
+		return false, fmt.Errorf("the channel is not running")
+	}
+	return r.Modify(func(c *config.Config) error {
+		c.EditChannel(ch, func(d *config.Config) {
+			switch {
+			case reset:
+				d.Channel.ViewOffset = 0
+			case ok:
+				d.Channel.ViewOffset += hz - cur
+			}
+			if carrier != nil {
+				t := d.Tuning()
+				t.Autotune, t.ManualCarrierHz = false, *carrier
+				d.SetTuning(t)
+			}
+		})
+		return nil
+	})
+}
+
 // SetComment changes the operational comment stored with new records (all channels).
 func (r *Runner) SetComment(s string) error {
 	_, err := r.Modify(func(c *config.Config) error { c.Operator.Comment = s; return nil })
@@ -491,6 +527,7 @@ func (r *Runner) run(ctx context.Context, c *chain, cfg config.Config, cmds chan
 	c.scope.Store(eng.Scope())
 	c.rate.Store(math.Float64bits(src.SampleRate()))
 	c.isIQ.Store(src.Kind() != iq.Real)
+	c.shift.Store(math.Float64bits(eng.ShiftHz()))
 	form := "audio"
 	if src.Kind() != iq.Real {
 		form = "I/Q"

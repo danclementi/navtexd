@@ -743,8 +743,30 @@ func (s *Server) control(w http.ResponseWriter, r *http.Request, id Identity) {
 		if f, err = asFloat(); err == nil {
 			if lo, hi := s.run.CarrierRange(ch); f < lo || f > hi {
 				err = fmt.Errorf("carrier must be between %.0f and %.0f Hz for this input", lo, hi)
+			} else if cur, ok := s.run.ViewCenter(ch); ok && math.Abs(f-cur) > viewEdgeHz {
+				// too far from the middle of the displayed slice: the slice and the receiver window follow the carrier
+				var restart bool
+				if restart, err = s.run.MoveView(ch, f, false, &f); err == nil && restart {
+					s.run.Log("info", fmt.Sprintf("%sspectrum view moved to the carrier at %.0f Hz", s.chTag(ch), f))
+					s.run.Restart()
+				}
 			} else {
 				err = s.run.SetCarrier(ch, f)
+			}
+		}
+	case "view", "viewreset": // center the spectrum (and the receiver window) elsewhere, or back on the channel
+		var f float64
+		reset := name == "viewreset"
+		if !reset {
+			f, err = asFloat()
+		}
+		if err == nil {
+			lo, hi := s.run.CarrierRange(ch)
+			f = math.Max(lo, math.Min(hi, f))
+			var restart bool
+			if restart, err = s.run.MoveView(ch, f, reset, nil); err == nil && restart {
+				s.run.Log("info", fmt.Sprintf("%sspectrum view moved (center %.0f Hz)", s.chTag(ch), f))
+				s.run.Restart()
 			}
 		}
 	case "comment":
@@ -905,3 +927,7 @@ func (s *Server) smoothLevel(ch int, peak, rms float64, t time.Time) (float64, f
 	}
 	return math.Pow(10, s.lPeak[ch]/20), math.Pow(10, s.lRMS[ch]/20)
 }
+
+// viewEdgeHz: a manual carrier farther than this from the center of the displayed slice moves the slice (and the
+// receiver's window) to the carrier. The slice is about 2700 Hz wide, and the receiver's baseband about +-1800 Hz.
+const viewEdgeHz = 1000
