@@ -105,8 +105,8 @@ func Open(ctx context.Context, cfg config.Config, opts ...Option) (*Opened, erro
 			return nil, err
 		}
 		o := &Opened{Source: h, Close: h.Close, Live: true, Notices: notes}
-		o.Info = fmt.Sprintf("radio %s: I/Q %.0f Hz, channel %.1f kHz, receiver LO %.1f kHz (carrier expected near %.0f Hz)",
-			h.Radio(), cfg.Input.HPSDR.SampleRateHz, cfg.Channel.FrequencyHz/1e3, centre/1e3, cfg.Channel.FrequencyHz-centre)
+		o.Info = fmt.Sprintf("radio %s, receiver %d: I/Q %.0f Hz, channel %.1f kHz, receiver LO %.1f kHz (carrier expected near %.0f Hz)",
+			h.Radio(), h.Receiver(), cfg.Input.HPSDR.SampleRateHz, cfg.Channel.FrequencyHz/1e3, centre/1e3, cfg.Channel.FrequencyHz-centre)
 		return o, nil
 	case "device", "stdin":
 		rate, channels, swap := cfg.Input.Stdin.SampleRateHz, cfg.Input.Stdin.Channels, cfg.Input.Stdin.SwapIQ

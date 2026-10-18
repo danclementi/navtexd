@@ -17,6 +17,9 @@ type fakeRadio struct {
 	conn     *net.UDPConn
 	mu       sync.Mutex
 	freq     uint32
+	freqs    map[int]uint32 // frequency of each receiver (0-based)
+	nrx      int
+	running  bool
 	rateCode int
 	mox      bool // true if any command frame ever had C0 bit 0 set
 	started  bool
@@ -33,7 +36,7 @@ func newFake(t *testing.T) *fakeRadio {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := &fakeRadio{conn: c, drop: map[uint32]bool{}, toneHz: 1500, done: make(chan struct{})}
+	f := &fakeRadio{freqs: map[int]uint32{}, nrx: 1, conn: c, drop: map[uint32]bool{}, toneHz: 1500, done: make(chan struct{})}
 	go f.serve()
 	t.Cleanup(func() { close(f.done); c.Close() })
 	return f
@@ -72,16 +75,22 @@ func (f *fakeRadio) serve() {
 				switch c0 {
 				case 0:
 					f.rateCode = int(buf[off+1] & 3)
-				case 4:
-					f.freq = binary.BigEndian.Uint32(buf[off+1:])
+					f.nrx = int(buf[off+4]>>3&7) + 1
+				default:
+					if c0 >= 4 && c0 <= 18 && c0%2 == 0 {
+						f.freqs[int(c0-4)/2] = binary.BigEndian.Uint32(buf[off+1:])
+						if c0 == 4 {
+							f.freq = binary.BigEndian.Uint32(buf[off+1:])
+						}
+					}
 				}
 			}
 			f.mu.Unlock()
 		case buf[2] == 0x04:
 			f.mu.Lock()
 			on := buf[3] != 0
-			if on && !f.started {
-				f.started = true
+			if on && !f.running {
+				f.started, f.stopped, f.running = true, false, true
 				go f.stream(from)
 			}
 			if !on {
@@ -93,14 +102,16 @@ func (f *fakeRadio) serve() {
 }
 
 func (f *fakeRadio) stream(to *net.UDPAddr) {
+	defer func() { f.mu.Lock(); f.running = false; f.mu.Unlock() }()
 	f.mu.Lock()
 	rate := 48000 << uint(f.rateCode)
+	nrx := f.nrx
 	f.mu.Unlock()
 	var seq uint32
-	phase := 0.0
-	step := 2 * math.Pi * f.toneHz / float64(rate)
-	perPacket := 126
-	period := time.Duration(float64(perPacket) / float64(rate) * float64(time.Second))
+	var phase [8]float64
+	group := 6*nrx + 2
+	per := 504 / group // samples per frame
+	period := time.Duration(float64(2*per) / float64(rate) * float64(time.Second))
 	tick := time.NewTicker(period)
 	defer tick.Stop()
 	for {
@@ -121,13 +132,15 @@ func (f *fakeRadio) stream(to *net.UDPAddr) {
 		for fr := 0; fr < 2; fr++ {
 			b := p[8+fr*frameLen:]
 			b[0], b[1], b[2] = 0x7f, 0x7f, 0x7f
-			for k := 0; k < 63; k++ {
-				i := int32(math.Cos(phase) * 4000000)
-				q := int32(math.Sin(phase) * 4000000)
-				phase += step
-				g := b[8+k*8:]
-				g[0], g[1], g[2] = byte(i>>16), byte(i>>8), byte(i)
-				g[3], g[4], g[5] = byte(q>>16), byte(q>>8), byte(q)
+			for k := 0; k < per; k++ {
+				for r := 0; r < nrx; r++ { // receiver r has a tone of toneHz * (r+1)
+					i := int32(math.Cos(phase[r]) * 4000000)
+					q := int32(math.Sin(phase[r]) * 4000000)
+					phase[r] += 2 * math.Pi * f.toneHz * float64(r+1) / float64(rate)
+					g := b[8+k*group+6*r:]
+					g[0], g[1], g[2] = byte(i>>16), byte(i>>8), byte(i)
+					g[3], g[4], g[5] = byte(q>>16), byte(q>>8), byte(q)
+				}
 			}
 		}
 		f.mu.Lock()
@@ -378,4 +391,81 @@ func TestDiscoverNote(t *testing.T) {
 	if note == "" {
 		t.Fatal("no note for a silent host")
 	}
+}
+
+// toneOf measures the frequency of a complex tone from the phase step between samples.
+func toneOf(x []complex64, rate float64) float64 {
+	var acc complex128
+	for i := 1; i < len(x); i++ {
+		acc += complex128(x[i]) * complex128(complex(real(x[i-1]), -imag(x[i-1])))
+	}
+	return math.Atan2(imag(acc), real(acc)) * rate / (2 * math.Pi)
+}
+
+// Channels of this program that use the same radio share one stream: the radio is asked for as many receivers as there
+// are channels, each is tuned separately, and the samples are split between the channels.
+func TestSharedRadio(t *testing.T) {
+	f := newFake(t)
+	f.toneHz = 1000
+	ctx := context.Background()
+	o := Options{Addr: "127.0.0.1", Port: f.port(), RateHz: 48000, SendGap: 10 * time.Millisecond, Timeout: 200 * time.Millisecond}
+	o1, o2, o3 := o, o, o
+	o1.FreqHz, o2.FreqHz, o3.FreqHz = 515000, 487000, 421000
+	a, err := Open(ctx, o1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := Open(ctx, o2) // the radio is busy with channel 1, but it is ours
+	if err != nil {
+		t.Fatalf("second channel: %v", err)
+	}
+	c, err := Open(ctx, o3)
+	if err != nil {
+		t.Fatalf("third channel: %v", err)
+	}
+	if a.Receiver() != 1 || b.Receiver() != 2 || c.Receiver() != 3 {
+		t.Fatalf("receivers %d %d %d", a.Receiver(), b.Receiver(), c.Receiver())
+	}
+	// every channel gets its own receiver's tone, whatever the layout was when it started
+	for i, s := range []*Source{a, b, c} {
+		readN(t, s, 4800) // settle after the receiver count changed
+		x := readN(t, s, 4800)
+		if got, want := toneOf(x, 48000), 1000*float64(i+1); math.Abs(got-want) > 20 {
+			t.Errorf("channel %d: tone %.0f Hz, want %.0f", i+1, got, want)
+		}
+	}
+	f.mu.Lock()
+	freqs, nrx := f.freqs, f.nrx
+	got := [3]uint32{freqs[0], freqs[1], freqs[2]}
+	f.mu.Unlock()
+	if nrx != 3 || got != [3]uint32{515000, 487000, 421000} {
+		t.Errorf("radio has %d receivers at %v", nrx, got)
+	}
+	// a different sample rate cannot share the stream
+	o4 := o
+	o4.RateHz, o4.FreqHz = 96000, 515000
+	if _, err := Open(ctx, o4); err == nil || !strings.Contains(err.Error(), "same sample rate") {
+		t.Errorf("different rate: %v", err)
+	}
+	// one channel leaving does not stop the others; the last one stops the radio
+	b.Close()
+	if x := readN(t, a, 2400); len(x) == 0 {
+		t.Fatal("no data after another channel left")
+	}
+	a.Close()
+	c.Close()
+	time.Sleep(300 * time.Millisecond)
+	f.mu.Lock()
+	stopped := f.stopped
+	f.mu.Unlock()
+	if !stopped {
+		t.Error("the radio was not told to stop")
+	}
+	// and it can be opened again
+	d, err := Open(ctx, o1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	readN(t, d, 480)
+	d.Close()
 }

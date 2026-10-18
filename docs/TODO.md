@@ -30,8 +30,7 @@ Four channels exist (`extra.*`, SERVER_DESIGN section 33); still to do:
 
 
 
-## Next (radio input) - ON HOLD
-Wait until we have an approach for several receivers (or several audio inputs) in the GUI.
+## Next (radio input)
 
 - **HPSDR / Metis input:** the QMtech image works over the air (needs `input.hpsdr.swap_iq` on; Thetis compensates by itself).
   Still to try: Red Pitaya (does it need `swap_iq` too? if so, note it in the log or default it for Pavel's images, which
@@ -39,13 +38,15 @@ Wait until we have an approach for several receivers (or several audio inputs) i
   with 490 and 518 kHz decoded together the two carriers may lie on opposite sides of the centre.
 - **Hermes controls:** attenuator, preamp, dither, random; ADC-overload indicator in the header; read the Hermes gateware
   (see `docs/HPSDR_DESIGN.md`, section 5, open questions).
-- **Several receivers from one radio** (518, 490 and 424 kHz together); Protocol 2 radios (Orion, Saturn).
+- Protocol 2 radios (Orion, Saturn).
+- **Try the shared radio on real hardware** (several channels on one PDSDR or Red Pitaya address; the UberSDR is a different case). The
+  number of receivers a given image offers is not read from the radio; if it offers fewer than 8, the extra channel gets no data.
 
 ## Later
 - One-line Linux installer script (download the right release binary for the machine, check its SHA-256, create a systemd
   unit; no Docker): needs Linux arm64 / armv7 release builds first. Raspberry Pi 3 / 4 section in the README; try
   `parec` against a virtual sink, and fall back to `arecord` if `parec` fails.
-- Several channels from one wide I/Q stream (490 and 518 kHz from one radio); needs a shared input and a DDC per channel.
+- Several channels from one wide I/Q stream of a non-HPSDR source (a WAV recording or a sound card); needs a shared input and a DDC per channel.
 - Packaging: Windows service, systemd unit, installer; code signing against SmartScreen warnings.
 - Linux build and test.
 - Decoder quality: indicator for how well the DX and RX copies of each character agree.

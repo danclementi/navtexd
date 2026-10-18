@@ -1,11 +1,10 @@
-Spectrum view center: zoom, pan, and slice follows the carrier
+HPSDR: channels share one radio (several receivers per stream)
 
-channel.view_offset_hz centers the spectrum slice and the receiver's
-frequency window away from the channel frequency (restarts the channel).
-Administrators can pan beyond the slice or drag the carrier marker to an
-edge; a manual carrier more than 1000 Hz from the center moves it too.
-Everyone can zoom (wheel) and pan inside the slice; double-click resets.
-Real-audio slices are centered on the view as well.
+Channels that use the same radio address now share one session: the
+radio is asked for one receiver per channel, each is tuned to its own
+channel, and the interleaved samples are split into one stream per
+channel. All must use the same sample rate. Tested against the fake
+radio with three receivers; not yet on real hardware.
 
 Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01NtdzyoDL7BwYD4fLhAcepE

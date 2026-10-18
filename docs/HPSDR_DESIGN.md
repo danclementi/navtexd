@@ -1,6 +1,6 @@
 # HPSDR / Metis input — design notes
 
-**Status:** Protocol 1, one receiver, receive-only is implemented (`internal/hpsdr`, `input.source = hpsdr`, `-radio`). Tested against a fake radio modelled on Pavel Demin's server, including a full real NAVTEX message decoded through it. **Not yet tried on real hardware.** Radio list: up to four successfully used radios are kept in `radios.json` (MRU); header Input selector; multi-radio search prefers a known radio, else the only non-busy one, else errors listing all. Options are per source (`input.device.*`, `input.hpsdr.*`, `input.stdin.*`, `input.file.*`), including each source's own rate, centre, autotune and manual carrier. Not done: several receivers at once, Hermes-specific controls (attenuator, preamp, dither, random), ADC-overload indicator, Protocol 2.
+**Status:** Protocol 1, receive-only is implemented, with several receivers per radio shared by the channels of the program (section 6) (`internal/hpsdr`, `input.source = hpsdr`, `-radio`). Tested against a fake radio modelled on Pavel Demin's server, including a full real NAVTEX message decoded through it. **Not yet tried on real hardware.** Radio list: up to four successfully used radios are kept in `radios.json` (MRU); header Input selector; multi-radio search prefers a known radio, else the only non-busy one, else errors listing all. Options are per source (`input.device.*`, `input.hpsdr.*`, `input.stdin.*`, `input.file.*`), including each source's own rate, centre, autotune and manual carrier. Not done: Hermes-specific controls (attenuator, preamp, dither, random), ADC-overload indicator, Protocol 2.
 
 Goal: a new `input.source = "hpsdr"` that takes I/Q straight from a Hermes-class radio over UDP
 (OpenHPSDR **Protocol 1**, "Metis"), receive-only, with the radio doing the down-conversion.
@@ -88,3 +88,19 @@ MOX set. (Hermes can transmit; a stray bit must not be able to.)
   radios on hand; add later if wanted.
 - Sample-rate map differs by gateware (RP-125 MHz: 48/96/192; QMtech: also 384). Use what the user
   selects; warn if the radio's data rate disagrees with the requested one.
+
+## 6. Several receivers from one radio (shared session)
+A Protocol 1 radio streams to one host (the one that sent the start packet); one stream carries up to 8 receivers that
+share the sample rate and the antenna. The samples are interleaved: every group holds I and Q (24 bit each) of receiver 1,
+2, ... N followed by 2 microphone bytes, so a frame (504 bytes) holds 504 / (6N + 2) groups. The command packet's first frame
+sets the rate and, in C4 bits 5:3, N - 1; its second frame carries one receiver's frequency (C0 = 4 for receiver 1, 6 for 2, ...),
+so the keep-alive repeats the frequencies in turn.
+- `hpsdr.Open` joins an existing `session` for the radio when a channel of this program already streams from it (found by
+  address; a radio that is busy with our own session is not "busy"), otherwise it creates one. Opens are serialized.
+- A channel gets the lowest free receiver. When the count must grow the stream is stopped, reconfigured and started again
+  (packets in flight have the old layout and are discarded for 0.5 s); leaving does not change the count. The last channel to
+  leave stops the radio.
+- A channel that asks for another sample rate than the running session is refused with a message. The whole radio shares
+  one packet-loss counter; its notices go to the first channel that uses it.
+- Tested against the fake radio with three receivers (each with its own tone); not yet against real hardware.
+
