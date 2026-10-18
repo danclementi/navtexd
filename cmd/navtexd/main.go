@@ -55,13 +55,13 @@ func main() {
 	// Command-line shortcuts for options. A name with "*" in its path is filled in with the group of the selected
 	// source (device, hpsdr, stdin or file).
 	shortcuts := map[string]string{"in": "input.file.path", "device": "input.device.name", "radio": "input.hpsdr.address", "rate": "input.*.sample_rate_hz",
-		"centre": "input.*.centre_hz", "start": "input.*.start_utc", "carrier": "input.*.manual_carrier_hz", "channel": "channel.frequency_hz",
+		"start": "input.*.start_utc", "carrier": "input.*.manual_carrier_hz", "channel": "channel.frequency_hz",
 		"listen": "server.listen", "tunnel": "server.tunnel_listen", "realtime": "input.file.realtime"}
 	flag.String("in", "", "input WAV file")
 	flag.String("device", "", "audio input to capture (part of its name; see -list-devices)")
 	flag.String("radio", "", "take I/Q from an OpenHPSDR (Metis) radio at this address; use auto to search the network")
 	flag.String("rate", "", "sample rate in Hz of the selected live input (a radio offers 48000, 96000, 192000, 384000; a WAV file has its own)")
-	flag.String("centre", "", "Hz: receiver LO (real audio) or I/Q centre of the selected input; live default: channel - 1000 Hz (radio: channel - 3000 Hz)")
+	flag.String("centre", "", "Hz: receiver LO (real audio) or I/Q centre of the selected input (stored as its offset below the channel frequency); default: the LO 1000 Hz below the channel (radio: 3000 Hz)")
 	flag.String("carrier", "", "Hz: fix the carrier at this position in the selected input's audio / baseband and turn autotune off")
 	flag.String("start", "", "UTC time of the first sample (yyyy-mm-dd hh:mm:ss) for a piped recording")
 	flag.String("channel", "", "channel frequency in Hz (518000, 490000, 424000)")
@@ -143,6 +143,16 @@ func main() {
 				fatal(err)
 			}
 		}
+	})
+	flag.Visit(func(f *flag.Flag) { // -centre is an absolute frequency; the settings keep the LO's offset below the channel
+		if f.Name != "centre" {
+			return
+		}
+		var hz float64
+		if _, err := fmt.Sscan(f.Value.String(), &hz); err != nil {
+			fatal(fmt.Errorf("-centre %q: want a frequency in Hz", f.Value.String()))
+		}
+		cfg.SetCentre(hz)
 	})
 	rememberInput(base, cfg, explicitFlags, settings)
 	for _, kv := range sets {

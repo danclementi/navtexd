@@ -67,10 +67,11 @@ type chain struct {
 	idx   int
 	scope atomic.Pointer[engine.Scope]
 	ring  atomic.Pointer[clip.Ring]
-	carr  atomic.Uint64 // last carrier position (audio Hz, float64 bits), for the clip description
-	rate  atomic.Uint64 // sample rate of the running source (float64 bits; 0 = not running)
-	shift atomic.Uint64 // center of the running engine's spectrum and receiver window (float64 bits)
-	isIQ  atomic.Bool   // the running source delivers I/Q (not real audio)
+	carr  atomic.Uint64              // last carrier position (audio Hz, float64 bits), for the clip description
+	rate  atomic.Uint64              // sample rate of the running source (float64 bits; 0 = not running)
+	shift atomic.Uint64              // center of the running engine's spectrum and receiver window (float64 bits)
+	isIQ  atomic.Bool                // the running source delivers I/Q (not real audio)
+	tap   atomic.Pointer[source.Tap] // set while other channels take this channel's input
 
 	// guarded by Runner.mu
 	state State
@@ -276,6 +277,23 @@ func (r *Runner) Restart() {
 	for _, n := range need {
 		any = any || n
 	}
+	if any { // channels that share an input restart together with the channel that owns it
+		cfg := r.Config()
+		for i, n := range need {
+			if n {
+				if o := cfg.ForChannel(i).Input.SharedFrom; o > 0 {
+					need[o-1] = true
+				}
+			}
+		}
+		for i, n := range need {
+			if n {
+				for _, d := range cfg.SharedWith(i) {
+					need[d] = true
+				}
+			}
+		}
+	}
 	for i := range r.chains {
 		if any && !need[i] {
 			continue
@@ -427,7 +445,7 @@ func (r *Runner) MoveView(ch int, hz float64, reset bool, carrier *float64) (boo
 			case reset:
 				d.Channel.ViewOffset = 0
 			case ok:
-				d.Channel.ViewOffset += hz - cur
+				d.Channel.ViewOffset = math.Round(d.Channel.ViewOffset + hz - cur) // whole Hz
 			}
 			if carrier != nil {
 				t := d.Tuning()
@@ -451,12 +469,25 @@ func (r *Runner) run(ctx context.Context, c *chain, cfg config.Config, cmds chan
 		log("error", err.Error())
 		r.setState(c.idx, State{Error: err.Error(), Since: time.Now().UTC()})
 	}
-	src, err := source.Open(ctx, cfg, source.WithRadios(r.Radios))
+	var src *source.Opened
+	var err error
+	if from := cfg.Input.SharedFrom; from > 0 {
+		src, err = r.openShared(ctx, from-1)
+	} else {
+		src, err = source.Open(ctx, cfg, source.WithRadios(r.Radios))
+	}
 	if err != nil {
 		fail(err)
 		return
 	}
 	defer src.Close()
+	if others := r.Config().SharedWith(c.idx); len(others) > 0 && cfg.Input.SharedFrom == 0 {
+		tap := source.NewTap(src)
+		c.tap.Store(tap)
+		defer func() { c.tap.Store(nil); tap.Close() }()
+		tap.WaitSubscribers(ctx, len(others), 5*time.Second)
+		log("info", fmt.Sprintf("input shared with %d other channel(s)", len(others)))
+	}
 	log("info", "start: "+src.Info)
 	if src.Notices != nil {
 		go func() {
@@ -579,6 +610,9 @@ loop:
 		drain()
 		n, err := src.Read(buf)
 		if n > 0 {
+			if tap := c.tap.Load(); tap != nil {
+				tap.Publish(ctx, buf[:n], !src.Live)
+			}
 			if wd != nil {
 				wd.block(buf[:n])
 			}
@@ -597,7 +631,7 @@ loop:
 			}
 			break
 		}
-		if cfg.Input.File.Realtime && !src.Live {
+		if cfg.Input.File.Realtime && !src.Live && !src.Shared {
 			target := t0.Add(time.Duration(float64(samples) / src.SampleRate() * float64(time.Second)))
 			for {
 				d := time.Until(target)
@@ -627,6 +661,27 @@ loop:
 		st.Info = "end of input: " + src.Info
 	}
 	r.setState(c.idx, st)
+}
+
+// openShared takes the input of channel owner (0-based): it waits for that channel to open it and subscribes.
+func (r *Runner) openShared(ctx context.Context, owner int) (*source.Opened, error) {
+	name := fmt.Sprintf("channel %d", owner+1)
+	deadline := time.NewTimer(15 * time.Second)
+	defer deadline.Stop()
+	for {
+		if tap := r.chains[owner].tap.Load(); tap != nil {
+			if o, err := source.Shared(tap, name); err == nil {
+				return o, nil
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-deadline.C:
+			return nil, fmt.Errorf("%s has no input to share (is it running?)", name)
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
 }
 
 // storeRecord completes, corrects, filters and stores one finished message or fragment, logging what happened. It

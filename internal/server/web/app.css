@@ -474,3 +474,4 @@ input.iso { width: 92px; font: inherit; font-variant-numeric: tabular-nums; colo
 input.iso.bad { border-color: var(--bad); }
 .isodate .cal { display: inline-flex; align-items: center; padding: 3px 5px; color: var(--ink); }
 .isodate .pick { position: absolute; right: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.lohint { font-weight: 600; }

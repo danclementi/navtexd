@@ -189,6 +189,11 @@ func TestLiveListMatchesRestartRule(t *testing.T) {
 			v = "json"
 		case "segment.fragment_words_vocabulary":
 			v = "on"
+		case "input.shared_from":
+			v = "2"
+			if rel != f.Path {
+				v = "1"
+			}
 		}
 		if err := Set(&next, f.Path, v); err != nil {
 			t.Errorf("%s: %v", f.Path, err)
@@ -241,9 +246,17 @@ func TestHPSDRInput(t *testing.T) {
 		t.Fatal("44100 Hz is not a radio rate")
 	}
 	c.Input.HPSDR.SampleRateHz = 192000
-	c.Input.HPSDR.CentreHz = 517000
-	if err := c.Validate(); err != nil || c.LiveCentreHz() != 517000 {
-		t.Fatalf("explicit LO: %v %v", err, c.LiveCentreHz())
+	c.Input.HPSDR.LoBelowHz = 3500 // always relative to the channel frequency, and it follows the channel
+	if err := c.Validate(); err != nil || c.LiveCentreHz() != c.Channel.FrequencyHz-3500 {
+		t.Fatalf("LO 3500 Hz below: %v %v", err, c.LiveCentreHz())
+	}
+	c.Channel.FrequencyHz = 490000
+	if c.LiveCentreHz() != 486500 {
+		t.Fatalf("after retuning the channel: LO %v, want 486500", c.LiveCentreHz())
+	}
+	c.SetCentre(486000) // the command-line -centre is absolute
+	if c.Input.HPSDR.LoBelowHz != 4000 || c.LiveCentreHz() != 486000 {
+		t.Fatalf("SetCentre: %+v", c.Input.HPSDR)
 	}
 }
 
@@ -260,7 +273,7 @@ func TestSourcesAreIndependent(t *testing.T) {
 		}
 	}
 	c.Input.Source = "hpsdr"
-	c.SetTuning(Tuning{CentreHz: 0, Autotune: false, ManualCarrierHz: 2500})
+	c.SetTuning(Tuning{LoBelowHz: 3000, Autotune: false, ManualCarrierHz: 2500})
 	c.Input.Source = "device"
 	if tu := c.Tuning(); !tu.Autotune || tu.ManualCarrierHz != DefaultCarrierHz {
 		t.Fatalf("the sound card picked up the radio's carrier: %+v", tu)
@@ -276,7 +289,9 @@ func TestSourcesAreIndependent(t *testing.T) {
 		t.Error("an unselected source's rate restarted the channel")
 	}
 	b = c
-	b.SetTuning(Tuning{ManualCarrierHz: 2600})
+	tu := b.Tuning()
+	tu.ManualCarrierHz = 2600
+	b.SetTuning(tu)
 	if RestartNeeded(a, b) {
 		t.Error("moving the carrier restarted the channel")
 	}
@@ -305,7 +320,7 @@ func TestOldInputSettingsMigrate(t *testing.T) {
 	if in.Device.SampleRateHz != 192000 || in.Stdin.SampleRateHz != 192000 || in.HPSDR.SampleRateHz != 192000 || in.Device.Channels != 2 || in.Stdin.PCMFormat != "f32le" {
 		t.Fatalf("rates: %+v", in)
 	}
-	if in.HPSDR.CentreHz != 517000 || !in.HPSDR.SwapIQ || in.HPSDR.Autotune || in.HPSDR.ManualCarrierHz != 2750 {
+	if in.HPSDR.LoBelowHz != -27000 || !in.HPSDR.SwapIQ || in.HPSDR.Autotune || in.HPSDR.ManualCarrierHz != 2750 {
 		t.Fatalf("radio tuning: %+v", in.HPSDR)
 	}
 	if !in.Device.Autotune || in.Device.ManualCarrierHz != DefaultCarrierHz {
@@ -468,5 +483,64 @@ func TestRestartPerChannel(t *testing.T) {
 	b.Extra[0].Channel.FrequencyHz = 424000
 	if RestartNeeded(a, b) {
 		t.Error("settings of a disabled channel")
+	}
+}
+
+// The absolute centre_hz of older settings files (sound card, radio, stdin; also in the extra channels) becomes an offset
+// below that channel's own frequency; a file recording keeps its absolute centre.
+func TestOldAbsoluteCentreMigrates(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "settings.json")
+	old := `{"channel":{"frequency_hz":518000},
+		"input":{"source":"hpsdr","hpsdr":{"centre_hz":514500},"device":{"centre_hz":0},"stdin":{"centre_hz":517000},"file":{"centre_hz":504000}},
+		"extra":[{"enabled":true,"channel":{"frequency_hz":490000},"input":{"source":"hpsdr","hpsdr":{"centre_hz":486500}}}]}`
+	if err := os.WriteFile(p, []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Input.HPSDR.LoBelowHz; got != 3500 {
+		t.Errorf("channel 1 radio: LO below %v, want 3500", got)
+	}
+	if got := c.Input.Device.LoBelowHz; got != DefaultCarrierHz {
+		t.Errorf("0 meant the default: %v", got)
+	}
+	if got := c.Input.Stdin.LoBelowHz; got != 1000 {
+		t.Errorf("stdin: %v", got)
+	}
+	if got := c.Input.File.CentreHz; got != 504000 {
+		t.Errorf("a recording keeps its absolute centre: %v", got)
+	}
+	if got := c.Extra[0].Input.HPSDR.LoBelowHz; got != 3500 {
+		t.Errorf("channel 2 radio: LO below %v, want 3500 (490 kHz channel, LO 486.5)", got)
+	}
+	if c.ForChannel(1).LiveCentreHz() != 486500 {
+		t.Errorf("channel 2 LO %v", c.ForChannel(1).LiveCentreHz())
+	}
+}
+
+func TestSharedFromValidation(t *testing.T) {
+	c := Default()
+	c.Extra[0].Enabled = true
+	c.Extra[0].Input.SharedFrom = 1
+	if err := c.Validate(); err != nil {
+		t.Fatalf("channel 2 from channel 1: %v", err)
+	}
+	if got := c.SharedWith(0); len(got) != 1 || got[0] != 1 {
+		t.Errorf("SharedWith(0) = %v", got)
+	}
+	c.Extra[0].Input.SharedFrom = 2
+	if c.Validate() == nil {
+		t.Error("a channel cannot share its own input")
+	}
+	c.Extra[0].Input.SharedFrom = 3 // channel 3 is switched off
+	if c.Validate() == nil {
+		t.Error("the owner must be on")
+	}
+	c.Extra[0].Input.SharedFrom = 1
+	c.Input.SharedFrom = 2 // chains of sharing
+	if c.Validate() == nil {
+		t.Error("the owner needs an input of its own")
 	}
 }

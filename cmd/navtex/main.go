@@ -41,7 +41,6 @@ func main() {
 		"in":         "input.file.path",
 		"device":     "input.device.name",
 		"rate":       "input.*.sample_rate_hz",
-		"centre":     "input.*.centre_hz",
 		"start":      "input.*.start_utc",
 		"swap":       "input.*.swap_iq",
 		"order":      "decoder.bit_order",
@@ -112,6 +111,16 @@ func main() {
 				fatal(err)
 			}
 		}
+	})
+	flag.Visit(func(f *flag.Flag) { // -centre is an absolute frequency; the settings keep the LO's offset below the channel
+		if f.Name != "centre" {
+			return
+		}
+		var hz float64
+		if _, err := fmt.Sscan(f.Value.String(), &hz); err != nil {
+			fatal(fmt.Errorf("-centre %q: want a frequency in Hz", f.Value.String()))
+		}
+		cfg.SetCentre(hz)
 	})
 	for _, kv := range sets {
 		path, val, ok := strings.Cut(kv, "=")

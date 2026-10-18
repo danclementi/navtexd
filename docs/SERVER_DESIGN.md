@@ -365,3 +365,15 @@ clamped it while the focused cell was replaced, and Escape no longer scrolls the
   administrators can pan, which sends `view` when the mouse is released. Dragging the carrier marker within 28 px of an edge
   scrolls the axis. The area outside the received slice is shaded.
 
+
+## 36. Relative LO and shared inputs
+
+- The LO of a live input (`device`, `hpsdr`, `stdin`) is stored as `lo_below_hz`: LO = channel frequency - `lo_below_hz`. The old
+  absolute `centre_hz` of those sources is converted when the settings load (`migrateLO`; 0 meant "default" and is dropped).
+  A WAV file keeps `centre_hz`, since the recording's centre is fixed. `-centre` on the command line is converted the same way.
+- `input.shared_from` (0 = own input, 1..4 = channel number) makes a channel decode from another channel's stream. The owner must
+  be on and have an input of its own (no chains). In the runner the owner creates a `source.Tap` after opening its input and
+  publishes each block it reads; a sharer waits (up to 15 s) for the tap and subscribes, then runs its own engine with the same
+  rate and centre (`shift` = its channel - the centre). Recordings are published blocking (no samples lost, the sharer is not
+  paced separately); live inputs drop a block a slow subscriber has no room for. Restarting a channel also restarts the channels
+  that share its input. The header shows "same input as <channel>".

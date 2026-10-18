@@ -46,7 +46,6 @@ Four channels exist (`extra.*`, SERVER_DESIGN section 33); still to do:
 - One-line Linux installer script (download the right release binary for the machine, check its SHA-256, create a systemd
   unit; no Docker): needs Linux arm64 / armv7 release builds first. Raspberry Pi 3 / 4 section in the README; try
   `parec` against a virtual sink, and fall back to `arecord` if `parec` fails.
-- Several channels from one wide I/Q stream of a non-HPSDR source (a WAV recording or a sound card); needs a shared input and a DDC per channel.
 - Packaging: Windows service, systemd unit, installer; code signing against SmartScreen warnings.
 - Linux build and test.
 - Decoder quality: indicator for how well the DX and RX copies of each character agree.

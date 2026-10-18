@@ -23,6 +23,8 @@ type Opened struct {
 	Info  string // one-line description for logs
 	Close func() error
 	Live  bool
+	// Shared is set for a channel that takes its samples from another channel's input (see Tap); it is paced by that input.
+	Shared bool
 	// Notices, if not nil, carries messages from a live source (lost network packets, the radio chosen) for the log.
 	Notices <-chan Notice
 }

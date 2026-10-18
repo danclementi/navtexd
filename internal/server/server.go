@@ -677,7 +677,11 @@ func (s *Server) input(w http.ResponseWriter, r *http.Request, id Identity) {
 		return
 	}
 	c := s.run.ChanConfig(ch).Input
-	writeJSON(w, 200, map[string]string{"source": c.Source, "device": c.Device.Name, "radio": c.HPSDR.Address})
+	m := map[string]string{"source": c.Source, "device": c.Device.Name, "radio": c.HPSDR.Address}
+	if c.SharedFrom > 0 {
+		m["shared"] = s.run.Config().Label(c.SharedFrom - 1)
+	}
+	writeJSON(w, 200, m)
 }
 
 // radios lists the radios that have been used successfully, most recently used first (administrators only: the addresses

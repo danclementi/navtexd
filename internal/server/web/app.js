@@ -157,7 +157,8 @@
     const i = state.chans[ch].input, el = L(ch, ".chinput");
     if (!i) { el.textContent = ""; return; }
     let t;
-    if (i.source === "hpsdr") { const r = (NX.knownRadios || []).find((x) => x.addr === i.radio); t = r ? r.label : i.radio ? "Radio " + i.radio : "Radio (searching the network)"; }
+    if (i.shared) t = "same input as " + i.shared;
+    else if (i.source === "hpsdr") { const r = (NX.knownRadios || []).find((x) => x.addr === i.radio); t = r ? r.label : i.radio ? "Radio " + i.radio : "Radio (searching the network)"; }
     else if (i.source === "file") t = "WAV file";
     else if (i.source === "stdin") t = "Raw stream";
     else t = i.device || "(default audio input)";
@@ -698,6 +699,16 @@
             for (const c of f.choices || [f.value]) inp.add(new Option(c, c));
             inp.value = f.value;
           } else if (f.path === "operator.info") { inp = document.createElement("textarea"); inp.rows = 5; inp.value = f.value; row.classList.add("wide"); }
+          else if (/(^|\.)input\.shared_from$/.test(f.path)) { // which channel's input this channel uses
+            const mx = /^extra\.(\d+)\./.exec(f.path), me = mx ? Number(mx[1]) + 2 : 1;
+            inp = document.createElement("select"); inp.add(new Option("own input (set below)", "0"));
+            for (let n = 1; n <= N; n++) {
+              if (n === me) continue;
+              const fq = fields.find((x) => x.path === (n === 1 ? "channel.frequency_hz" : `extra.${n - 2}.channel.frequency_hz`));
+              inp.add(new Option(`same input as channel ${n}` + (fq ? ` (${(Number(fq.value) / 1000).toFixed(0)} kHz)` : ""), String(n)));
+            }
+            inp.value = String(f.value);
+          }
           else if (f.path === "input.hpsdr.address") {
             inp = document.createElement("input"); inp.type = "text"; inp.value = f.value; inp.placeholder = "empty = search the network";
             inp.setAttribute("list", "radio-list");
@@ -721,6 +732,12 @@
             };
           } else inp.oninput = inp.onchange = () => { row.classList.toggle("changed", valueOf(inp) !== inp.dataset.orig); clearMsg(); updatePending(); };
           const doc = document.createElement("div"); doc.className = "doc"; doc.textContent = f.doc + (f.unit ? ` (${f.unit})` : "");
+          if (/(^|\.)lo_below_hz$/.test(f.path)) { // show the resulting LO next to the offset
+            const fq = fields.find((x) => x.path === f.path.replace(/input\.[a-z]+\.lo_below_hz$/, "channel.frequency_hz"));
+            const hint = document.createElement("span"); hint.className = "lohint"; doc.append(document.createElement("br"), hint);
+            const upd = () => { const v = Number(inp.value); hint.textContent = fq && inp.value !== "" && isFinite(v) ? `Resulting LO: ${((Number(fq.value) - v) / 1000).toFixed(3)} kHz (channel ${(Number(fq.value) / 1000).toFixed(3)} kHz).` : ""; };
+            inp.addEventListener("input", upd); upd();
+          }
           row.append(name, inp, doc); fs.appendChild(row);
         }
       }
@@ -729,14 +746,16 @@
     // only the options of the selected input source are shown
     const srcSel = form.querySelector('[data-path="input.source"]');
     if (srcSel) {
-      const showSrc = () => form.querySelectorAll("fieldset[data-src]").forEach((fs) => { fs.hidden = fs.dataset.src !== srcSel.value; });
-      srcSel.addEventListener("change", showSrc); showSrc();
+      const shSel = form.querySelector('[data-path="input.shared_from"]');
+      const showSrc = () => form.querySelectorAll("fieldset[data-src]").forEach((fs) => { fs.hidden = fs.dataset.src !== srcSel.value || (shSel && shSel.value !== "0"); });
+      srcSel.addEventListener("change", showSrc); if (shSel) shSel.addEventListener("change", showSrc); showSrc();
     }
     for (let k = 0; k < N - 1; k++) {
       const sx = form.querySelector(`[data-path="extra.${k}.input.source"]`);
       if (!sx) continue;
-      const showX = () => form.querySelectorAll(`fieldset[data-srcx="${k}"]`).forEach((fs) => { fs.hidden = fs.dataset.src2 !== sx.value; });
-      sx.addEventListener("change", showX); showX();
+      const shX = form.querySelector(`[data-path="extra.${k}.input.shared_from"]`);
+      const showX = () => form.querySelectorAll(`fieldset[data-srcx="${k}"]`).forEach((fs) => { fs.hidden = fs.dataset.src2 !== sx.value || (shX && shX.value !== "0"); });
+      sx.addEventListener("change", showX); if (shX) shX.addEventListener("change", showX); showX();
     }
     showPage(pageEls.has(optPage) ? optPage : "station");
     updatePending();

@@ -55,7 +55,7 @@ two 512-byte frames. Each frame: `7F 7F 7F`, C0..C4 (status), then 504 bytes of 
 - New `internal/hpsdr` package: discovery, start/stop, command writer, packet parser; emits complex64
   blocks and the sample rate through the existing I/Q source interface (the stereo I/Q path already in
   `internal/iq`). Pure `net`, no cgo, identical on Windows and Linux.
-- `input.hpsdr.centre_hz` already exists; with the radio the DDC is tuned **to** the dial frequency plus a
+- `input.hpsdr.lo_below_hz` (the LO below the channel frequency, formerly an absolute `centre_hz`); with the radio the DDC is tuned **to** the dial frequency plus a
   small offset (a few kHz) so the carrier is not at DC; navtexd's own mixer removes the offset.
   48 kHz is enough (NAVTEX occupies ~±400 Hz).
 - Multiple receivers on one radio (518/490/424 at once) are natural in this protocol — leave room for

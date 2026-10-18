@@ -133,7 +133,7 @@ type Engine struct {
 
 // New creates an engine for a source with the given sample rate, centre frequency and kind.
 func New(fs, centreHz float64, kind iq.Kind, cfg config.Config, h Handlers) (*Engine, error) {
-	if err := cfg.Validate(); err != nil {
+	if err := cfg.ValidateChannel(); err != nil {
 		return nil, err
 	}
 	chHz := cfg.Channel.FrequencyHz
@@ -145,7 +145,8 @@ func New(fs, centreHz float64, kind iq.Kind, cfg config.Config, h Handlers) (*En
 				"it must be between 300 Hz and %.0f Hz (sample rate %.0f Hz); for real audio set the centre/LO frequency to the receiver's dial frequency", chHz/1e3, centreHz/1e3, shift, nyq-300, fs)
 		}
 	} else if shift < -nyq+1500 || shift > nyq-1500 {
-		return nil, fmt.Errorf("channel %.1f kHz is outside the recorded band (centre %.1f kHz, rate %.0f Hz)", chHz/1e3, centreHz/1e3, fs)
+		return nil, fmt.Errorf("channel %.1f kHz is outside the received band: centre %.1f kHz, rate %.0f Hz (usable +-%.1f kHz), channel offset %+.1f kHz, view_offset_hz %+.0f Hz puts the window at %+.1f kHz",
+			chHz/1e3, centreHz/1e3, fs, (nyq-1500)/1e3, (chHz-centreHz)/1e3, cfg.Channel.ViewOffset, shift/1e3)
 	}
 	D := ddc.PickDecim(fs, cfg.DDC.TargetRateHz)
 	if D == 0 {

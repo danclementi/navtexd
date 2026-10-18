@@ -69,7 +69,14 @@ navtexd -device "CABLE Output" -centre 517000
 ```
 
 `-centre` is the receiver dial frequency in Hz, so that the decoder knows where the carrier is in the audio.
-The default expects the carrier near 1000 Hz of audio.
+The default expects the carrier near 1000 Hz of audio. It is stored as `input.<source>.lo_below_hz`, the distance of the LO
+below the channel frequency (1000 Hz; 3000 Hz for a radio), so the LO follows when the channel frequency is changed; the
+Options page shows the resulting LO next to it. (A WAV file keeps an absolute `centre_hz`, because a recording has a fixed centre.)
+
+**One input for several channels.** If your receiver delivers a single wide I/Q stream that contains more than one NAVTEX
+frequency (for example 490 and 518 kHz), set `input.shared_from` of the second channel to the number of the first (Options,
+Channel 2, Input: *same input as channel 1*). The first channel opens the input; the other decodes its own carrier from the same
+samples. The stream's sample rate and centre must cover both channels, otherwise the channel reports an error.
 
 ## Common options
 
