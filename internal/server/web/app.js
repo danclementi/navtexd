@@ -64,6 +64,7 @@
     setBar("cpu", m.cpu / 100, sys === null ? f1(m.cpu) + "%" : f1(m.cpu) + " / " + f1(sys) + "%");
     if (sys !== null) { const [x, y] = dpt(Math.max(0, Math.min(1, sys / 100)), DIAL.r - 6); n2.setAttribute("x2", x.toFixed(1)); n2.setAttribute("y2", y.toFixed(1)); n2.setAttribute("visibility", "visible"); } else n2.setAttribute("visibility", "hidden");
     const cores = m.cores || 1;
+    const now = performance.now(); if (now - (setCpu.t || 0) < 1000) return; setCpu.t = now; // the tooltip text changes with every update; refresh it once a second at most
     $("t-cpu").closest(".dial").title = `navtexd: ${m.cpu.toFixed(1)}% of all ${cores} cores (= ${(m.cpu * cores).toFixed(0)}% of one core)` + (sys === null ? "" : `\nWhole computer: ${sys.toFixed(1)}% of all cores`) + "\nGreen needle: navtexd; amber needle: the whole computer";
   }
   const fmtRate = (bps) => (bps < 1000 ? `${bps} B/s` : bps < 1e6 ? `${(bps / 1000).toFixed(1)} kB/s` : `${(bps / 1e6).toFixed(2)} MB/s`);
@@ -197,7 +198,7 @@
     for (let i = 0; i < N; i++) {
       const b = box(i), r = state.chans[i].run; if (!b) continue;
       const t = r ? (r.running ? "" : "Not running. ") + (r.error ? "\u26a0 " + r.error : r.info || "") : "";
-      b.title = (t ? t + "\n" : "") + `Click to open this channel's Spectrum tab.\nCarrier: found automatically while Auto is on. To set it by hand, switch Auto off and drag the dashed line on the Spectrum tab, or enter it in Options \u203a Channel ${i + 1}.`;
+      b.title = (t ? t + "\n" : "") + `Click: make this the active channel. Double-click: also show it on the Spectrum tab.\nCarrier: found automatically while Auto is on. To set it by hand, switch Auto off and drag the dashed line on the Spectrum tab, or enter it in Options \u203a Channel ${i + 1}.`;
     }
   }
 
@@ -568,8 +569,11 @@
   // ---- decoding channels ----
   // The server decodes up to N channels (config.Channels). state.* holds the selected channel's live data; state.chans[i] holds each
   // channel's own (controls, meters, run, spectrum, text, lines), kept up to date from the events.
-  // a click on a small spectrum selects its channel and shows the Spectrum tab
-  for (let i = 0; i < N; i++) box(i).addEventListener("click", () => { selectChan(i); document.querySelector("#tabs button[data-tab=spectrum]").click(); });
+  // a click on a small spectrum selects its channel; a double-click also shows the Spectrum tab
+  for (let i = 0; i < N; i++) {
+    box(i).addEventListener("click", () => selectChan(i));
+    box(i).addEventListener("dblclick", () => { selectChan(i); document.querySelector("#tabs button[data-tab=spectrum]").click(); });
+  }
   // the channel lines: the first is in the page, the others are copies of it
   { const first = document.querySelector('.chline[data-ch="0"]'); for (let i = 1; i < N; i++) { const c = first.cloneNode(true); c.dataset.ch = i; c.hidden = true; first.parentNode.insertBefore(c, $("b-addchan")); } }
   const enabledCh = (i) => i === 0 || !!(state.chans[i].controls && state.chans[i].controls.enabled);

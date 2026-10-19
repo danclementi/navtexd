@@ -259,15 +259,17 @@
     <div class="fcol fleft">
       <label class="field">Frequency <select id="f-freq"><option value="">any</option><option value="518">518</option><option value="490">490</option><option value="424">424</option></select></label>
       <label class="field" id="f-rcv-wrap" hidden>Channel <select id="f-rcv"><option value="">any</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></label>
-      <label class="field">NAVAREA <select id="f-area"><option value="">ALL</option></select></label>
-      <label class="field">ID letter <select id="f-b1"><option value="">ALL</option></select></label>
       <label class="field">Kind <select id="f-kind"><option value="">all</option><option value="message">message</option><option value="incomplete">incomplete</option><option value="fragment">fragment</option></select></label>
     </div>
     <div class="fcol fright">
       <div class="frowd"><label class="field">From <input id="f-from" class="iso" type="text" placeholder="yyyy-mm-dd"></label> <label class="field">To <input id="f-to" class="iso" type="text" placeholder="yyyy-mm-dd"></label></div>
       <span class="field" id="f-km-wrap">Distance <input id="f-kmin" type="number" min="0" step="any" placeholder="0" title="Minimum distance (km)"> to <input id="f-kmax" type="number" min="0" step="any" placeholder="&#8734;" title="Maximum distance (km); empty = no limit"> km</span>
-      <label class="check"><input id="f-unid" type="checkbox"> UNID only</label>
+      <div class="frowd"><label class="check"><input id="f-unid" type="checkbox"> UNID only</label> <label class="check"><input id="f-omit" type="checkbox"> Omit UNID</label></div>
       <label class="field grow">Body text <input id="f-text" type="text" placeholder="search the message text"></label>
+    </div>
+    <div class="fpick">
+      <div class="pickgrp" id="p-area"><div class="pickbtns"><b>NAVAREA</b><button type="button" data-all="1">ALL</button><button type="button" data-all="0">CLEAR</button></div><div class="pickboxes"></div><input id="f-area" type="hidden"></div>
+      <div class="pickgrp" id="p-b1"><div class="pickbtns"><b>ID letter</b><button type="button" data-all="1">ALL</button><button type="button" data-all="0">CLEAR</button></div><div class="pickboxes"></div><input id="f-b1" type="hidden"></div>
     </div>
   </div>
   <div class="dlgfoot">

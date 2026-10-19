@@ -56,7 +56,24 @@ func (s *Server) messages(w http.ResponseWriter, r *http.Request, id Identity) {
 	f := store.Filter{Text: q.Get("text"), B1: q.Get("b1"), Kind: q.Get("kind"), Newest: q.Get("order") == "newest", Unidentified: q.Get("unid") == "1"}
 	f.Channel, _ = strconv.Atoi(q.Get("freq"))
 	f.Rcv, _ = strconv.Atoi(q.Get("rcv"))
-	f.NavArea, _ = strconv.Atoi(q.Get("navarea"))
+	if v := q.Get("navarea"); v != "" { // a list: 1,2,5
+		f.NavAreas = map[int]bool{}
+		for _, t := range strings.Split(v, ",") {
+			if n, err := strconv.Atoi(strings.TrimSpace(t)); err == nil {
+				f.NavAreas[n] = true
+			}
+		}
+	}
+	if v := q.Get("b1"); v != "" && v != "*" {
+		f.B1 = ""
+		f.B1s = map[string]bool{}
+		for _, t := range strings.Split(v, ",") {
+			if t = strings.ToUpper(strings.TrimSpace(t)); t != "" {
+				f.B1s[t] = true
+			}
+		}
+	}
+	f.OmitUnid = q.Get("omitunid") == "1"
 	f.Limit, _ = strconv.Atoi(q.Get("limit"))
 	f.Offset, _ = strconv.Atoi(q.Get("offset"))
 	var err error

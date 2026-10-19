@@ -66,8 +66,8 @@ type Record struct {
 	Picked      int         `json:"pick,omitempty"` // station chosen by the operator among the candidates (ID); 0 = none
 	Lines       []Line      `json:"lines"`
 	StartFix    string      `json:"sfix,omitempty"` // the damaged ZCZC as received, when the start was recognized by position and structure
-	Corrected   string      `json:"cor,omitempty"` // body after word autocorrection (of the effective text)
-	Revs        []Revision  `json:"rev,omitempty"` // stretches the operator replaced, e.g. text decoded in the wrong shift
+	Corrected   string      `json:"cor,omitempty"`  // body after word autocorrection (of the effective text)
+	Revs        []Revision  `json:"rev,omitempty"`  // stretches the operator replaced, e.g. text decoded in the wrong shift
 }
 
 // Revision replaces Lines[Line].Text[Start:End] (raw text, never changed) with New when the effective text is built.
@@ -127,10 +127,13 @@ func (r Record) Text() string {
 // Filter selects records. Zero values mean "any".
 type Filter struct {
 	Channel      int
-	Rcv          int    // 0 = any decoding channel, 1 = the first, 2 = the second
-	NavArea      int    // 0 = any
-	B1           string // "" or "*" = any
-	Text         string // case-insensitive substring of the text
+	Rcv          int             // 0 = any decoding channel, 1 = the first, 2 = the second
+	NavArea      int             // 0 = any
+	B1           string          // "" or "*" = any
+	NavAreas     map[int]bool    // nil = any; else only these NAVAREAs
+	B1s          map[string]bool // nil = any; else only these ID letters
+	OmitUnid     bool            // leave out records without a station
+	Text         string          // case-insensitive substring of the text
 	From, To     time.Time
 	Kind         string
 	Unidentified bool    // only records without a station
@@ -150,6 +153,12 @@ func (f Filter) match(r *Record) bool {
 	case f.NavArea != 0 && r.NavArea != f.NavArea:
 		return false
 	case f.B1 != "" && f.B1 != "*" && r.B1 != f.B1:
+		return false
+	case f.NavAreas != nil && !f.NavAreas[r.NavArea]:
+		return false
+	case f.B1s != nil && !f.B1s[r.B1]:
+		return false
+	case f.OmitUnid && r.StationID == 0:
 		return false
 	case !f.From.IsZero() && r.Received.Before(f.From):
 		return false
