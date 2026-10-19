@@ -120,18 +120,27 @@ func TestRecordsAndStations(t *testing.T) {
 		t.Errorf("viewer keywords: %d", code)
 	}
 
-	// maintenance
-	if code, m := do(t, admin, "POST", "/api/maintenance/delete", map[string]any{"unid_only": true, "dry_run": true}, nil); code != 200 || m["count"].(float64) != 0 {
-		t.Errorf("dry run: %d %v", code, m) // record 2 is identified now
-	}
-	if code, _ = do(t, admin, "POST", "/api/maintenance/delete", map[string]any{}, nil); code != 400 {
-		t.Errorf("empty maintenance: %d", code)
-	}
-	if code, m := do(t, admin, "POST", "/api/maintenance/delete", map[string]any{"older_than": "2026-09-28"}, nil); code != 200 || m["deleted"].(float64) != 0 {
-		t.Errorf("older than: %d %v", code, m)
-	}
-	if code, m := do(t, admin, "POST", "/api/maintenance/delete", map[string]any{"older_than": "2026-09-29", "compact": true}, nil); code != 200 || m["deleted"].(float64) != 2 {
+	// deleting several records is one step that can be undone
+	if code, m := do(t, admin, "POST", "/api/messages/delete", map[string]any{"ids": []int64{1, 2}}, nil); code != 200 || m["deleted"].(float64) != 2 {
 		t.Errorf("delete: %d %v", code, m)
+	}
+	if code, m := do(t, admin, "GET", "/api/messages/undo", nil, nil); code != 200 || m["available"] != true || m["count"].(float64) != 2 {
+		t.Errorf("undo info: %d %v", code, m)
+	}
+	if code, _ = do(t, tunnel, "POST", "/api/messages/undo", nil, nil); code != 403 {
+		t.Errorf("viewer undo: %d", code)
+	}
+	if code, m := do(t, admin, "POST", "/api/messages/undo", nil, nil); code != 200 || m["restored"].(float64) != 2 {
+		t.Errorf("undo: %d %v", code, m)
+	}
+	if code, m := do(t, admin, "POST", "/api/maintenance/compact", nil, nil); code != 200 || m["backup"] == "" {
+		t.Errorf("compact: %d %v", code, m)
+	}
+	if code, _ = do(t, tunnel, "GET", "/api/database", nil, nil); code != 403 {
+		t.Errorf("viewer database info: %d", code)
+	}
+	if code, _ = do(t, admin, "DELETE", "/api/messages/1", nil, nil); code != 200 {
+		t.Errorf("delete one: %d", code)
 	}
 	if code, _ = do(t, admin, "DELETE", "/api/messages/1", nil, nil); code != 404 {
 		t.Errorf("delete missing: %d", code)

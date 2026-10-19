@@ -97,6 +97,7 @@
       <button id="n-open" title="Read the selected record (double-click or Enter)" disabled>Open record</button>
       <button id="n-report" title="Add the selected records to your report (kept in this browser)" hidden>Add to report</button>
       <button id="n-delete" title="Delete the selected records (they are saved first: Undo brings them back)">&minus; Delete record</button>
+      <button id="n-db" title="Compact, export or import the log database" hidden>Database…</button>
       <button id="n-undo" title="Bring back the records of the last deletion" disabled hidden>Undo delete</button>
     </div>
     <div id="logscroll" class="logscroll" tabindex="0" title="Up/Down: one line. Page Up/Down: a page. Double-click or Enter: open the record. Ctrl-click: add or remove a record from the selection. Shift-click: select the range from the last clicked record.">
@@ -125,14 +126,6 @@
       </div>
     </div>
     <div class="cols">
-      <fieldset class="col" id="maint"><legend>Log database maintenance</legend>
-        <div class="row"><label class="check"><input id="m-old-on" type="checkbox"> Older than</label><input id="m-old" type="date"></div>
-        <div class="row"><label class="check"><input id="m-km-on" type="checkbox"> Closer than</label><input id="m-km" type="number" min="0" step="any"> km</div>
-        <div class="row"><label class="check"><input id="m-unid" type="checkbox"> Delete all unidentified (UNID) records instead</label></div>
-        <div class="row"><label class="check"><input id="m-compact" type="checkbox" checked> Compact the database afterwards</label></div>
-        <div class="row"><button id="m-preview">Count</button><button id="m-delete">Delete records</button><button id="m-compact-now">Compact now</button></div>
-        <div id="m-msg" class="small"></div>
-      </fieldset>
       <fieldset class="col" id="tableio"><legend>Station table</legend>
         <div class="row"><a id="st-export" href="/api/stations/export" download="YAND_STATIONS.TXT">Export table</a></div>
         <div class="row"><input id="st-file" type="file" accept=".txt,.TXT"><label class="check"><input id="st-reid" type="checkbox" checked> re-identify records</label><button id="st-import">Import table</button></div>
@@ -253,6 +246,29 @@
     <button id="re-cancel" type="button">Cancel</button>
     <button id="re-accept" type="button" class="primary" title="Keep the edited text as the report text">Accept</button>
   </div>
+</dialog>
+<dialog id="db-dlg" aria-label="Log database">
+  <div class="dlghead"><b>Log database</b></div>
+  <div class="dbbody">
+    <p id="db-info" class="small"></p>
+    <fieldset><legend>Compact</legend>
+      <p class="small">Rewrites the log file with one line per record, dropping the old versions of edited records and the traces of deleted ones. Nothing you can see changes; the file gets smaller. A copy of the old file is saved first (the last three are kept). Deleted records can still be undone.</p>
+      <button id="db-compact" type="button">Compact now</button>
+    </fieldset>
+    <fieldset><legend>Export</legend>
+      <label class="check"><input type="radio" name="db-ex" value="all" checked> All records</label>
+      <label class="check"><input type="radio" name="db-ex" value="filter" id="db-ex-f"> Only the records shown by the current filter <span id="db-ex-sum" class="small"></span></label>
+      <div><button id="db-export" type="button">Export…</button></div>
+    </fieldset>
+    <fieldset><legend>Import</legend>
+      <div><input id="db-file" type="file" accept=".jsonl,.json,.txt"></div>
+      <label class="check"><input type="radio" name="db-im" value="merge" checked> Merge: add the records that are not in the log yet (the same time, channel, kind and text counts as the same record)</label>
+      <label class="check"><input type="radio" name="db-im" value="replace"> Replace: the log becomes the file's records. The current log is saved to the backups folder first</label>
+      <div><button id="db-import" type="button">Import</button></div>
+    </fieldset>
+    <div id="db-msg" class="small"></div>
+  </div>
+  <div class="dlgfoot"><span class="grow"></span><button id="db-close" type="button">Close</button></div>
 </dialog>
 <dialog id="f-dlg" aria-label="Log filter">
   <div class="dlghead"><b>Filter the log</b></div>

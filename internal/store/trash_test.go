@@ -1,6 +1,7 @@
 package store
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -57,4 +58,32 @@ func TestDeleteUndo(t *testing.T) {
 		t.Errorf("new ID %d reused", n.ID)
 	}
 	s.Close()
+}
+
+func TestExportImport(t *testing.T) {
+	a, _ := Open(t.TempDir())
+	for i := 0; i < 3; i++ {
+		a.Add(Record{Received: time.Date(2026, 1, 1, 0, i, 0, 0, time.UTC), Kind: "message", Channel: 518, Lines: []Line{{Text: "LINE " + string(rune('A'+i))}}})
+	}
+	var buf strings.Builder
+	if n, err := a.Export(&buf, Filter{}); err != nil || n != 3 {
+		t.Fatalf("export %d %v", n, err)
+	}
+	b, _ := Open(t.TempDir())
+	b.Add(Record{Received: time.Date(2026, 1, 1, 0, 1, 0, 0, time.UTC), Kind: "message", Channel: 518, Lines: []Line{{Text: "LINE B"}}}) // same as one of them
+	b.Add(Record{Received: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC), Kind: "message", Channel: 490})
+	res, err := b.Import(strings.NewReader(buf.String()), false)
+	if err != nil || res.Added != 2 || res.Skipped != 1 || b.Count() != 4 {
+		t.Fatalf("merge %+v %v count %d", res, err, b.Count())
+	}
+	res, err = b.Import(strings.NewReader(buf.String()), true)
+	if err != nil || res.Added != 3 || res.Replaced != 4 || res.Backup == "" || b.Count() != 3 {
+		t.Fatalf("replace %+v %v count %d", res, err, b.Count())
+	}
+	if len(b.Backups()) != 1 {
+		t.Errorf("backups %v", b.Backups())
+	}
+	if _, err := b.Import(strings.NewReader("not a log\n"), true); err == nil || b.Count() != 3 {
+		t.Errorf("garbage must be refused and change nothing: %v %d", err, b.Count())
+	}
 }

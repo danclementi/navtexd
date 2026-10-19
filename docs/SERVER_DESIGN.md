@@ -387,3 +387,18 @@ clamped it while the focused cell was replaced, and Escape no longer scrolls the
   newest deletion first, and survives restarts. When the store opens, batches older than 30 days are dropped, and the oldest
   ones beyond 64 MB. New IDs are always above every ID in the trash.
 - Record numbers are still integers in the files and the API; the UI and the logs show them as `0x%08X` (`NX.hex`, `hexID`).
+
+## 38. Log database dialog
+
+- The Database tab's "Log database maintenance" section and `POST /api/maintenance/delete` are gone: deleting is done in the Log
+  tab (with Undo). The Log tab has a **Database...** button (administrators only) that opens a dialog:
+  - **Compact** (`POST /api/maintenance/compact`) rewrites `messages.jsonl` with one line per record, after copying it to
+    `backups/messages-before-compact-<time>.jsonl` (the last three copies are kept).
+  - **Export** (`GET /api/database/export`, optionally with the Log tab's filter parameters) downloads records in the file's own
+    format (`{"op":"put","r":{...}}` per line).
+  - **Import** (`POST /api/database/import?mode=merge|replace`, the file is the body). Merge adds records whose time, channel,
+    kind and text are not in the log yet, with new numbers; replace makes the log exactly the file's records (numbers kept)
+    after saving the old file as `backups/messages-before-import-<time>.jsonl` (all of those are kept). A file without
+    records is refused and nothing changes.
+  - `GET /api/database` gives the record count, file size and backups for the dialog. All of these are administrator-only.
+- The filter of the Log tab is read by one function (`logFilter`) used by the list and the export.

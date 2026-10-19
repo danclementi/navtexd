@@ -1,5 +1,5 @@
 "use strict";
-// Database tab: station list and keyword editor, log maintenance, station table import / export.
+// Database tab: station list and keyword editor, station table import / export.
 (() => {
   const NX = window.NX, $ = NX.$, el = NX.el, api = NX.api;
   const D = { stations: [], byId: new Map(), max: 300, sel: null, kw: [], orig: [], loaded: false };
@@ -86,36 +86,6 @@
     catch (e) { $("kw-msg").textContent = "Not saved: " + e.message; }
   };
 
-  // ---- maintenance ----
-  function maintBody(dry) {
-    const b = { dry_run: dry, compact: $("m-compact").checked };
-    if ($("m-unid").checked) b.unid_only = true;
-    else if ($("m-km-on").checked) b.closer_than_km = Number($("m-km").value);
-    if ($("m-old-on").checked) b.older_than = $("m-old").value;
-    return b;
-  }
-  function describe(b) {
-    const parts = [];
-    if (b.unid_only) parts.push("all unidentified records");
-    else if (b.closer_than_km) parts.push(`records closer than ${b.closer_than_km} km`);
-    else parts.push("all records");
-    if (b.older_than) parts.push(`older than ${b.older_than}`);
-    return parts.join(" ");
-  }
-  $("m-preview").onclick = async () => {
-    try { $("m-msg").textContent = `${(await api("POST", "/api/maintenance/delete", maintBody(true))).count} records match.`; } catch (e) { $("m-msg").textContent = e.message; }
-  };
-  $("m-delete").onclick = async () => {
-    try {
-      const n = (await api("POST", "/api/maintenance/delete", maintBody(true))).count;
-      if (!n) { $("m-msg").textContent = "No records match."; return; }
-      if (!confirm(`Delete ${n} records (${describe(maintBody(false))})? This cannot be undone.`)) return;
-      const r = await api("POST", "/api/maintenance/delete", maintBody(false));
-      $("m-msg").textContent = `${r.deleted} records deleted, ${r.remaining} remain.`;
-    } catch (e) { $("m-msg").textContent = e.message; }
-  };
-  $("m-compact-now").onclick = async () => { try { await api("POST", "/api/maintenance/compact"); $("m-msg").textContent = "Compacted."; } catch (e) { $("m-msg").textContent = e.message; } };
-
   // ---- station table ----
   $("st-import").onclick = async () => {
     const f = $("st-file").files[0];
@@ -139,7 +109,7 @@
 
   function roles() {
     const a = admin();
-    document.querySelectorAll("#maint input, #maint button, #tableio input, #tableio button").forEach((x) => { x.disabled = !a; });
+    document.querySelectorAll("#tableio input, #tableio button").forEach((x) => { x.disabled = !a; });
     $("st-export").hidden = false;
     renderKeywords();
   }

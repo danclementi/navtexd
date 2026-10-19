@@ -483,3 +483,10 @@ input.iso.bad { border-color: var(--bad); }
 #f-dlg .pickboxes { display: flex; flex-wrap: wrap; gap: 2px 10px; align-content: flex-start; }
 #f-dlg .pickboxes label { display: inline-flex; align-items: center; gap: 3px; font-size: 13px; min-width: 38px; }
 #f-dlg .pickgrp.empty .pickboxes { outline: 2px solid #d9822b; outline-offset: 2px; border-radius: 4px; }
+
+dialog#db-dlg { width: min(640px, 96vw); padding: 0; border: 2px solid var(--tabline); border-radius: 8px; background: var(--panel); color: var(--ink); }
+dialog#db-dlg::backdrop { background: rgba(0, 0, 0, .45); }
+#db-dlg .dlghead { padding: 10px 16px; border-bottom: 1px solid var(--line); }
+#db-dlg .dbbody { padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
+#db-dlg fieldset { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--line); border-radius: 6px; }
+#db-dlg .dlgfoot { display: flex; padding: 10px 16px; border-top: 1px solid var(--line); }

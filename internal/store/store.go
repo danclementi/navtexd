@@ -496,6 +496,11 @@ func (s *Store) Query(f Filter) ([]Record, int) {
 func (s *Store) Compact() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.rewriteLocked()
+}
+
+// rewriteLocked replaces the message file by one line per live record (store locked).
+func (s *Store) rewriteLocked() error {
 	path := filepath.Join(s.dir, msgFile)
 	tmp := path + ".tmp"
 	f, err := os.Create(tmp)

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -23,8 +24,10 @@ func (s *Server) recordRoutes(mux *http.ServeMux, tunnel bool) {
 	mux.HandleFunc("POST /api/messages/delete", s.admin(tunnel, s.deleteMessages))
 	mux.HandleFunc("GET /api/messages/undo", s.admin(tunnel, s.undoInfo))
 	mux.HandleFunc("POST /api/messages/undo", s.admin(tunnel, s.undoDelete))
-	mux.HandleFunc("POST /api/maintenance/delete", s.admin(tunnel, s.maintDelete))
 	mux.HandleFunc("POST /api/maintenance/compact", s.admin(tunnel, s.maintCompact))
+	mux.HandleFunc("GET /api/database", s.admin(tunnel, s.dbInfo))
+	mux.HandleFunc("GET /api/database/export", s.admin(tunnel, s.dbExport))
+	mux.HandleFunc("POST /api/database/import", s.admin(tunnel, s.dbImport))
 	mux.HandleFunc("POST /api/maintenance/reidentify", s.admin(tunnel, s.maintReidentify))
 	mux.HandleFunc("POST /api/maintenance/recorrect", s.admin(tunnel, s.maintRecorrect))
 	mux.HandleFunc("GET /api/stations", s.viewer(tunnel, s.stationList))
@@ -54,8 +57,9 @@ func parseTime(v string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("bad date %q (want yyyy-mm-dd)", v)
 }
 
-func (s *Server) messages(w http.ResponseWriter, r *http.Request, id Identity) {
-	q := r.URL.Query()
+// logFilter reads the log filter from the query of a request (the Log tab's filter dialog); withDist says whether the distance
+// limits are honoured (viewers may not be told distances).
+func logFilter(q url.Values, withDist bool) (store.Filter, error) {
 	f := store.Filter{Text: q.Get("text"), B1: q.Get("b1"), Kind: q.Get("kind"), Newest: q.Get("order") == "newest", Unidentified: q.Get("unid") == "1"}
 	f.Channel, _ = strconv.Atoi(q.Get("freq"))
 	f.Rcv, _ = strconv.Atoi(q.Get("rcv"))
@@ -81,20 +85,27 @@ func (s *Server) messages(w http.ResponseWriter, r *http.Request, id Identity) {
 	f.Offset, _ = strconv.Atoi(q.Get("offset"))
 	var err error
 	if f.From, err = parseTime(q.Get("from")); err != nil {
-		fail(w, 400, err)
-		return
+		return f, err
 	}
 	if f.To, err = parseTime(q.Get("to")); err != nil {
-		fail(w, 400, err)
-		return
+		return f, err
 	}
 	if !f.To.IsZero() && len(q.Get("to")) == 10 {
 		f.To = f.To.Add(24 * time.Hour) // a date means the whole day
 	}
-	dist := s.withDist(id)
-	if dist {
+	if withDist {
 		f.MaxDistance, _ = strconv.ParseFloat(q.Get("maxkm"), 64)
 		f.MinDistance, _ = strconv.ParseFloat(q.Get("minkm"), 64)
+	}
+	return f, nil
+}
+
+func (s *Server) messages(w http.ResponseWriter, r *http.Request, id Identity) {
+	dist := s.withDist(id)
+	f, err := logFilter(r.URL.Query(), dist)
+	if err != nil {
+		fail(w, 400, err)
+		return
 	}
 	if f.Limit <= 0 || f.Limit > 500 {
 		f.Limit = 100
@@ -310,65 +321,65 @@ func (s *Server) undoDelete(w http.ResponseWriter, r *http.Request, id Identity)
 	writeJSON(w, 200, map[string]any{"restored": len(recs), "undo": s.undoState()})
 }
 
-func (s *Server) maintDelete(w http.ResponseWriter, r *http.Request, id Identity) {
-	var body struct {
-		OlderThan    string  `json:"older_than"`
-		CloserThanKm float64 `json:"closer_than_km"`
-		UnidOnly     bool    `json:"unid_only"`
-		DryRun       bool    `json:"dry_run"`
-		Compact      bool    `json:"compact"`
-	}
-	if err := readBody(r, &body); err != nil {
-		fail(w, 400, err)
-		return
-	}
-	older, err := parseTime(body.OlderThan)
-	if err != nil {
-		fail(w, 400, err)
-		return
-	}
-	f := store.Filter{To: older}
-	if body.OlderThan != "" && len(body.OlderThan) == 10 {
-		f.To = older // records before the start of that day
-	}
-	switch {
-	case body.UnidOnly:
-		f.Unidentified = true
-	case body.CloserThanKm > 0:
-		f.MaxDistance = body.CloserThanKm
-	}
-	if body.OlderThan == "" && !body.UnidOnly && body.CloserThanKm <= 0 {
-		fail(w, 400, errors.New("choose what to delete: a date, a distance or unidentified records"))
-		return
-	}
-	if body.DryRun {
-		_, total := s.st.Query(store.Filter{To: f.To, Unidentified: f.Unidentified, MaxDistance: f.MaxDistance, Limit: 1})
-		writeJSON(w, 200, map[string]any{"count": total})
-		return
-	}
-	n, err := s.st.DeleteWhere(f)
-	if err != nil {
-		fail(w, 500, err)
-		return
-	}
-	s.run.Log("info", fmt.Sprintf("maintenance: %d records deleted", n))
-	if body.Compact {
-		if err := s.st.Compact(); err != nil {
-			fail(w, 500, err)
-			return
-		}
-	}
-	s.hub.Publish("record", recordMsg{Action: "delete"}, false, false)
-	writeJSON(w, 200, map[string]any{"deleted": n, "remaining": s.st.Count()})
+// dbInfo describes the log database for the Database dialog.
+func (s *Server) dbInfo(w http.ResponseWriter, r *http.Request, id Identity) {
+	writeJSON(w, 200, map[string]any{"records": s.st.Count(), "bytes": s.st.Size(), "backups": s.st.Backups(), "undo": s.undoState()})
 }
 
+// maintCompact rewrites the message file (after saving a copy; the last three copies are kept).
 func (s *Server) maintCompact(w http.ResponseWriter, r *http.Request, id Identity) {
+	before := s.st.Size()
+	name, err := s.st.Backup("before-compact", 3)
+	if err != nil {
+		fail(w, 500, fmt.Errorf("could not save a backup first: %w", err))
+		return
+	}
 	if err := s.st.Compact(); err != nil {
 		fail(w, 500, err)
 		return
 	}
-	s.run.Log("info", "message file compacted")
-	writeJSON(w, 200, map[string]any{"ok": true})
+	s.run.Log("info", fmt.Sprintf("message file compacted (%d -> %d bytes), backup %s", before, s.st.Size(), name))
+	writeJSON(w, 200, map[string]any{"ok": true, "before": before, "after": s.st.Size(), "backup": name})
+}
+
+// dbExport downloads the log (all records, or those matching the Log tab's filter parameters).
+func (s *Server) dbExport(w http.ResponseWriter, r *http.Request, id Identity) {
+	f, err := logFilter(r.URL.Query(), true)
+	if err != nil {
+		fail(w, 400, err)
+		return
+	}
+	name := "navtexd-log-" + time.Now().UTC().Format("20060102T150405Z") + ".jsonl"
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
+	n, err := s.st.Export(w, f)
+	if err != nil {
+		s.run.Log("warn", "log export: "+err.Error())
+		return
+	}
+	s.run.Log("info", fmt.Sprintf("log exported: %d records", n))
+}
+
+// dbImport reads a log file from the request body; mode=replace or merge.
+func (s *Server) dbImport(w http.ResponseWriter, r *http.Request, id Identity) {
+	replace := r.URL.Query().Get("mode") == "replace"
+	if r.URL.Query().Get("mode") != "replace" && r.URL.Query().Get("mode") != "merge" {
+		fail(w, 400, errors.New("mode must be merge or replace"))
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<30)
+	res, err := s.st.Import(r.Body, replace)
+	if err != nil {
+		fail(w, 400, err)
+		return
+	}
+	if replace {
+		s.run.Log("info", fmt.Sprintf("log replaced by an import: %d records (the old log of %d records is saved as backups/%s)", res.Added, res.Replaced, res.Backup))
+	} else {
+		s.run.Log("info", fmt.Sprintf("log import (merge): %d records added, %d already there", res.Added, res.Skipped))
+	}
+	s.hub.Publish("record", recordMsg{Action: "restore"}, false, false)
+	writeJSON(w, 200, res)
 }
 
 func (s *Server) maintReidentify(w http.ResponseWriter, r *http.Request, id Identity) {

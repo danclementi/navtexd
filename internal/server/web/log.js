@@ -530,6 +530,47 @@
       $("n-selinfo").textContent = `${r.restored} record${r.restored > 1 ? "s" : ""} restored`;
     } catch (e) { alert(e.message); loadUndo(); }
   };
+  // ---- Database dialog (administrators): compact, export, import ----
+  const ddlg = $("db-dlg"), dmsg = (t) => { $("db-msg").textContent = t; };
+  const fmtB = (n) => (n < 1024 ? n + " B" : n < 1048576 ? (n / 1024).toFixed(1) + " kB" : (n / 1048576).toFixed(1) + " MB");
+  async function dbInfo() {
+    try {
+      const j = await api("GET", "/api/database");
+      $("db-info").textContent = `${j.records} records, log file ${fmtB(j.bytes)}. ${j.backups.length} backup${j.backups.length === 1 ? "" : "s"} in the backups folder of the data folder.`;
+    } catch (e) { $("db-info").textContent = e.message; }
+  }
+  $("n-db").onclick = () => {
+    dmsg(""); dbInfo();
+    const sum = filterOn() ? summaryText() : "";
+    $("db-ex-f").disabled = !sum; $("db-ex-sum").textContent = sum ? "(" + sum + ")" : "(no filter is applied)";
+    if (!sum) document.querySelector('input[name="db-ex"][value="all"]').checked = true;
+    ddlg.showModal();
+  };
+  $("db-close").onclick = () => ddlg.close();
+  $("db-compact").onclick = async () => {
+    try { const r = await api("POST", "/api/maintenance/compact"); dmsg(`Compacted: ${fmtB(r.before)} \u2192 ${fmtB(r.after)}. Backup: ${r.backup}`); dbInfo(); } catch (e) { dmsg(e.message); }
+  };
+  $("db-export").onclick = () => {
+    const filt = document.querySelector('input[name="db-ex"]:checked').value === "filter";
+    const q = filt ? params() : new URLSearchParams();
+    const a = document.createElement("a"); a.href = "/api/database/export" + (q.toString() ? "?" + q : ""); a.click();
+    dmsg(filt ? "Exporting the filtered records\u2026" : "Exporting all records\u2026");
+  };
+  $("db-import").onclick = async () => {
+    const f = $("db-file").files[0];
+    if (!f) { dmsg("Choose a file first."); return; }
+    const mode = document.querySelector('input[name="db-im"]:checked').value;
+    if (mode === "replace" && !confirm(`Replace the whole log by the records in ${f.name}?\nThe current log is saved to the backups folder first.`)) return;
+    dmsg("Importing\u2026");
+    try {
+      const r = await fetch("/api/database/import?mode=" + mode, { method: "POST", headers: { "X-Navtex": "1", "Content-Type": "application/octet-stream" }, body: f, credentials: "same-origin" });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || r.statusText);
+      dmsg(mode === "replace" ? `Replaced: ${j.added} records imported (${j.replaced} were in the log; saved as ${j.backup}).` : `Merged: ${j.added} added, ${j.skipped} were already there.`);
+      dbInfo(); loadUndo(); await reload(); indicate();
+    } catch (e) { dmsg("Not imported: " + e.message); }
+  };
+  const showDbBtn = () => { $("n-db").hidden = !admin(); };
   $("n-delete").onclick = deleteSelected;
   $("ld-delete").onclick = deleteSelected;
   $("ld-report").onclick = () => { if (L.selId) addToReport([L.selId]); };
@@ -597,6 +638,6 @@
   async function liveCounts() {
     try { const j = await fetchRange(0, 1); L.lt = j.total; L.la = j.all; indicate(); } catch (e) { /* ignore */ }
   }
-  NX.listen("role", () => { loadUndo(); if (L.loaded) { render(); if (L.rec) showRecord(); } updateApply(); });
-  NX.tabs.log = () => { loadUndo(); if (!L.loaded) { L.loaded = true; reload(); } else refresh(); };
+  NX.listen("role", () => { showDbBtn(); loadUndo(); if (L.loaded) { render(); if (L.rec) showRecord(); } updateApply(); });
+  NX.tabs.log = () => { showDbBtn(); loadUndo(); if (!L.loaded) { L.loaded = true; reload(); } else refresh(); };
 })();
