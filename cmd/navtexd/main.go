@@ -219,7 +219,7 @@ func main() {
 		State: web.State,
 		Record: func(rec store.Record) {
 			web.Record(rec)
-			fmt.Printf("%s  stored #%d %-10s %s%s%s  %d lines  quality %.0f\n", rec.Received.Format(config.TimeFormat), rec.ID, rec.Kind,
+			fmt.Printf("%s  stored 0x%08X %-10s %s%s%s  %d lines  quality %.0f\n", rec.Received.Format(config.TimeFormat), rec.ID, rec.Kind,
 				rec.B1, rec.B2, rec.Serial, len(rec.Lines), float64(rec.Quality))
 		},
 		Log: func(e store.SyslogEntry) {
@@ -378,7 +378,7 @@ func listRecords(dir string, id int64) {
 		if !ok {
 			fatal(fmt.Errorf("no record %d", id))
 		}
-		fmt.Printf("#%d %s %d kHz  %s .. %s UTC  %s%s%s  quality %.0f  station %s\n", r.ID, r.Kind, r.Channel, r.Received.Format(config.TimeFormat),
+		fmt.Printf("0x%08X %s %d kHz  %s .. %s UTC  %s%s%s  quality %.0f  station %s\n", r.ID, r.Kind, r.Channel, r.Received.Format(config.TimeFormat),
 			r.End.Format("15:04:05"), r.B1, r.B2, r.Serial, r.Quality, r.Station)
 		for _, l := range r.Lines {
 			fmt.Printf("%s %3.0f> %s\n", l.Time.Format(config.TimeFormat), l.Quality, l.Text)

@@ -35,7 +35,7 @@
   async function show(id) {
     try {
       const r = await api("GET", "/api/messages/" + id);
-      $("rp-title").textContent = `#${r.id}  ${r.st}`;
+      $("rp-title").textContent = `${r.st} (${NX.hex(r.id)})`;
       $("rp-text").textContent = r.lines.map((l) => l.x).join("\n");
     } catch (e) { $("rp-text").textContent = e.message; }
   }

@@ -25,7 +25,7 @@
       if (r.km) add("Distance", `${r.km.toFixed(0)} km, bearing ${r.brg.toFixed(0)}°`);
       if (r.cmt) add("Comment", r.cmt);
       if (r.rev && r.rev.length) add("Revised", `${r.rev.length} stretch${r.rev.length > 1 ? "es" : ""} replaced by the operator (in <angle brackets>)`);
-      $("dlg-title").textContent = `#${r.id}  ${r.kind}   (${i + 1} of ${D.total})`;
+      $("dlg-title").textContent = `${r.kind} ${i + 1} of ${D.total} (${NX.hex(r.id)})`;
       NX.fillRecordText($("dlg-text"), r, { cor: true });
       $("dlg-text").scrollTop = 0;
       $("dlg-newer").disabled = i === 0;

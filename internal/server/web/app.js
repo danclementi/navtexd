@@ -14,6 +14,7 @@
   const pad = (n, w = 2) => String(n).padStart(w, "0");
   const hms = (ms) => { const d = new Date(ms); return `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`; };
   NX.pad = pad; NX.hms = hms;
+  NX.hex = (id) => "0x" + Number(id).toString(16).toUpperCase().padStart(8, "0"); // record numbers are shown in hexadecimal
   NX.stamp = (ms) => { const d = new Date(ms); return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${hms(ms)}`; };
   NX.el = (tag, props, ...kids) => {
     const e = document.createElement(tag);
@@ -64,7 +65,7 @@
     setBar("cpu", m.cpu / 100, sys === null ? f1(m.cpu) + "%" : f1(m.cpu) + " / " + f1(sys) + "%");
     if (sys !== null) { const [x, y] = dpt(Math.max(0, Math.min(1, sys / 100)), DIAL.r - 6); n2.setAttribute("x2", x.toFixed(1)); n2.setAttribute("y2", y.toFixed(1)); n2.setAttribute("visibility", "visible"); } else n2.setAttribute("visibility", "hidden");
     const cores = m.cores || 1;
-    const now = performance.now(); if (now - (setCpu.t || 0) < 1000) return; setCpu.t = now; // the tooltip text changes with every update; refresh it once a second at most
+    const now = performance.now(); if (now - (setCpu.t || 0) < 3000) return; setCpu.t = now; // the tooltip text changes with every update; refresh it every three seconds at most
     $("t-cpu").closest(".dial").title = `navtexd: ${m.cpu.toFixed(1)}% of all ${cores} cores (= ${(m.cpu * cores).toFixed(0)}% of one core)` + (sys === null ? "" : `\nWhole computer: ${sys.toFixed(1)}% of all cores`) + "\nGreen needle: navtexd; amber needle: the whole computer";
   }
   const fmtRate = (bps) => (bps < 1000 ? `${bps} B/s` : bps < 1e6 ? `${(bps / 1000).toFixed(1)} kB/s` : `${(bps / 1e6).toFixed(2)} MB/s`);
@@ -276,7 +277,7 @@
       tb.replaceChildren();
       j.records.forEach((r, i) => {
         const tr = document.createElement("tr");
-        tr.dataset.i = String(i); tr.dataset.id = String(r.id); tr.title = "Double-click to open";
+        tr.dataset.i = String(i); tr.dataset.id = String(r.id); tr.title = "Record " + NX.hex(r.id) + ". Double-click to open";
         const cells = [NX.stamp(r.rx).slice(5, 16) + (NX.multiOn() ? " \u00b7" + ((r.rcv || 0) + 1) : ""), r.kind, r.b1 + r.b2 + r.ser, r.st, r.q.toFixed(0)];
         for (const c of cells) { const td = document.createElement("td"); td.textContent = c; tr.appendChild(td); }
         tb.appendChild(tr);

@@ -20,6 +20,9 @@ func (s *Server) recordRoutes(mux *http.ServeMux, tunnel bool) {
 	mux.HandleFunc("GET /api/messages/{id}", s.viewer(tunnel, s.message))
 	mux.HandleFunc("PATCH /api/messages/{id}", s.admin(tunnel, s.patchMessage))
 	mux.HandleFunc("DELETE /api/messages/{id}", s.admin(tunnel, s.deleteMessage))
+	mux.HandleFunc("POST /api/messages/delete", s.admin(tunnel, s.deleteMessages))
+	mux.HandleFunc("GET /api/messages/undo", s.admin(tunnel, s.undoInfo))
+	mux.HandleFunc("POST /api/messages/undo", s.admin(tunnel, s.undoDelete))
 	mux.HandleFunc("POST /api/maintenance/delete", s.admin(tunnel, s.maintDelete))
 	mux.HandleFunc("POST /api/maintenance/compact", s.admin(tunnel, s.maintCompact))
 	mux.HandleFunc("POST /api/maintenance/reidentify", s.admin(tunnel, s.maintReidentify))
@@ -211,7 +214,7 @@ func (s *Server) patchMessage(w http.ResponseWriter, r *http.Request, id Identit
 			return
 		}
 		s.run.Correct(&rec) // the autocorrection works on the revised text
-		s.run.Log("info", fmt.Sprintf("record #%d revised: %s", rec.ID, note))
+		s.run.Log("info", fmt.Sprintf("record %s revised: %s", hexID(rec.ID), note))
 	}
 	saved, err := s.st.Update(rec)
 	switch {
@@ -222,7 +225,7 @@ func (s *Server) patchMessage(w http.ResponseWriter, r *http.Request, id Identit
 		fail(w, 500, err)
 		return
 	}
-	s.run.Log("info", fmt.Sprintf("record #%d edited: B1 %q, NAVAREA %d, station %s", saved.ID, saved.B1, saved.NavArea, saved.Station))
+	s.run.Log("info", fmt.Sprintf("record %s edited: B1 %q, NAVAREA %d, station %s", hexID(saved.ID), saved.B1, saved.NavArea, saved.Station))
 	s.publishRecord("update", saved)
 	writeJSON(w, 200, saved)
 }
@@ -238,9 +241,73 @@ func (s *Server) deleteMessage(w http.ResponseWriter, r *http.Request, id Identi
 		fail(w, 404, errors.New("no such record"))
 		return
 	}
-	s.run.Log("info", fmt.Sprintf("record #%d deleted", n))
+	s.run.Log("info", fmt.Sprintf("record %s deleted (Undo brings it back)", hexID(n)))
 	s.hub.Publish("record", recordMsg{Action: "delete", ID: n}, false, false)
 	writeJSON(w, 200, map[string]any{"ok": true})
+}
+
+// hexID is how record numbers are shown: 0x0000028E.
+func hexID(id int64) string { return fmt.Sprintf("0x%08X", id) }
+
+// deleteMessages deletes several records as one step that Undo reverses.
+func (s *Server) deleteMessages(w http.ResponseWriter, r *http.Request, id Identity) {
+	var body struct {
+		IDs []int64 `json:"ids"`
+	}
+	if err := readBody(r, &body); err != nil || len(body.IDs) == 0 {
+		fail(w, 400, errors.New("no records given"))
+		return
+	}
+	c, err := s.st.Delete(body.IDs...)
+	if err != nil {
+		fail(w, 500, err)
+		return
+	}
+	if c == 0 {
+		fail(w, 404, errors.New("no such records"))
+		return
+	}
+	if c == 1 {
+		s.run.Log("info", fmt.Sprintf("record %s deleted (Undo brings it back)", hexID(body.IDs[0])))
+	} else {
+		s.run.Log("info", fmt.Sprintf("%d records deleted (Undo brings them back)", c))
+	}
+	for _, n := range body.IDs {
+		s.hub.Publish("record", recordMsg{Action: "delete", ID: n}, false, false)
+	}
+	writeJSON(w, 200, map[string]any{"deleted": c, "undo": s.undoState()})
+}
+
+func (s *Server) undoState() map[string]any {
+	b, ok := s.st.LastDeletion()
+	if !ok {
+		return map[string]any{"available": false}
+	}
+	return map[string]any{"available": true, "count": b.Count, "at": b.At.UnixMilli()}
+}
+
+func (s *Server) undoInfo(w http.ResponseWriter, r *http.Request, id Identity) {
+	writeJSON(w, 200, s.undoState())
+}
+
+// undoDelete brings back the records of the last deletion.
+func (s *Server) undoDelete(w http.ResponseWriter, r *http.Request, id Identity) {
+	recs, err := s.st.Undo()
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			fail(w, 404, errors.New("nothing to undo"))
+		} else {
+			fail(w, 500, err)
+		}
+		return
+	}
+	if len(recs) == 1 {
+		s.run.Log("info", fmt.Sprintf("record %s restored", hexID(recs[0].ID)))
+	} else {
+		s.run.Log("info", fmt.Sprintf("%d records restored", len(recs)))
+	}
+	s.hub.Publish("record", recordMsg{Action: "restore"}, false, false)
+	writeJSON(w, 200, map[string]any{"restored": len(recs), "undo": s.undoState()})
 }
 
 func (s *Server) maintDelete(w http.ResponseWriter, r *http.Request, id Identity) {

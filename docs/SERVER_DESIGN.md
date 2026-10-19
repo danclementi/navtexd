@@ -377,3 +377,13 @@ clamped it while the focused cell was replaced, and Escape no longer scrolls the
   rate and centre (`shift` = its channel - the centre). Recordings are published blocking (no samples lost, the sharer is not
   paced separately); live inputs drop a block a slow subscriber has no room for. Restarting a channel also restarts the channels
   that share its input. The header shows "same input as <channel>".
+
+## 37. Deleting with undo; record numbers in hex
+
+- Every deletion (Log tab, or the maintenance delete) first writes the records to `trash.jsonl` in the data folder, one line per
+  deletion ("batch"); if that write fails nothing is deleted. `POST /api/messages/delete {ids}` deletes a selection as one batch;
+  `GET /api/messages/undo` says whether there is one (`available`, `count`, `at`); `POST /api/messages/undo` restores the last
+  batch (original IDs, version + 1; an ID taken since gets a new one) and records the restore in the file. Undo can be repeated,
+  newest deletion first, and survives restarts. When the store opens, batches older than 30 days are dropped, and the oldest
+  ones beyond 64 MB. New IDs are always above every ID in the trash.
+- Record numbers are still integers in the files and the API; the UI and the logs show them as `0x%08X` (`NX.hex`, `hexID`).

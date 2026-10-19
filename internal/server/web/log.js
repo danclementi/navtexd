@@ -372,8 +372,8 @@
   const curIndex = () => { const i = idxOf(L.selId); return i >= 0 ? i : L.anchor; };
   function updateNav() {
     const i = curIndex(), n = L.total;
-    const pos = i >= 0 && n ? ` (${i + 1} of ${n}${filterOn() ? ", filtered" : ""})` : "";
-    $("rec-title").textContent = L.rec ? `#${L.rec.id}  ${L.rec.kind}${pos}` : "";
+    const pos = i >= 0 && n ? ` ${i + 1} of ${n}${filterOn() ? " (filtered)" : ""}` : "";
+    $("rec-title").textContent = L.rec ? `${L.rec.kind}${pos} (${NX.hex(L.rec.id)})` : "";
     $("ld-prev").disabled = i <= 0;
     $("ld-next").disabled = i < 0 || i + 1 >= n;
     $("ld-report").hidden = false;
@@ -507,8 +507,8 @@
   async function deleteSelected() {
     if (!admin() || !L.sel.size) return;
     const list = [...L.sel], at = curIndex();
-    if (!confirm(list.length === 1 && L.rec ? `Delete record #${L.rec.id} (${NX.stamp(Date.parse(L.rec.rx))}, ${L.rec.st})?` : `Delete ${list.length} records?`)) return;
-    for (const id of list) { try { await api("DELETE", "/api/messages/" + id); } catch (e) { alert(e.message); break; } }
+    if (!confirm(list.length === 1 && L.rec ? `Delete record ${NX.hex(L.rec.id)} (${NX.stamp(Date.parse(L.rec.rx))}, ${L.rec.st})?\nUndo delete brings it back.` : `Delete ${list.length} records?\nUndo delete brings them back.`)) return;
+    try { const r = await api("POST", "/api/messages/delete", { ids: list }); showUndo(r.undo); } catch (e) { alert(e.message); }
     L.sel = new Set(); L.selId = 0; L.rec = null;
     const top = sc.scrollTop;
     L.gen++; L.cache.clear(); L.chunks.clear();
@@ -516,6 +516,20 @@
     sc.scrollTop = top; select(0);
     if (dlg.open) { if (L.total && at >= 0) selectIndex(Math.min(at, L.total - 1)); else dlg.close(); }
   }
+  // Undo delete: the server keeps the records of every deletion (30 days); this brings back the last one
+  function showUndo(u) {
+    const b = $("n-undo"), ok = !!(u && u.available);
+    b.hidden = !ok || !admin(); b.disabled = !ok;
+    if (ok) b.textContent = `Undo delete (${u.count})`, b.title = `Bring back the ${u.count} record${u.count > 1 ? "s" : ""} deleted ${NX.stamp(u.at).slice(5, 19)} UTC`;
+  }
+  const loadUndo = () => { if (admin()) api("GET", "/api/messages/undo").then(showUndo).catch(() => {}); };
+  $("n-undo").onclick = async () => {
+    try {
+      const r = await api("POST", "/api/messages/undo"); showUndo(r.undo);
+      await reload(); indicate();
+      $("n-selinfo").textContent = `${r.restored} record${r.restored > 1 ? "s" : ""} restored`;
+    } catch (e) { alert(e.message); loadUndo(); }
+  };
   $("n-delete").onclick = deleteSelected;
   $("ld-delete").onclick = deleteSelected;
   $("ld-report").onclick = () => { if (L.selId) addToReport([L.selId]); };
@@ -574,7 +588,8 @@
   };
 
   // ---- live updates ----
-  NX.listen("record", () => {
+  NX.listen("record", (r) => {
+    if (r && (r.action === "delete" || r.action === "restore")) loadUndo();
     clearTimeout(L.timer);
     if (NX.state.tab === "log") { L.timer = setTimeout(refresh, 400); return; }
     if (L.loaded && filterOn()) L.timer = setTimeout(liveCounts, 1000); // keep the "new hidden" count and the tab dot current
@@ -582,6 +597,6 @@
   async function liveCounts() {
     try { const j = await fetchRange(0, 1); L.lt = j.total; L.la = j.all; indicate(); } catch (e) { /* ignore */ }
   }
-  NX.listen("role", () => { if (L.loaded) { render(); if (L.rec) showRecord(); } updateApply(); });
-  NX.tabs.log = () => { if (!L.loaded) { L.loaded = true; reload(); } else refresh(); };
+  NX.listen("role", () => { loadUndo(); if (L.loaded) { render(); if (L.rec) showRecord(); } updateApply(); });
+  NX.tabs.log = () => { loadUndo(); if (!L.loaded) { L.loaded = true; reload(); } else refresh(); };
 })();

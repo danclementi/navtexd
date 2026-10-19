@@ -96,7 +96,8 @@
       <span id="n-selinfo" class="small"></span>
       <button id="n-open" title="Read the selected record (double-click or Enter)" disabled>Open record</button>
       <button id="n-report" title="Add the selected records to your report (kept in this browser)" hidden>Add to report</button>
-      <button id="n-delete" title="Delete the selected records">&minus; Delete record</button>
+      <button id="n-delete" title="Delete the selected records (they are saved first: Undo brings them back)">&minus; Delete record</button>
+      <button id="n-undo" title="Bring back the records of the last deletion" disabled hidden>Undo delete</button>
     </div>
     <div id="logscroll" class="logscroll" tabindex="0" title="Up/Down: one line. Page Up/Down: a page. Double-click or Enter: open the record. Ctrl-click: add or remove a record from the selection. Shift-click: select the range from the last clicked record.">
       <table id="log-table"><thead><tr><th>UTC received</th><th>Freq</th><th>Q</th><th>B1</th><th>B2</th><th>Msg#</th><th>Area</th><th>Station</th><th class="km">Dist km</th><th>Kind</th></tr></thead><tbody></tbody></table>

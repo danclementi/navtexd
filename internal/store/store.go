@@ -209,12 +209,13 @@ const (
 
 // Store is an open store.
 type Store struct {
-	mu   sync.RWMutex
-	dir  string
-	recs []*Record // ordered by Received then ID
-	byID map[int64]*Record
-	next int64
-	msgF *os.File
+	mu    sync.RWMutex
+	dir   string
+	recs  []*Record // ordered by Received then ID
+	byID  map[int64]*Record
+	next  int64
+	msgF  *os.File
+	trash []TrashBatch // deletions that can be undone, oldest first
 
 	logF     *os.File
 	logLines int
@@ -240,6 +241,9 @@ func Open(dir string) (*Store, error) {
 	}
 	s := &Store{dir: dir, byID: map[int64]*Record{}, next: 1, qMinute: -1}
 	if err := s.loadMessages(); err != nil {
+		return nil, err
+	}
+	if err := s.loadTrash(); err != nil {
 		return nil, err
 	}
 	if err := s.loadSyslog(); err != nil {
@@ -407,6 +411,9 @@ func (s *Store) Delete(ids ...int64) (int, error) {
 }
 
 func (s *Store) deleteLocked(ids []int64) (int, error) {
+	if err := s.archive(ids); err != nil { // nothing is deleted that could not be saved first
+		return 0, err
+	}
 	n := 0
 	gone := map[int64]bool{}
 	for _, id := range ids {
