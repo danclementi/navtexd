@@ -45,7 +45,7 @@
     if (!d) return;
     const L = 120, R = 16, T = 44, B = 34, pw = w - L - R;
     const X = (m) => L + (m / 1440) * pw;
-    const rowH = 54, rows = [{ y: T + 8, name: "Receiver", iv: d.local, col: css("--day-local") }, { y: T + 8 + rowH + 16, name: d.station.call, iv: d.dx, col: css("--day-dx") }];
+    const rowH = 40, rows = [{ y: T + 8, name: "Receiver", iv: d.local, col: css("--day-local") }, { y: T + 8 + rowH + 16, name: d.station.call, iv: d.dx, col: css("--day-dx") }];
     g.fillStyle = css("--ink"); g.font = `600 13px ${NX.FONT}`; g.textAlign = "left"; g.textBaseline = "top";
     g.fillText(`Ephemeris comparison for ${d.station.call}, ${d.station.name} ${d.station.cc}` + (d.station.km ? ` (${d.station.km} km, bearing ${d.station.brg}\u00b0)` : "") + ` on ${d.date}`, L, 10);
     g.font = `12px ${NX.FONT}`; g.fillStyle = css("--dim");

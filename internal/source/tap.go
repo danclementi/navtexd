@@ -3,6 +3,7 @@ package source
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -158,11 +159,12 @@ func (s *Sub) Close() error {
 }
 
 // Shared opens the input of a channel that takes its samples from another channel's input.
-func Shared(t *Tap, owner string) (*Opened, error) {
+func Shared(t *Tap, owner string, chHz float64) (*Opened, error) {
 	sub, err := t.Subscribe()
 	if err != nil {
 		return nil, err
 	}
 	return &Opened{Source: sub, Start: t.Start, Live: t.Live, Close: sub.Close, Shared: true,
-		Info: "same input as " + owner + ": " + t.Info}, nil
+		Info: fmt.Sprintf("same input as %s: %s %.0f Hz, channel %.1f kHz, receiver LO %.1f kHz (carrier expected near %.0f Hz)",
+			owner, map[bool]string{true: "audio", false: "I/Q"}[t.Kind == iq.Real], t.Rate, chHz/1e3, t.Centre/1e3, chHz-t.Centre)}, nil
 }

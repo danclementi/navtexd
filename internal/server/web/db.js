@@ -87,6 +87,7 @@
   };
 
   // ---- station table ----
+  $("st-export").onclick = () => { const a = document.createElement("a"); a.href = "/api/stations/export"; a.download = "YAND_STATIONS.TXT"; a.click(); };
   $("st-import").onclick = () => $("st-file").click(); // the button opens the file chooser; choosing a file continues below
   $("st-file").onchange = async () => {
     const f = $("st-file").files[0]; $("st-file").value = "";
@@ -104,8 +105,7 @@
 
   function roles() {
     const a = admin();
-    document.querySelectorAll("#tableio input, #tableio button").forEach((x) => { x.disabled = !a; });
-    $("st-export").hidden = false;
+    document.querySelectorAll("#tableio input, #tableio button:not(#st-export)").forEach((x) => { x.disabled = !a; });
     renderKeywords();
   }
   NX.listen("role", roles);

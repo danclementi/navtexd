@@ -18,11 +18,11 @@ func (stub) Kind() iq.Kind                 { return iq.IQ }
 func TestTapFanOut(t *testing.T) {
 	o := &Opened{Source: stub{}, Close: func() error { return nil }}
 	tap := NewTap(o)
-	a, err := Shared(tap, "channel 1")
+	a, err := Shared(tap, "channel 1", 490000)
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, _ := Shared(tap, "channel 1")
+	b, _ := Shared(tap, "channel 1", 490000)
 	if a.CentreHz() != 500000 || a.SampleRate() != 48000 || !a.Shared {
 		t.Fatalf("bad stream description %v %v", a.CentreHz(), a.SampleRate())
 	}
@@ -49,7 +49,7 @@ func TestTapFanOut(t *testing.T) {
 			t.Errorf("subscriber got %d samples, want 1000", n)
 		}
 	}
-	if _, err := Shared(tap, "x"); err == nil {
+	if _, err := Shared(tap, "x", 490000); err == nil {
 		t.Error("subscribing to a closed tap should fail")
 	}
 }

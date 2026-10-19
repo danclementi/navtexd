@@ -304,6 +304,7 @@
     const g = cv.getContext("2d");
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.fillStyle = cssVar("--spec-bg"); g.fillRect(0, 0, w, h);
+    if (!mini) cv.parentNode.classList.toggle("multi", multiOn()); // the LOG / LIN buttons move down under the channel name
     const s = CH.spec;
     if (!s) return;
     const lin = CH.scale === "lin";
@@ -374,8 +375,8 @@
     g.restore();
     // level of a full-scale single tone: if the signal is far below it, there is gain to spare
     if (fsDB !== null && !mini) {
-      const fv = lin ? 1 : fsDB, y = Y(fv), rx = L + pw - 84, below = (fsDB - mxDb).toFixed(0);
-      g.fillStyle = cssVar("--spec-ink"); g.textAlign = "right"; g.textBaseline = "bottom";
+      const fv = lin ? 1 : fsDB, y = Y(fv), rx = L + 6, below = (fsDB - mxDb).toFixed(0);
+      g.fillStyle = cssVar("--spec-ink"); g.textAlign = "left"; g.textBaseline = "bottom"; // left side: the channel name and the LOG / LIN buttons are on the right
       if (y >= T && y <= T + ph) {
         g.save(); g.globalAlpha = 0.55; g.strokeStyle = cssVar("--spec-ink"); g.setLineDash([1, 4]); g.lineCap = "round";
         g.beginPath(); g.moveTo(L, Math.round(y) + .5); g.lineTo(L + pw, Math.round(y) + .5); g.stroke(); g.restore();
@@ -398,8 +399,8 @@
     }
     if (multiOn()) { // which channel this graph shows
       const nm = (CH.controls && (CH.controls.label || CH.controls.name)) || `Channel ${ch + 1}`;
-      g.font = (mini ? "bold 10px " : "bold 12px ") + FONT; g.textBaseline = "top"; g.textAlign = "right"; g.fillStyle = cssVar("--spec-ink"); g.globalAlpha = 0.9;
-      g.fillText(nm, L + pw - (mini ? 4 : 96), T + 2); g.globalAlpha = 1; g.textAlign = "left";
+      g.font = (mini ? "bold 10px " : "bold 18px ") + FONT; g.textBaseline = "top"; g.textAlign = "right"; g.fillStyle = cssVar("--spec-ink"); g.globalAlpha = 0.9;
+      g.fillText(nm, mini ? L + pw - 4 : w - 12, T + 2); // (big graph: right edge in line with the LOG / LIN buttons) g.globalAlpha = 1; g.textAlign = "left";
     }
   }
   // The big spectrum: drag the carrier marker (administrators, autotune off), drag the background to pan, wheel to zoom,

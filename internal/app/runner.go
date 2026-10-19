@@ -472,7 +472,7 @@ func (r *Runner) run(ctx context.Context, c *chain, cfg config.Config, cmds chan
 	var src *source.Opened
 	var err error
 	if from := cfg.Input.SharedFrom; from > 0 {
-		src, err = r.openShared(ctx, from-1)
+		src, err = r.openShared(ctx, from-1, cfg.Channel.FrequencyHz)
 	} else {
 		src, err = source.Open(ctx, cfg, source.WithRadios(r.Radios))
 	}
@@ -664,13 +664,13 @@ loop:
 }
 
 // openShared takes the input of channel owner (0-based): it waits for that channel to open it and subscribes.
-func (r *Runner) openShared(ctx context.Context, owner int) (*source.Opened, error) {
+func (r *Runner) openShared(ctx context.Context, owner int, chHz float64) (*source.Opened, error) {
 	name := fmt.Sprintf("channel %d", owner+1)
 	deadline := time.NewTimer(15 * time.Second)
 	defer deadline.Stop()
 	for {
 		if tap := r.chains[owner].tap.Load(); tap != nil {
-			if o, err := source.Shared(tap, name); err == nil {
+			if o, err := source.Shared(tap, name, chHz); err == nil {
 				return o, nil
 			}
 		}

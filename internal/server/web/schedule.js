@@ -46,7 +46,6 @@
     tb.replaceChildren();
     const st = list().filter((s) => s.freq === S.freq);
     const areas = [...new Set(st.map((s) => s.area))].filter(areaOn).sort((a, b) => a - b);
-    const brg = $("sc-brg").checked, km = $("sc-km").checked;
     const head = el("tr", {}, el("th", { class: "slot", text: "Slot (UTC, every 4 h)" }));
     for (const a of areas) head.append(el("th", { text: "NAVAREA " + a }));
     tb.append(el("thead", {}, head));
@@ -58,7 +57,7 @@
       for (const a of areas) {
         const td = el("td");
         for (const s of st) {
-          if (s.area === a && s.times.some((t) => Math.floor((minutes(t) % 240) / 10) * 10 === off)) td.append(el("span", { class: "st", text: label(s, brg, km), title: `${label(s, true, true)}\n${s.call}  ${s.times.join(" ")}` }));
+          if (s.area === a && s.times.some((t) => Math.floor((minutes(t) % 240) / 10) * 10 === off)) td.append(el("span", { class: "st", text: label(s, false, false), title: `${label(s, true, true)}\n${s.call}  ${s.times.join(" ")}` }));
         }
         tr.append(td);
       }
@@ -81,22 +80,16 @@
   async function start() {
     if (!list().length) await NX.loadStations();
     S.areas = pref.get("sched.areas", null) ? new Set(pref.get("sched.areas", [])) : null;
-    $("sc-brg").checked = pref.get("sched.brg", false);
-    $("sc-km").checked = pref.get("sched.km", true);
-    $("sc-brg-wrap").hidden = !list().some((s) => s.brg);
-    $("sc-km-wrap").hidden = !list().some((s) => s.km);
     renderAreas(); table(); bar();
   }
 
   $("sc-freq").onchange = () => { S.freq = Number($("sc-freq").value); table(); };
-  $("sc-brg").onchange = () => { pref.set("sched.brg", $("sc-brg").checked); table(); };
-  $("sc-km").onchange = () => { pref.set("sched.km", $("sc-km").checked); table(); };
   const setAll = (on) => { S.areas = on ? null : new Set(); pref.set("sched.areas", on ? null : []); renderAreas(); table(); bar(); };
   $("sc-all").onclick = () => setAll(true); $("sc-none").onclick = () => setAll(false);
   $("sc-now").onclick = () => mark(true);
   NX.tabs.schedule = () => { $("sc-freq").value = String(NX.state.controls ? NX.state.controls.channel : 518); S.freq = Number($("sc-freq").value); start().then(() => mark(true)); };
   NX.listen("hello", () => { start().catch(() => {}); });
   NX.listen("controls", () => bar());
-  NX.hooks.stationsLoaded = (NX.hooks.stationsLoaded || []).concat([() => { $("sc-brg-wrap").hidden = !list().some((s) => s.brg); $("sc-km-wrap").hidden = !list().some((s) => s.km); if (!$("tab-schedule").hidden) { renderAreas(); table(); } bar(); }]);
+  NX.hooks.stationsLoaded = (NX.hooks.stationsLoaded || []).concat([() => { if (!$("tab-schedule").hidden) { renderAreas(); table(); } bar(); }]);
   setInterval(() => { bar(); if (!$("tab-schedule").hidden) mark(false); }, 10000);
 })();

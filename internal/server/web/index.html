@@ -128,8 +128,7 @@
     <div class="cols">
       <fieldset class="col" id="tableio"><legend>Station table</legend>
         <div class="row small">The station table (YAND_STATIONS.TXT). Import replaces it entirely; the table that is replaced is saved first in the backups folder of the data folder, with the date and time it was last saved in its name.</div>
-        <div class="row"><a id="st-export" href="/api/stations/export" download="YAND_STATIONS.TXT">Export table</a></div>
-        <div class="row"><input id="st-file" type="file" accept=".txt,.TXT" hidden><button id="st-import">Import table…</button></div>
+        <div class="row"><button id="st-export">Export table</button><input id="st-file" type="file" accept=".txt,.TXT" hidden><button id="st-import">Import table…</button></div>
         <div id="st-msg" class="small"></div>
       </fieldset>
       <fieldset class="col" id="clipbox"><legend>Saved audio clips</legend>
@@ -178,8 +177,6 @@
     <div class="filters">
       <label class="field">Frequency <select id="sc-freq"><option value="518">518 kHz</option><option value="490">490 kHz</option><option value="424">424 kHz</option></select></label>
       <button id="sc-now">On air now</button>
-      <label class="check" id="sc-km-wrap"><input id="sc-km" type="checkbox"> Show distances</label>
-      <label class="check" id="sc-brg-wrap"><input id="sc-brg" type="checkbox"> Show bearings</label>
       <span id="sc-utc" class="small"></span>
     </div>
     <div class="areas"><span class="small">NAVAREAs shown:</span> <span id="sc-areas"></span> <button id="sc-all" type="button" class="small">All</button> <button id="sc-none" type="button" class="small">None</button></div>
