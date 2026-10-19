@@ -28,8 +28,6 @@ func (s *Server) recordRoutes(mux *http.ServeMux, tunnel bool) {
 	mux.HandleFunc("GET /api/database", s.admin(tunnel, s.dbInfo))
 	mux.HandleFunc("GET /api/database/export", s.admin(tunnel, s.dbExport))
 	mux.HandleFunc("POST /api/database/import", s.admin(tunnel, s.dbImport))
-	mux.HandleFunc("POST /api/maintenance/reidentify", s.admin(tunnel, s.maintReidentify))
-	mux.HandleFunc("POST /api/maintenance/recorrect", s.admin(tunnel, s.maintRecorrect))
 	mux.HandleFunc("GET /api/stations", s.viewer(tunnel, s.stationList))
 	mux.HandleFunc("GET /api/stations/export", s.viewer(tunnel, s.stationExport))
 	mux.HandleFunc("PUT /api/stations/{id}/keywords", s.admin(tunnel, s.stationKeywords))
@@ -382,38 +380,6 @@ func (s *Server) dbImport(w http.ResponseWriter, r *http.Request, id Identity) {
 	writeJSON(w, 200, res)
 }
 
-func (s *Server) maintReidentify(w http.ResponseWriter, r *http.Request, id Identity) {
-	n, err := s.cat.Reidentify(s.st)
-	if err != nil {
-		fail(w, 500, err)
-		return
-	}
-	s.run.Log("info", fmt.Sprintf("stations re-identified: %d records changed", n))
-	s.hub.Publish("record", recordMsg{Action: "update"}, false, false)
-	writeJSON(w, 200, map[string]any{"changed": n})
-}
-
-// maintRecorrect redoes the word autocorrection of every stored record (after the vocabulary or the options changed).
-func (s *Server) maintRecorrect(w http.ResponseWriter, r *http.Request, id Identity) {
-	recs, _ := s.st.Query(store.Filter{})
-	changed := 0
-	for _, rec := range recs {
-		old := rec.Corrected
-		s.run.Correct(&rec)
-		if rec.Corrected == old {
-			continue
-		}
-		if _, err := s.st.Update(rec); err != nil && !errors.Is(err, store.ErrConflict) && !errors.Is(err, store.ErrNotFound) {
-			fail(w, 500, err)
-			return
-		}
-		changed++
-	}
-	s.run.Log("info", fmt.Sprintf("autocorrection redone: %d records changed", changed))
-	s.hub.Publish("record", recordMsg{Action: "update"}, false, false)
-	writeJSON(w, 200, map[string]any{"changed": changed})
-}
-
 // ---- stations ----
 
 type stationMsg struct {
@@ -488,22 +454,13 @@ func (s *Server) stationImport(w http.ResponseWriter, r *http.Request, id Identi
 		fail(w, 400, err)
 		return
 	}
-	n, err := s.cat.Import(data)
+	n, backup, err := s.cat.Import(data)
 	if err != nil {
 		fail(w, 400, err)
 		return
 	}
-	s.run.Log("info", fmt.Sprintf("station table imported: %d stations", n))
-	out := map[string]any{"stations": n}
-	if r.URL.Query().Get("reidentify") == "1" {
-		c, err := s.cat.Reidentify(s.st)
-		if err != nil {
-			fail(w, 500, err)
-			return
-		}
-		out["changed"] = c
-		s.hub.Publish("record", recordMsg{Action: "update"}, false, false)
-	}
+	s.run.Log("info", fmt.Sprintf("station table replaced by an import: %d stations (the previous table is saved as backups/%s)", n, backup))
+	out := map[string]any{"stations": n, "backup": backup}
 	s.hub.Publish("stations", map[string]any{"changed": 0}, false, false)
 	writeJSON(w, 200, out)
 }

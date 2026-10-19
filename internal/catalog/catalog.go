@@ -302,18 +302,49 @@ func (c *Catalog) Export() []byte {
 }
 
 // Import replaces the table with one read from data in the YaND file format and returns the number of stations.
-func (c *Catalog) Import(data []byte) (int, error) {
+func (c *Catalog) Import(data []byte) (n int, backup string, err error) {
 	tab, err := stations.Parse(bytes.NewReader(data))
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	if len(tab.Stations) == 0 {
-		return 0, errors.New("the file contains no stations")
+		return 0, "", errors.New("the file contains no stations")
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if backup, err = c.backupLocked(); err != nil {
+		return 0, "", fmt.Errorf("could not save the current table first: %w", err)
+	}
 	c.set(tab)
-	return len(tab.Stations), c.save()
+	return len(tab.Stations), backup, c.save()
+}
+
+// backupLocked copies the table file to backups/YAND_STATIONS-<time it was last saved>.TXT and returns that name (empty when
+// there is no file yet).
+func (c *Catalog) backupLocked() (string, error) {
+	fi, err := os.Stat(c.path)
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile(c.path)
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(filepath.Dir(c.path), "backups")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	name := "YAND_STATIONS-" + fi.ModTime().UTC().Format("20060102T150405Z") + ".TXT"
+	for i := 2; ; i++ { // two imports in the same second: keep both
+		if _, err := os.Stat(filepath.Join(dir, name)); os.IsNotExist(err) {
+			break
+		}
+		name = fmt.Sprintf("YAND_STATIONS-%s-%d.TXT", fi.ModTime().UTC().Format("20060102T150405Z"), i)
+	}
+	return name, os.WriteFile(filepath.Join(dir, name), data, 0o644)
 }
 
 func sameCandidates(a, b []store.Candidate) bool {

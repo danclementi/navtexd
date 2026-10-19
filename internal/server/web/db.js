@@ -87,24 +87,19 @@
   };
 
   // ---- station table ----
-  $("st-import").onclick = async () => {
-    const f = $("st-file").files[0];
-    if (!f) { $("st-msg").textContent = "Choose a station file first."; return; }
-    if (!confirm(`Replace the station table with ${f.name}?`)) return;
+  $("st-import").onclick = () => $("st-file").click(); // the button opens the file chooser; choosing a file continues below
+  $("st-file").onchange = async () => {
+    const f = $("st-file").files[0]; $("st-file").value = "";
+    if (!f) return;
+    if (!confirm(`Replace the whole station table with ${f.name}?\n\nThe current table is saved first in the backups folder, with the date and time it was last saved in the file name.`)) return;
     try {
       const text = await f.text();
-      const r = await fetch("/api/stations/import" + ($("st-reid").checked ? "?reidentify=1" : ""), { method: "POST", headers: { "X-Navtex": "1", "Content-Type": "text/plain" }, body: text, credentials: "same-origin" });
+      const r = await fetch("/api/stations/import", { method: "POST", headers: { "X-Navtex": "1", "Content-Type": "text/plain" }, body: text, credentials: "same-origin" });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error);
-      $("st-msg").textContent = `${j.stations} stations imported` + (j.changed !== undefined ? `, ${j.changed} records changed.` : ".");
+      $("st-msg").textContent = `${j.stations} stations imported.` + (j.backup ? ` The previous table is saved as backups/${j.backup}.` : "");
       D.sel = null; await load();
     } catch (e) { $("st-msg").textContent = "Not imported: " + e.message; }
-  };
-  $("st-recorrect").onclick = async () => {
-    try { $("st-msg").textContent = `${(await api("POST", "/api/maintenance/recorrect")).changed} records changed.`; } catch (e) { $("st-msg").textContent = e.message; }
-  };
-  $("st-reidentify").onclick = async () => {
-    try { $("st-msg").textContent = `${(await api("POST", "/api/maintenance/reidentify")).changed} records changed.`; } catch (e) { $("st-msg").textContent = e.message; }
   };
 
   function roles() {

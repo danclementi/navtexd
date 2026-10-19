@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -205,6 +206,24 @@ func TestEphemerisLoggingAndStations(t *testing.T) {
 	}
 }
 
+// recorrect redoes the word autocorrection of every stored record (what a record gets when it arrives) and counts the changes.
+func recorrect(t *testing.T, s *Server, st *store.Store) int {
+	t.Helper()
+	recs, _ := st.Query(store.Filter{})
+	n := 0
+	for _, rec := range recs {
+		old := rec.Corrected
+		s.run.Correct(&rec)
+		if rec.Corrected != old {
+			if _, err := st.Update(rec); err != nil {
+				t.Fatal(err)
+			}
+			n++
+		}
+	}
+	return n
+}
+
 func TestAutocorrectionAndReversalSuggestions(t *testing.T) {
 	cfg := config.Default()
 	cfg.Input.File.Path = "/nonexistent.wav"
@@ -231,8 +250,8 @@ func TestAutocorrectionAndReversalSuggestions(t *testing.T) {
 
 	// the user's own word list extends the vocabulary
 	os.WriteFile(filepath.Join(dir, "vocabulary.txt"), []byte("# mine\nWARNINGS\n"), 0o644)
-	if code, out := do(t, admin, "POST", "/api/maintenance/recorrect", nil, nil); code != 200 || out["changed"] != float64(1) {
-		t.Fatalf("recorrect: %d %v", code, out)
+	if n := recorrect(t, s, st); n != 1 {
+		t.Fatalf("recorrect: %d changed", n)
 	}
 	_, d = do(t, admin, "GET", "/api/messages/"+fmt.Sprint(rec.ID), nil, nil)
 	cor, _ := d["cor"].(string)
@@ -250,12 +269,12 @@ func TestAutocorrectionAndReversalSuggestions(t *testing.T) {
 		t.Errorf("search in raw text: %v", l["total"])
 	}
 	// redoing it changes nothing
-	if _, out := do(t, admin, "POST", "/api/maintenance/recorrect", nil, nil); out["changed"] != float64(0) {
-		t.Errorf("second recorrect: %v", out)
+	if n := recorrect(t, s, st); n != 0 {
+		t.Errorf("second recorrect: %d", n)
 	}
 	// settings: switch it off, redo, and the corrected text is gone
 	do(t, admin, "PUT", "/api/settings", map[string]any{"changes": map[string]any{"autocorrect.enabled": false}}, nil)
-	do(t, admin, "POST", "/api/maintenance/recorrect", nil, nil)
+	recorrect(t, s, st)
 	if _, d = do(t, admin, "GET", "/api/messages/"+fmt.Sprint(rec.ID), nil, nil); d["cor"] != nil {
 		t.Errorf("disabled but cor = %v", d["cor"])
 	}
@@ -496,5 +515,45 @@ func TestForcedIDOnFragment(t *testing.T) {
 	code, p := do(t, admin, "PATCH", url, map[string]any{"v": rec.Version, "station": rec.Candidates[0].StationID}, nil)
 	if code != 200 || p["im"] != "forced ID" || p["sid"] == float64(0) || p["kind"] != "fragment" {
 		t.Fatalf("forced ID on a fragment: %d im=%v sid=%v", code, p["im"], p["sid"])
+	}
+}
+
+func TestStationTableImportKeepsBackup(t *testing.T) {
+	cfg := config.Default()
+	cfg.Input.File.Path = "/nonexistent.wav"
+	cfg.Input.Source = "file"
+	s, _, _, dir := setup(t, cfg)
+	admin := httptest.NewServer(s.handler(false))
+	defer admin.Close()
+	resp, err := http.Get(admin.URL + "/api/stations/export")
+	if err != nil {
+		t.Fatal(err)
+	}
+	table, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	post := func(body []byte) (int, map[string]any) {
+		req, _ := http.NewRequest("POST", admin.URL+"/api/stations/import", bytes.NewReader(body))
+		req.Header.Set("X-Navtex", "1")
+		r, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer r.Body.Close()
+		var m map[string]any
+		json.NewDecoder(r.Body).Decode(&m)
+		return r.StatusCode, m
+	}
+	if code, m := post([]byte("this is not a station table")); code != 400 {
+		t.Errorf("garbage: %d %v", code, m)
+	}
+	if m, _ := filepath.Glob(filepath.Join(dir, "backups", "YAND_STATIONS-*")); len(m) != 0 {
+		t.Errorf("a refused file must not leave a backup: %v", m)
+	}
+	code, m := post(table)
+	if code != 200 || m["stations"].(float64) < 1 || m["backup"] == "" {
+		t.Fatalf("import: %d %v", code, m)
+	}
+	if got, _ := os.ReadFile(filepath.Join(dir, "backups", m["backup"].(string))); len(got) == 0 {
+		t.Error("the previous table is not in the backups folder")
 	}
 }

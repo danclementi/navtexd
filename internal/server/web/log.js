@@ -556,9 +556,10 @@
     const a = document.createElement("a"); a.href = "/api/database/export" + (q.toString() ? "?" + q : ""); a.click();
     dmsg(filt ? "Exporting the filtered records\u2026" : "Exporting all records\u2026");
   };
-  $("db-import").onclick = async () => {
-    const f = $("db-file").files[0];
-    if (!f) { dmsg("Choose a file first."); return; }
+  $("db-import").onclick = () => $("db-file").click(); // the button opens the file chooser; choosing a file continues below
+  $("db-file").onchange = async () => {
+    const f = $("db-file").files[0]; $("db-file").value = "";
+    if (!f) return;
     const mode = document.querySelector('input[name="db-im"]:checked').value;
     if (mode === "replace" && !confirm(`Replace the whole log by the records in ${f.name}?\nThe current log is saved to the backups folder first.`)) return;
     dmsg("Importing\u2026");

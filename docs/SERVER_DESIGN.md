@@ -402,3 +402,12 @@ clamped it while the focused cell was replaced, and Escape no longer scrolls the
     records is refused and nothing changes.
   - `GET /api/database` gives the record count, file size and backups for the dialog. All of these are administrator-only.
 - The filter of the Log tab is read by one function (`logFilter`) used by the list and the export.
+
+## 39. Station table import / export
+
+- The Database tab's station table block has only **Export table** and **Import table**. Import replaces the whole table; the file is
+  parsed and checked first (a file without stations is refused), then the current table is copied to
+  `backups/YAND_STATIONS-<time it was last saved>.TXT` (a `-2`, `-3` suffix if that name exists), and the confirmation says so.
+  The result line names the backup.
+- Removed for now: "re-identify records" on import, "Re-identify all records now" and "Redo autocorrection of all records"
+  (`/api/maintenance/reidentify` and `/recorrect`). `Catalog.Reidentify` stays as a library function.
