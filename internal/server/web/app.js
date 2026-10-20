@@ -621,7 +621,7 @@
   });
 
   // ---- options ----
-  let fields = [], optPage = "station", optPages = new Map(), optMsgTimer = 0;
+  let fields = [], optHist = [], optPage = "station", optPages = new Map(), optMsgTimer = 0;
   async function loadOptions(force) {
     if (!force && pendingCount()) return; // keep unsaved edits when coming back to this tab
     const note = $("opt-note"), form = $("opt-form");
@@ -631,7 +631,7 @@
       $("opt-bar").hidden = true; $("opt-hint").hidden = true; return;
     }
     note.hidden = true; $("opt-bar").hidden = false; $("opt-hint").hidden = false;
-    try { fields = (await api("GET", "/api/settings")).fields; } catch (e) { note.hidden = false; note.textContent = e.message; return; }
+    try { const sj = await api("GET", "/api/settings"); fields = sj.fields; optHist = sj.history || []; } catch (e) { note.hidden = false; note.textContent = e.message; return; }
     const title = { operator: "Operator and position", input: "Input source", "input.device": "Audio input (sound card or virtual audio cable)", "input.hpsdr": "Radio (OpenHPSDR / Metis)", "input.stdin": "Raw stream (standard input)", "input.file": "WAV file", channel: "Channel", ddc: "Down-converter", decoder: "Decoder", receiver: "Receiver (FSK demodulator)", segment: "Message segmentation", logging: "Logging", autocorrect: "Word autocorrection", meters: "Meters and spectrum", server: "Network server", output: "Output (command line)" };
     const nameOf = (p, d) => { const f = fields.find((x) => x.path === p); return (f && String(f.value).trim()) || d; };
     const pages = [
@@ -660,6 +660,27 @@
       if (!gs.some((g) => groups.has(g)) && id !== "logging") continue;
       const btn = document.createElement("button"); btn.type = "button"; btn.textContent = label; btn.dataset.page = id; btn.onclick = () => showPage(id); bar.appendChild(btn);
       const page = document.createElement("div"); page.className = "optpage"; page.hidden = true; form.appendChild(page); pageEls.set(id, page);
+      const mch = /^channel(\d)$/.exec(id);
+      if (mch) {
+        const bar2 = document.createElement("div"); bar2.className = "chanact";
+        const chn = Number(mch[1]) - 1;
+        const rb = document.createElement("button"); rb.type = "button"; rb.className = "reset"; rb.textContent = "Restore default settings (this channel)";
+        rb.title = "Puts every setting of this channel back to its default (name, comment and the on/off switch stay). Unsaved edits on this page are lost.";
+        rb.onclick = async () => {
+          if (!confirm(`Restore the default settings of ${label}?\n\nInput, frequency, filter, receiver, decoder and segmentation settings of this channel are reset. The channel restarts.`)) return;
+          try { await api("POST", "/api/settings/reset-channel", { ch: chn }); await loadOptions(true); setMsg("Default settings restored."); }
+          catch (e) { setMsg(e.message, 0); }
+        };
+        const pb = document.createElement("button"); pb.type = "button"; pb.className = "reset"; pb.textContent = "Restore previous settings (this channel)";
+        pb.disabled = !(optHist[chn] > 0);
+        pb.title = "Undoes the latest bout of changes to this channel's settings (can be repeated, up to " + 10 + " steps). Name, comment and the on/off switch stay. Unsaved edits on this page are lost.";
+        pb.onclick = async () => {
+          if (!confirm(`Restore the previous settings of ${label}?\n\nThe channel goes back to the settings it had before your latest changes. It may restart.`)) return;
+          try { await api("POST", "/api/settings/restore-channel", { ch: chn }); await loadOptions(true); setMsg("Previous settings restored."); }
+          catch (e) { setMsg(e.message, 0); }
+        };
+        bar2.append(pb, rb); page.appendChild(bar2);
+      }
       if (id === "logging") {
         const n = document.createElement("p"); n.className = "small"; n.textContent = "These settings are shared by all channels. Dropping fragments (min_fragment_chars, min_fragment_words and the related settings under Message segmentation) is set separately for each channel, on its Channel tab.";
         page.appendChild(n);
@@ -683,6 +704,13 @@
             for (const c of f.choices || [f.value]) inp.add(new Option(c, c));
             inp.value = f.value;
           } else if (f.path === "operator.info") { inp = document.createElement("textarea"); inp.rows = 5; inp.value = f.value; row.classList.add("wide"); }
+          else if (/(^|\.)channel\.frequency_hz$/.test(f.path)) { // only the three NAVTEX channels
+            inp = document.createElement("select");
+            const hz = [518000, 490000, 424000]; if (!hz.includes(Number(f.value))) hz.push(Number(f.value));
+            for (const v of hz) inp.add(new Option(`${v / 1000} kHz`, String(v)));
+            inp.value = String(f.value);
+          }
+          else if (/(^|\.)channel\.name$/.test(f.path)) { inp = document.createElement("input"); inp.type = "text"; inp.value = f.value; inp.readOnly = true; inp.classList.add("ro"); }
           else if (/(^|\.)input\.shared_from$/.test(f.path)) { // which channel's input this channel uses
             const mx = /^extra\.(\d+)\./.exec(f.path), me = mx ? Number(mx[1]) + 2 : 1;
             inp = document.createElement("select"); inp.add(new Option("own input (set below)", "0"));
@@ -715,7 +743,7 @@
               } catch (e) { row.classList.add("failed"); row.title = e.message; setMsg(f.path + ": " + e.message, 0); inp.value = inp.dataset.orig; if (inp.type === "checkbox") inp.checked = inp.dataset.orig === "true"; }
             };
           } else inp.oninput = inp.onchange = () => { row.classList.toggle("changed", valueOf(inp) !== inp.dataset.orig); clearMsg(); updatePending(); };
-          const doc = document.createElement("div"); doc.className = "doc"; doc.textContent = f.doc + (f.unit ? ` (${f.unit})` : "");
+          const doc = document.createElement("div"); doc.className = "doc"; doc.textContent = /(^|\.)channel\.name$/.test(f.path) ? "" : f.doc + (f.unit && !/frequency_hz$/.test(f.path) ? ` (${f.unit})` : "");
           if (/(^|\.)lo_below_hz$/.test(f.path)) { // show the resulting LO next to the offset
             const fq = fields.find((x) => x.path === f.path.replace(/input\.[a-z]+\.lo_below_hz$/, "channel.frequency_hz"));
             const hint = document.createElement("span"); hint.className = "lohint"; doc.append(document.createElement("br"), hint);
@@ -731,14 +759,20 @@
     const srcSel = form.querySelector('[data-path="input.source"]');
     if (srcSel) {
       const shSel = form.querySelector('[data-path="input.shared_from"]');
-      const showSrc = () => form.querySelectorAll("fieldset[data-src]").forEach((fs) => { fs.hidden = fs.dataset.src !== srcSel.value || (shSel && shSel.value !== "0"); });
+      const showSrc = () => {
+        const shared = shSel && shSel.value !== "0"; srcSel.disabled = shared; srcSel.closest(".opt").classList.toggle("dim", shared);
+        form.querySelectorAll("fieldset[data-src]").forEach((fs) => { fs.hidden = fs.dataset.src !== srcSel.value; fs.disabled = shared; fs.classList.toggle("dim", shared); });
+      };
       srcSel.addEventListener("change", showSrc); if (shSel) shSel.addEventListener("change", showSrc); showSrc();
     }
     for (let k = 0; k < N - 1; k++) {
       const sx = form.querySelector(`[data-path="extra.${k}.input.source"]`);
       if (!sx) continue;
       const shX = form.querySelector(`[data-path="extra.${k}.input.shared_from"]`);
-      const showX = () => form.querySelectorAll(`fieldset[data-srcx="${k}"]`).forEach((fs) => { fs.hidden = fs.dataset.src2 !== sx.value || (shX && shX.value !== "0"); });
+      const showX = () => {
+        const shared = shX && shX.value !== "0"; sx.disabled = shared; sx.closest(".opt").classList.toggle("dim", shared);
+        form.querySelectorAll(`fieldset[data-srcx="${k}"]`).forEach((fs) => { fs.hidden = fs.dataset.src2 !== sx.value; fs.disabled = shared; fs.classList.toggle("dim", shared); });
+      };
       sx.addEventListener("change", showX); if (shX) shX.addEventListener("change", showX); showX();
     }
     showPage(pageEls.has(optPage) ? optPage : "station");

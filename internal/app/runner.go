@@ -99,6 +99,7 @@ type Runner struct {
 	mu     sync.Mutex
 	cfg    config.Config
 	chains [config.Channels]*chain
+	hist   map[int][]histEntry   // earlier settings per channel (history.go)
 	need   [config.Channels]bool // channels whose settings changed in a way that needs their restart
 }
 

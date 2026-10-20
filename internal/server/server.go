@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -409,6 +410,8 @@ func (s *Server) handler(tunnel bool) http.Handler {
 	s.extraRoutes(mux, tunnel)
 	mux.HandleFunc("GET /api/settings", s.admin(tunnel, s.getSettings))
 	mux.HandleFunc("PUT /api/settings", s.admin(tunnel, s.putSettings))
+	mux.HandleFunc("POST /api/settings/reset-channel", s.admin(tunnel, s.resetChannel))
+	mux.HandleFunc("POST /api/settings/restore-channel", s.admin(tunnel, s.restoreChannel))
 	mux.HandleFunc("GET /api/audio-devices", s.admin(tunnel, s.devices))
 	mux.HandleFunc("GET /api/radios", s.admin(tunnel, s.radios))
 	mux.HandleFunc("GET /api/input", s.admin(tunnel, s.input))
@@ -579,7 +582,11 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request, id Identity
 	for _, f := range config.Fields(s.run.Config()) {
 		out = append(out, fieldMsg{f.Path, f.Kind, f.Value, f.Doc, f.Unit, f.Choices, applyKind(f.Path)})
 	}
-	writeJSON(w, 200, map[string]any{"fields": out})
+	hist := make([]int, config.Channels)
+	for i := range hist {
+		hist[i] = s.run.HistoryCount(i)
+	}
+	writeJSON(w, 200, map[string]any{"fields": out, "history": hist})
 }
 
 func (s *Server) putSettings(w http.ResponseWriter, r *http.Request, id Identity) {
@@ -594,8 +601,9 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request, id Identity
 		fail(w, 400, errors.New("no changes"))
 		return
 	}
-	oldServer := s.run.Config().Server
-	oldPublic := s.run.Config().Operator.Public
+	before := s.run.Config()
+	oldServer := before.Server
+	oldPublic := before.Operator.Public
 	restart, err := s.run.Modify(func(c *config.Config) error {
 		for path, raw := range body.Changes {
 			if err := config.Set(c, path, string(raw)); err != nil {
@@ -609,8 +617,17 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request, id Identity
 		return
 	}
 	names := make([]string, 0, len(body.Changes))
+	touched := map[int]bool{}
 	for k := range body.Changes {
 		names = append(names, k)
+		if m := extraPath.FindStringSubmatch(k); m != nil {
+			touched[int(m[1][0]-'0')+1] = true
+		} else if chanGroup.MatchString(k) {
+			touched[0] = true
+		}
+	}
+	for ch := range touched {
+		s.run.PushHistory(ch, before, false)
 	}
 	s.run.Log("info", "settings changed: "+strings.Join(names, ", "))
 	if restart {
@@ -622,6 +639,66 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request, id Identity
 	}
 	s.publishControls()
 	writeJSON(w, 200, map[string]any{"ok": true, "restarted": restart, "server_restart": s.run.Config().Server != oldServer})
+}
+
+// resetChannel restores the default settings of one decoding channel (body {"ch": 0..3}); name, comment and the on/off
+// switch stay.
+func (s *Server) resetChannel(w http.ResponseWriter, r *http.Request, id Identity) {
+	var body struct {
+		Ch int `json:"ch"`
+	}
+	if err := readBody(r, &body); err != nil {
+		fail(w, 400, err)
+		return
+	}
+	if body.Ch < 0 || body.Ch >= config.Channels {
+		fail(w, 400, errors.New("no such channel"))
+		return
+	}
+	before := s.run.Config()
+	restart, err := s.run.Modify(func(c *config.Config) error { c.ResetChannel(body.Ch); return nil })
+	if err != nil {
+		fail(w, 400, err)
+		return
+	}
+	s.run.PushHistory(body.Ch, before, true)
+	s.run.Log("info", fmt.Sprintf("%sdefault settings restored", s.chTag(body.Ch)))
+	if restart {
+		s.run.Restart()
+	}
+	s.publishControls()
+	writeJSON(w, 200, map[string]any{"ok": true, "restarted": restart})
+}
+
+var (
+	extraPath = regexp.MustCompile(`^extra\.(\d)\.`)
+	chanGroup = regexp.MustCompile(`^(channel|input|ddc|receiver|decoder|segment)\.`)
+)
+
+// restoreChannel puts a channel's settings back to what they were before the latest bout of edits (body {"ch": 0..3}).
+func (s *Server) restoreChannel(w http.ResponseWriter, r *http.Request, id Identity) {
+	var body struct {
+		Ch int `json:"ch"`
+	}
+	if err := readBody(r, &body); err != nil {
+		fail(w, 400, err)
+		return
+	}
+	if body.Ch < 0 || body.Ch >= config.Channels {
+		fail(w, 400, errors.New("no such channel"))
+		return
+	}
+	restart, err := s.run.RestorePrevious(body.Ch)
+	if err != nil {
+		fail(w, 400, err)
+		return
+	}
+	s.run.Log("info", fmt.Sprintf("%sprevious settings restored", s.chTag(body.Ch)))
+	if restart {
+		s.run.Restart()
+	}
+	s.publishControls()
+	writeJSON(w, 200, map[string]any{"ok": true, "restarted": restart})
 }
 
 // publishControls tells every client the new control settings (the device name is left out; administrators read it

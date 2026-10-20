@@ -180,9 +180,9 @@ type Server struct {
 // carrier ...), so that, for example, a sound card and a raw stream can run at different sample rates and each
 // remembers its own carrier position. Only the group of the selected source is used.
 type Input struct {
-	Source     string      `json:"source" doc:"Where the samples come from: file (WAV recording), device (sound card / virtual audio cable input, live), stdin (raw PCM piped in) or hpsdr (I/Q over the network from an OpenHPSDR / Metis radio)" choices:"file,device,stdin,hpsdr"`
+	SharedFrom int         `json:"shared_from" doc:"own input = typical - this channel has its own source or is the primary user of its source; same input as Channel x = use this to share another channel's I/Q source if it contains a second channel"`
+	Source     string      `json:"source" doc:"file = WAV recording; device = sound card or virtual audio cable; stdin = raw PCM piped in; hpsdr = OpenHPSDR / Metis radio" choices:"file,device,stdin,hpsdr"`
 	BlockSize  int         `json:"block_size" unit:"samples" doc:"Samples read from the source at a time"`
-	SharedFrom int         `json:"shared_from" doc:"0 = this channel has its own input. 1 to 4: take the same input stream as that channel (which needs an input of its own) and decode this channel's carrier from it, for example 490 and 518 kHz from one wide I/Q stream. This channel's own input settings are then not used"`
 	WatchdogS  float64     `json:"watchdog_s" unit:"s" doc:"Warn when a live input (sound card, radio, stdin) delivers no new samples, or the same value over and over, for this long; 0 = off"`
 	Device     DeviceInput `json:"device"`
 	HPSDR      HPSDRInput  `json:"hpsdr"`
@@ -295,10 +295,10 @@ func (c Config) SampleRate() float64 {
 
 // Channel selects the NAVTEX frequency to decode.
 type Channel struct {
-	FrequencyHz float64 `json:"frequency_hz" unit:"Hz" doc:"RF frequency of the NAVTEX channel: 518000 (international), 490000 (local language) or 424000 (Japan)"`
-	Name        string  `json:"name" doc:"A short name for this channel, shown on its chip in the header and in the system log (e.g. the antenna or receiver)"`
+	FrequencyHz float64 `json:"frequency_hz" unit:"Hz" doc:"nominal carrier frequency of the NAVTEX channel (in kHz)"`
+	Name        string  `json:"name" doc:"Channel name (fixed: Channel 1 to 4); other features refer to the channels by these numbers"`
 	Comment     string  `json:"comment" doc:"A note about this channel (receiver, antenna, location ...); it is stored with every record received on it"`
-	ViewOffset  float64 `json:"view_offset_hz" unit:"Hz" doc:"Moves the center of the spectrum slice that is sent to the displays away from the carrier window (channel frequency minus the LO); it changes only what is displayed, never the receiver. Set by dragging the spectrum beyond the slice (administrators); 0 = centered on the window. Takes effect at once"`
+	ViewOffset  float64 `json:"view_offset_hz" unit:"Hz" doc:"adjust spectrum x-axis left-or-right; typically set by dragging the graph area in the Spectrum tab"`
 	ViewV2      bool    `json:"view_v2,omitempty" hidden:"true" doc:"Internal: set once the view offset has been reset after it stopped moving the receiver window"`
 }
 
@@ -957,4 +957,15 @@ func migrateLO(b []byte) []byte {
 		return b
 	}
 	return out
+}
+
+// ResetChannel puts all the settings of decoding channel ch (input, frequency, filter, receiver, decoder, segmentation)
+// back to their defaults. The channel's name, comment and on/off switch are kept.
+func (c *Config) ResetChannel(ch int) {
+	def := Default().ForChannel(ch)
+	c.EditChannel(ch, func(d *Config) {
+		name, comment := d.Channel.Name, d.Channel.Comment
+		d.Input, d.Channel, d.DDC, d.Receiver, d.Decoder, d.Segment = def.Input, def.Channel, def.DDC, def.Receiver, def.Decoder, def.Segment
+		d.Channel.Name, d.Channel.Comment = name, comment
+	})
 }

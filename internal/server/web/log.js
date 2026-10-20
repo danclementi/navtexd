@@ -437,6 +437,26 @@
     L.anchor = i; select(id);
   });
 
+  // ---- Ctrl-A: every record of the (filtered) list ----
+  let selAllBusy = false;
+  document.addEventListener("keydown", async (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "a" || e.altKey || NX.state.tab !== "log" || dlg.open || document.querySelector("dialog[open]")) return;
+    if (/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return; // (selects the text there)
+    e.preventDefault();
+    if (selAllBusy || !L.total) return;
+    selAllBusy = true;
+    try {
+      const gen = L.gen, all = new Set();
+      for (let off = 0; off < L.total; off += 500) { // (the server gives at most 500 at a time)
+        const r = await fetchRange(off, 500);
+        for (const m of r.records) all.add(m.id);
+      }
+      if (gen !== L.gen) return; // the list changed meanwhile
+      L.sel = all; if (!L.selId || !all.has(L.selId)) L.selId = [...all][0] || 0;
+      render();
+    } catch (err) { /* ignore */ } finally { selAllBusy = false; }
+  });
+
   // ---- keyboard: one line, a page, the ends ----
   document.addEventListener("keydown", (e) => {
     if (NX.state.tab !== "log" || dlg.open || /INPUT|SELECT|TEXTAREA|BUTTON/.test(document.activeElement.tagName) || e.ctrlKey || e.altKey || e.metaKey) return;
