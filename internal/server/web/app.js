@@ -404,8 +404,8 @@
     }
   }
   // The big spectrum: drag the carrier marker (administrators, autotune off), drag the background to pan, wheel to zoom,
-  // double-click to reset. Zooming and panning inside the received slice are done here. Panning beyond it, or putting
-  // the carrier far from the middle, asks the server to center the slice (and the receiver's window) elsewhere.
+  // double-click to reset. Zooming and panning inside the received slice are done here. Panning beyond it
+  // (administrators) asks the server to center the slice elsewhere; the receiver's window never moves.
   (() => {
     const attach = (cv) => {
       const V = state.view[cv.id];
@@ -418,27 +418,10 @@
       const slice = () => { const G = V.geom; return { lo: G.s0, hi: G.s1 }; };
       // keep a view range inside the received slice (everyone) or let administrators go beyond it
       const place = (lo, w) => { const S = slice(); if (!isAdmin()) lo = Math.max(S.lo, Math.min(S.hi - w, lo)); return { lo, hi: lo + w }; };
-      let pan = null, scroller = 0, lastE = null;
-      const stopScroll = () => { if (scroller) { cancelAnimationFrame(scroller); scroller = 0; } V.scrollT = 0; };
-      const scroll = () => { // the carrier marker is held near an edge: the axis moves under it, visibly
-        scroller = 0;
-        if (state.drag === null || !lastE || !V.geom) return;
-        const r = cv.getBoundingClientRect(), G = V.geom, x = lastE.clientX - r.left - G.L, edge = 28;
-        const dir = x < edge ? -1 : x > G.pw - edge ? 1 : 0;
-        if (dir) {
-          const now = performance.now(), dt = Math.min(0.1, (now - (V.scrollT || now)) / 1000); V.scrollT = now;
-          const R = range(), w = R.hi - R.lo, step = dir * w * 0.1 * dt * (1 + (dir < 0 ? edge - x : x - (G.pw - edge)) / edge);
-          cur().vr = { lo: R.lo + step, hi: R.hi + step };
-          scheduleSpec();
-          scroller = requestAnimationFrame(scroll);
-        }
-        state.drag = posHz(lastE, false);
-      };
+      let pan = null, lastE = null;
       cv.addEventListener("pointermove", (e) => {
         if (state.drag !== null) {
-          lastE = e; state.drag = posHz(e, false);
-          const r = cv.getBoundingClientRect(), G = V.geom, x = e.clientX - r.left - G.L;
-          if (isAdmin() && (x < 28 || x > G.pw - 28) && !scroller) { if (!cur().vr) cur().vr = range(); scroller = requestAnimationFrame(scroll); }
+          lastE = e; state.drag = posHz(e, true); // (the graph stays where it is; the marker stops at its edges)
           scheduleSpec(); return;
         }
         if (pan) {
@@ -453,33 +436,28 @@
         const r = cv.getBoundingClientRect();
         if (e.button !== 0 || !V.geom) return;
         if (canDrag() && V.carX !== null && Math.abs(e.clientX - r.left - V.carX) < 10) {
-          cv.setPointerCapture(e.pointerId); state.dragCh = chOf(); state.drag = posHz(e, false); lastE = e; scheduleSpec(); e.preventDefault(); return;
+          cv.setPointerCapture(e.pointerId); state.dragCh = chOf(); state.drag = posHz(e, true); lastE = e; scheduleSpec(); e.preventDefault(); return;
         }
         const R = range();
         pan = { x: e.clientX, lo: R.lo, hi: R.hi, moved: false };
         cv.setPointerCapture(e.pointerId); cv.style.cursor = "grabbing"; e.preventDefault();
       });
       cv.addEventListener("pointerup", (e) => {
-        stopScroll();
         if (state.drag !== null) {
-          const CH = state.chans[state.dragCh], f = Math.round(posHz(e, false) * 10) / 10, G = V.geom; state.drag = null;
-          const w = CH.vr ? CH.vr.hi - CH.vr.lo : 0;
-          const far = f < G.s0 || f > G.s1 || Math.abs(f - (G.s0 + G.s1) / 2) > 1000;
-          control("carrier", f, state.dragCh);
-          if (CH.vr) CH.vr = w >= (G.s1 - G.s0) * 0.999 ? null : far ? { lo: f - w / 2, hi: f + w / 2 } : CH.vr; // the view follows the carrier
+          const f = Math.round(posHz(e, true) * 10) / 10; state.drag = null;
+          control("carrier", f, state.dragCh); // only the carrier moves: neither the graph nor the receiver window follow
           scheduleSpec(); return;
         }
         if (pan) {
           const p = pan; pan = null; cv.style.cursor = "grab";
           const CH = cur(), R = CH.vr, S = slice();
           if (p.moved && R && isAdmin() && (R.lo < S.lo - V.geom.step || R.hi > S.hi + V.geom.step)) {
-            control("view", (R.lo + R.hi) / 2, chOf());
-            if (R.hi - R.lo >= (S.hi - S.lo) * 0.999) CH.vr = null; // not zoomed: the new slice fills the graph
+            control("view", (R.lo + R.hi) / 2, chOf()); // the server sends a slice centered there; the graph stays as it is
           }
           scheduleSpec();
         }
       });
-      cv.addEventListener("pointercancel", () => { state.drag = null; pan = null; stopScroll(); scheduleSpec(); });
+      cv.addEventListener("pointercancel", () => { state.drag = null; pan = null; scheduleSpec(); });
       cv.addEventListener("wheel", (e) => {
         if (!V.geom) return;
         e.preventDefault();

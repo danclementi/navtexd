@@ -298,7 +298,8 @@ type Channel struct {
 	FrequencyHz float64 `json:"frequency_hz" unit:"Hz" doc:"RF frequency of the NAVTEX channel: 518000 (international), 490000 (local language) or 424000 (Japan)"`
 	Name        string  `json:"name" doc:"A short name for this channel, shown on its chip in the header and in the system log (e.g. the antenna or receiver)"`
 	Comment     string  `json:"comment" doc:"A note about this channel (receiver, antenna, location ...); it is stored with every record received on it"`
-	ViewOffset  float64 `json:"view_offset_hz" unit:"Hz" doc:"Moves the center of this channel's spectrum, and of the receiver's frequency window (the carrier search is made around it), away from the channel frequency. Set by dragging the spectrum or the carrier marker to the edge; 0 = centered on the channel. Changing it restarts the channel"`
+	ViewOffset  float64 `json:"view_offset_hz" unit:"Hz" doc:"Moves the center of the spectrum slice that is sent to the displays away from the carrier window (channel frequency minus the LO); it changes only what is displayed, never the receiver. Set by dragging the spectrum beyond the slice (administrators); 0 = centered on the window. Takes effect at once"`
+	ViewV2      bool    `json:"view_v2,omitempty" hidden:"true" doc:"Internal: set once the view offset has been reset after it stopped moving the receiver window"`
 }
 
 // DDC controls the digital down-converter.
@@ -323,7 +324,7 @@ func defaultInput() Input {
 }
 
 func defaultExtra(i int) Extra { // channel i+2: 490 kHz from an audio input, switched off
-	return Extra{Input: defaultInput(), Channel: Channel{FrequencyHz: 490000, Name: fmt.Sprintf("Channel %d", i+2)},
+	return Extra{Input: defaultInput(), Channel: Channel{FrequencyHz: 490000, Name: fmt.Sprintf("Channel %d", i+2), ViewV2: true},
 		DDC: DDC{TargetRateHz: 4000}, Receiver: fsk.DefaultReceiverConfig(0), Decoder: sitor.DefaultConfig(), Segment: segment.DefaultConfig()}
 }
 
@@ -338,7 +339,7 @@ func Default() Config {
 func defaultConfig() Config {
 	return Config{
 		Input:       defaultInput(),
-		Channel:     Channel{FrequencyHz: 518000, Name: "Channel 1"},
+		Channel:     Channel{FrequencyHz: 518000, Name: "Channel 1", ViewV2: true},
 		DDC:         DDC{TargetRateHz: 4000},
 		Receiver:    fsk.DefaultReceiverConfig(0),
 		Decoder:     sitor.DefaultConfig(),
@@ -522,6 +523,9 @@ func Load(path string) (Config, error) {
 	}
 	b = migrateSecond(b)
 	b = migrateLO(b)
+	for ch := 0; ch < Channels; ch++ { // the marker must come from the file (the defaults have it set)
+		c.EditChannel(ch, func(d *Config) { d.Channel.ViewV2 = false })
+	}
 	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&c); err != nil {
@@ -536,7 +540,12 @@ func Load(path string) (Config, error) {
 		if strings.TrimSpace(c.ForChannel(ch).Channel.Name) == "" {
 			c.EditChannel(ch, func(d *Config) { d.Channel.Name = fmt.Sprintf("Channel %d", ch+1) })
 		}
-		c.EditChannel(ch, func(d *Config) { d.Channel.ViewOffset = math.Round(d.Channel.ViewOffset) }) // whole Hz
+		c.EditChannel(ch, func(d *Config) {
+			if !d.Channel.ViewV2 { // the old value also moved the receiver window: start again from the centre
+				d.Channel.ViewOffset, d.Channel.ViewV2 = 0, true
+			}
+			d.Channel.ViewOffset = math.Round(d.Channel.ViewOffset) // whole Hz
+		})
 	}
 	if c.Server.ViewerHints { // the option moved from the network settings to the station settings
 		c.Operator.Public, c.Server.ViewerHints = true, false
@@ -697,7 +706,7 @@ const HPSDRCarrierHz = 3000.0
 // RestartNeeded. The tests check that this list and RestartNeeded agree for every option.
 var liveFields = []string{
 	"operator.", "logging.", "autocorrect.", "meters.", "segment.", "channel.name", "channel.comment", "decoder.", "input.device.autotune", "input.device.manual_carrier_hz", "input.hpsdr.autotune",
-	"input.hpsdr.manual_carrier_hz", "input.stdin.autotune", "input.stdin.manual_carrier_hz", "input.file.autotune", "input.file.manual_carrier_hz",
+	"input.hpsdr.manual_carrier_hz", "channel.view_offset_hz", "input.stdin.autotune", "input.stdin.manual_carrier_hz", "input.file.autotune", "input.file.manual_carrier_hz",
 	"receiver.demod.presence_db", "receiver.demod.presence_offset_hz", "receiver.demod.timing_gain",
 	"receiver.demod.timing_confidence", "receiver.demod.timing_lost_blocks",
 	"receiver.blanker_threshold", "receiver.search_", "receiver.lose_carrier_after_s", "receiver.track_",
@@ -757,7 +766,7 @@ func RestartNeededFor(a, b Config, ch int) bool {
 func restartNeededSingle(a, b Config) bool {
 	neutral := func(c *Config) {
 		c.Operator, c.Server, c.Meters, c.Logging, c.Segment = Operator{}, Server{}, Meters{}, Logging{}, segment.Config{}
-		c.Channel.Name, c.Channel.Comment = "", ""
+		c.Channel.Name, c.Channel.Comment, c.Channel.ViewOffset = "", "", 0
 		c.Autocorrect = Autocorrect{}
 		// only the selected source's options matter, and of those the carrier options are live
 		t := c.Tuning()

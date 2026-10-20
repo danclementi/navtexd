@@ -137,7 +137,7 @@ func New(fs, centreHz float64, kind iq.Kind, cfg config.Config, h Handlers) (*En
 		return nil, err
 	}
 	chHz := cfg.Channel.FrequencyHz
-	shift := chHz - centreHz + cfg.Channel.ViewOffset // the spectrum slice and the receiver's window are centered here
+	shift := chHz - centreHz // the receiver's window is centered here
 	nyq := fs / 2
 	if kind == iq.Real {
 		if shift < 300 || shift > nyq-300 {
@@ -145,8 +145,8 @@ func New(fs, centreHz float64, kind iq.Kind, cfg config.Config, h Handlers) (*En
 				"it must be between 300 Hz and %.0f Hz (sample rate %.0f Hz); for real audio set the centre/LO frequency to the receiver's dial frequency", chHz/1e3, centreHz/1e3, shift, nyq-300, fs)
 		}
 	} else if shift < -nyq+1500 || shift > nyq-1500 {
-		return nil, fmt.Errorf("channel %.1f kHz is outside the received band: centre %.1f kHz, rate %.0f Hz (usable +-%.1f kHz), channel offset %+.1f kHz, view_offset_hz %+.0f Hz puts the window at %+.1f kHz",
-			chHz/1e3, centreHz/1e3, fs, (nyq-1500)/1e3, (chHz-centreHz)/1e3, cfg.Channel.ViewOffset, shift/1e3)
+		return nil, fmt.Errorf("channel %.1f kHz is outside the received band: centre %.1f kHz, rate %.0f Hz (usable +-%.1f kHz), channel offset %+.1f kHz",
+			chHz/1e3, centreHz/1e3, fs, (nyq-1500)/1e3, (chHz-centreHz)/1e3)
 	}
 	D := ddc.PickDecim(fs, cfg.DDC.TargetRateHz)
 	if D == 0 {
@@ -177,7 +177,7 @@ func New(fs, centreHz float64, kind iq.Kind, cfg config.Config, h Handlers) (*En
 	}
 	e.qNeed = int(cfg.Meters.QualityWindowS * e.front.OutputRate())
 	e.lastText = -1e9
-	e.spec = newSpec(fs, kind, shift, cfg.Meters)
+	e.spec = newSpec(fs, kind, e.viewCentre(cfg.Channel.ViewOffset), cfg.Meters)
 	e.chs = newChanSpec(e.front.OutputRate(), e.spec.step, e.spec.n, cfg.Meters.SpectrumSmooth)
 	if !cfg.Autotune() {
 		e.rx.SetAutotune(false)
@@ -185,6 +185,18 @@ func New(fs, centreHz float64, kind iq.Kind, cfg config.Config, h Handlers) (*En
 	}
 	return e, nil
 }
+
+// viewCentre is the centre of the spectrum slice: the window centre moved by the view offset, kept inside the band.
+func (e *Engine) viewCentre(off float64) float64 {
+	v, nyq := e.shift+off, e.fs/2
+	if e.kind == iq.Real {
+		return math.Max(300, math.Min(nyq-300, v))
+	}
+	return math.Max(-nyq+1500, math.Min(nyq-1500, v))
+}
+
+// ViewHz is the frequency the displayed spectrum slice is centered on.
+func (e *Engine) ViewHz() float64 { return e.viewCentre(e.cfg.Channel.ViewOffset) }
 
 // ShiftHz is the frequency (relative to the source's center, or audio frequency) that the spectrum and the receiver are centered on.
 func (e *Engine) ShiftHz() float64 { return e.shift }
@@ -304,9 +316,13 @@ func (e *Engine) Reconfigure(cfg config.Config) {
 	// meters
 	m, om := cfg.Meters, old.Meters
 	e.cfg.Meters = m
+	if cfg.Channel.ViewOffset != old.Channel.ViewOffset {
+		e.cfg.Channel.ViewOffset = cfg.Channel.ViewOffset
+		e.spec = newSpec(e.fs, e.kind, e.ViewHz(), m)
+	}
 	e.qNeed = int(m.QualityWindowS * e.front.OutputRate())
 	if m.SpectrumMaxHz != om.SpectrumMaxHz || m.SpectrumFFT != om.SpectrumFFT || m.RateHz != om.RateHz {
-		e.spec = newSpec(e.fs, e.kind, e.shift, m)
+		e.spec = newSpec(e.fs, e.kind, e.ViewHz(), m)
 		e.chs = newChanSpec(e.front.OutputRate(), e.spec.step, e.spec.n, m.SpectrumSmooth)
 	} else {
 		e.spec.alpha = m.SpectrumSmooth

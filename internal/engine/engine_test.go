@@ -346,3 +346,22 @@ func TestChannelSpectrumBlankOutsideBand(t *testing.T) {
 		}
 	}
 }
+
+// The view offset moves only the displayed spectrum slice: the receiver window stays at channel - LO, and a change
+// is applied to the running engine.
+func TestViewOffsetMovesOnlyTheView(t *testing.T) {
+	cfg := cfg518()
+	cfg.Channel.ViewOffset = 700
+	e, err := New(48000, 504000, iq.IQ, cfg, Handlers{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.ShiftHz() != 14000 || e.ViewHz() != 14700 {
+		t.Fatalf("window %v view %v, want 14000 and 14700", e.ShiftHz(), e.ViewHz())
+	}
+	cfg.Channel.ViewOffset = -400
+	e.Reconfigure(cfg)
+	if e.ShiftHz() != 14000 || e.ViewHz() != 13600 {
+		t.Fatalf("after Reconfigure: window %v view %v, want 14000 and 13600", e.ShiftHz(), e.ViewHz())
+	}
+}

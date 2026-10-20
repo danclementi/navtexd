@@ -544,3 +544,17 @@ func TestSharedFromValidation(t *testing.T) {
 		t.Error("the owner needs an input of its own")
 	}
 }
+
+// An old view_offset_hz also moved the receiver window: it is reset once, then kept.
+func TestViewOffsetResetOnce(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "s.json")
+	os.WriteFile(p, []byte(`{"channel":{"view_offset_hz":5000}}`), 0o644)
+	c, err := Load(p)
+	if err != nil || c.Channel.ViewOffset != 0 || !c.Channel.ViewV2 {
+		t.Fatalf("old file: %v %+v", err, c.Channel)
+	}
+	os.WriteFile(p, []byte(`{"channel":{"view_offset_hz":500,"view_v2":true}}`), 0o644)
+	if c, err = Load(p); err != nil || c.Channel.ViewOffset != 500 {
+		t.Fatalf("new file: %v %+v", err, c.Channel)
+	}
+}
