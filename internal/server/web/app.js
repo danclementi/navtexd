@@ -312,7 +312,7 @@
     const n = s.filt.length, f0 = s.start, f1 = s.start + s.step * (n - 1);
     // the big spectrum can be zoomed and panned (CH.vr = the range shown, Hz); beyond the received slice there is no data
     let d0 = f0, d1 = f1;
-    if (!mini && CH.vr) { d0 = CH.vr.lo; d1 = CH.vr.hi; }
+    if (CH.vr) { d0 = CH.vr.lo; d1 = CH.vr.hi; }
     V.geom = { L, pw, f0: d0, f1: d1, s0: f0, s1: f1, step: s.step };
     const fsDB = s.fs === undefined ? null : s.fs;
     // values in dB (tenths on the wire); linear mode shows amplitude as a fraction of a full-scale tone
