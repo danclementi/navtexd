@@ -269,7 +269,7 @@ func main() {
 					fmt.Printf("%s is in use (another navtexd running?); using %s instead\n", wanted, actual)
 				}
 				url := "http://" + displayAddr(actual) + "/"
-				fmt.Printf("web interface on %s\n", url)
+				fmt.Printf("navtexd v%s: web interface on %s\n", server.Version, url)
 				if cfg.Server.OpenBrowser {
 					openBrowser(url)
 				}

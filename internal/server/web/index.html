@@ -318,11 +318,17 @@
       <div class="col"><button id="rev-apply" disabled>Replace in message</button></div></div>
   </div>
 </dialog>
+<dialog id="about-dlg" class="about">
+  <h3>navtexd <span id="about-ver2"></span></h3>
+  <p>A NAVTEX decoder with a web interface, modelled on YaND. Free software under the GNU General Public License, version 3, without any warranty.</p>
+  <p id="about-contact" hidden>Questions or problems? Write to <a href="mailto:dan@clementi.us?subject=navtexd">dan@clementi.us</a> and mention the version above.</p>
+  <div class="row"><button id="about-close" type="button">Close</button></div>
+</dialog>
 <footer id="sched-bar" class="schedbar">
   <span class="fnet" title="Data sent to all connected clients"><span class="small">NET</span> <b id="t-net">-</b></span>
   <span class="fnet" title="Connected browsers"><span class="small">USERS</span> <b id="t-users">-</b></span>
   <span id="sched-text" class="grow" title="Stations on air now (from the station table, NAVAREAs ticked in the Schedule tab)"></span>
-  <span id="conn" class="pill">connecting</span><span id="role" class="pill"></span>
+  <span id="conn" class="pill">connecting</span><span id="role" class="pill"></span><button id="about-ver" type="button" class="pill verbtn" title="About this program">v</button>
 </footer>
 <script src="app.js"></script>
 <script src="replist.js"></script>

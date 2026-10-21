@@ -502,3 +502,6 @@ dialog#db-dlg::backdrop { background: rgba(0, 0, 0, .45); }
 /* chrome is not selectable; content is */
 body { -webkit-user-select: none; user-select: none; }
 input, textarea, select, pre, code, .selectable, .msgtext, .reader, .doc, .small, p { -webkit-user-select: text; user-select: text; }
+
+button.verbtn { background: transparent; cursor: pointer; }
+dialog.about { max-width: 420px; }

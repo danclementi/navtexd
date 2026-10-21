@@ -499,6 +499,7 @@
     const on = (n, f) => es.addEventListener(n, (e) => f(JSON.parse(e.data)));
     on("bye", (m) => { byeShown = true; clearTimeout(lostTimer); lostTimer = 0; srvMsg((m.msg || "The server has been shut down.") + " You have been disconnected. When the server is running again this page reconnects by itself; if it does not, reload it with Ctrl+F5."); });
     on("hello", (h) => {
+      NX.version = h.version; $("about-ver").textContent = "v" + h.version; $("about-ver2").textContent = "v" + h.version;
       clearTimeout(lostTimer); lostTimer = 0; byeShown = false; srvMsg(""); // (re)connected: any "server closed" message is stale
       state.offset = h.now - Date.now();
       state.loc = !!h.loc;
@@ -864,4 +865,11 @@
   setTimeout(loadDevices, 800);
   setInterval(() => { if (state.role === "admin" && !NX.knownRadios) loadDevices(); }, 5000);
   setInterval(() => { if (state.role === "admin") loadDevices(); }, 20000); // a radio joins the list once it has delivered data
+})();
+
+(() => {
+  const $ = window.NX.$, dlg = $("about-dlg");
+  $("about-ver").onclick = () => { $("about-contact").hidden = window.NX.state.role !== "admin"; dlg.showModal(); };
+  $("about-close").onclick = () => dlg.close();
+  dlg.addEventListener("mousedown", (e) => { if (e.target === dlg) dlg.close(); });
 })();
