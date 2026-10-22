@@ -148,6 +148,9 @@ func discover(ctx context.Context, addr string, port int, timeout time.Duration)
 				seen[r.MAC.String()] = true
 				found = append(found, r)
 			}
+			if addr != "" {
+				break // a radio asked by address answers once
+			}
 			continue
 		}
 		if other++; other == 1 {

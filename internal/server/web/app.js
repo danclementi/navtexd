@@ -751,6 +751,25 @@
             const upd = () => { const v = Number(inp.value); hint.textContent = fq && inp.value !== "" && isFinite(v) ? `Resulting LO: ${((Number(fq.value) - v) / 1000).toFixed(3)} kHz (channel ${(Number(fq.value) / 1000).toFixed(3)} kHz).` : ""; };
             inp.addEventListener("input", upd); upd();
           }
+          if (/(^|\.)input\.hpsdr\.address$/.test(f.path)) { // free a radio that stays "in use" after its program was killed
+            const rb = document.createElement("button"); rb.type = "button"; rb.textContent = "Release radio\u2026"; rb.className = "reset";
+            rb.title = "For a radio that reports being in use although nothing should be using it (for example after a program was killed). Asks twice before doing anything.";
+            rb.onclick = async () => {
+              const addr = inp.value.trim();
+              if (!addr) { setMsg("Enter the radio's IP address first (the box cannot be empty for this).", 8000); return; }
+              try {
+                const st = await api("GET", "/api/radio/state?addr=" + encodeURIComponent(addr));
+                if (!st.found) { setMsg(`The radio at ${addr} did not answer.`, 8000); return; }
+                if (st.ours) { setMsg(`The radio at ${addr} is being used by this program itself. Stop the channel that uses it instead.`, 8000); return; }
+                if (!st.busy) { setMsg(`The radio at ${addr} does not report being in use; nothing to release.`, 8000); return; }
+                if (!confirm(`The radio at ${addr} appears to be in use (it is streaming to another host).\n\nIt may be in use by someone else right now. Do you want to try to reset it?`)) return;
+                if (!confirm(`Send the stop command to ${addr}?\n\nAnyone who is receiving from this radio will lose the stream.`)) return;
+                const r = await api("POST", "/api/radio/release", { addr });
+                setMsg(r.busy ? `Stop command sent, but the radio at ${addr} still reports being in use.` : `The radio at ${addr} is free now.`, 10000);
+              } catch (e) { setMsg(e.message, 0); }
+            };
+            doc.append(document.createElement("br"), rb);
+          }
           row.append(name, inp, doc); fs.appendChild(row);
         }
       }

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"math"
+	"navtex/internal/hpsdr"
 	"net"
 	"net/http"
 	"os"
@@ -414,6 +415,8 @@ func (s *Server) handler(tunnel bool) http.Handler {
 	mux.HandleFunc("POST /api/settings/restore-channel", s.admin(tunnel, s.restoreChannel))
 	mux.HandleFunc("GET /api/audio-devices", s.admin(tunnel, s.devices))
 	mux.HandleFunc("GET /api/radios", s.admin(tunnel, s.radios))
+	mux.HandleFunc("GET /api/radio/state", s.admin(tunnel, s.radioState))
+	mux.HandleFunc("POST /api/radio/release", s.admin(tunnel, s.radioRelease))
 	mux.HandleFunc("GET /api/input", s.admin(tunnel, s.input))
 	mux.HandleFunc("POST /api/control/{name}", s.admin(tunnel, s.control))
 	mux.HandleFunc("GET /api/syslog", s.admin(tunnel, s.syslog))
@@ -774,6 +777,37 @@ func (s *Server) radios(w http.ResponseWriter, r *http.Request, id Identity) {
 		out = append(out, d{k.Addr, k.Name, k.Label()})
 	}
 	writeJSON(w, 200, out)
+}
+
+// radioState reports whether the radio at ?addr= is streaming to some host, and whether that is this program.
+func (s *Server) radioState(w http.ResponseWriter, r *http.Request, id Identity) {
+	st, err := hpsdr.Probe(r.Context(), strings.TrimSpace(r.URL.Query().Get("addr")), 0)
+	if err != nil {
+		fail(w, 400, err)
+		return
+	}
+	writeJSON(w, 200, st)
+}
+
+// radioRelease sends the stop command to a radio that reports being in use by another host. The page asks the
+// administrator twice before calling it.
+func (s *Server) radioRelease(w http.ResponseWriter, r *http.Request, id Identity) {
+	var body struct {
+		Addr string `json:"addr"`
+	}
+	if err := readBody(r, &body); err != nil {
+		fail(w, 400, err)
+		return
+	}
+	addr := strings.TrimSpace(body.Addr)
+	st, err := hpsdr.Release(r.Context(), addr, 0)
+	if err != nil {
+		s.run.Log("warn", fmt.Sprintf("radio %s: release refused or failed: %v", addr, err))
+		fail(w, 400, err)
+		return
+	}
+	s.run.Log("info", fmt.Sprintf("radio %s: stop command sent by an administrator (%s)", addr, map[bool]string{true: "it still reports being in use", false: "it is free now"}[st.Busy]))
+	writeJSON(w, 200, st)
 }
 
 func (s *Server) control(w http.ResponseWriter, r *http.Request, id Identity) {

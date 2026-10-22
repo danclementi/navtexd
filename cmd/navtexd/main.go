@@ -265,11 +265,14 @@ func main() {
 		go func() {
 			srv.Fallback = !explicitFlags["listen"]
 			srv.OnListen = func(wanted, actual string) {
-				if wanted != actual {
+				if srv.Fallback && wanted != actual {
 					fmt.Printf("%s is in use (another navtexd running?); using %s instead\n", wanted, actual)
 				}
 				url := "http://" + displayAddr(actual) + "/"
 				fmt.Printf("navtexd v%s: web interface on %s\n", server.Version, url)
+				for _, u := range networkURLs(actual) {
+					fmt.Printf("  from other computers: %s\n", u)
+				}
 				if cfg.Server.OpenBrowser {
 					openBrowser(url)
 				}
@@ -317,6 +320,25 @@ func defaultDataDir() string {
 		return "navtex-data"
 	}
 	return filepath.Join(filepath.Dir(exe), "navtex-data")
+}
+
+// networkURLs lists the addresses other computers can use when the server listens on all interfaces.
+func networkURLs(a string) []string {
+	host, port, err := net.SplitHostPort(a)
+	if err != nil {
+		return nil
+	}
+	if ip := net.ParseIP(host); host != "" && (ip == nil || !ip.IsUnspecified()) {
+		return nil
+	}
+	var out []string
+	addrs, _ := net.InterfaceAddrs()
+	for _, ad := range addrs {
+		if n, ok := ad.(*net.IPNet); ok && n.IP.To4() != nil && !n.IP.IsLoopback() && !n.IP.IsLinkLocalUnicast() {
+			out = append(out, "http://"+n.IP.String()+":"+port+"/")
+		}
+	}
+	return out
 }
 
 func displayAddr(a string) string {
