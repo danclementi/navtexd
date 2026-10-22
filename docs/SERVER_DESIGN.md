@@ -409,3 +409,8 @@ clamped it while the focused cell was replaced, and Escape no longer scrolls the
   The result line names the backup.
 - Removed for now: "re-identify records" on import, "Re-identify all records now" and "Redo autocorrection of all records"
   (`/api/maintenance/reidentify` and `/recorrect`). `Catalog.Reidentify` stays as a library function.
+
+## 40. Monitor tab and compact header
+- The Status tab is now **Monitor**: the channel rows (chip, frequency, input, comment, Auto, LOCK/SYNC/DATA LEDs, RESYNC, UoS, polarity, "+ Add channel") are its top part and the in-progress message fills the rest. Recent records, its splitter and the record pop-up (`recdlg.js`) are gone (the Log tab has the filters). The CaND logo is gone; the browser tab title is `navtexd`.
+- Each small spectrum in the header has a row under it: chip (frequency; selects the channel) and the words LOCKED/MANUAL, SYNC, DATA. LOCKED/MANUAL is an admin pushbutton for autotune (LOCKED lit while the carrier is found; MANUAL is amber); SYNC is an admin pushbutton for RESYNC; DATA is an indicator. Viewers see the same words, not clickable. Narrow cells (container query) drop "kHz" and shrink the words so four channels fit.
+- A click on a small spectrum selects the channel and, after 250 ms, opens Monitor; a double-click selects it and opens Spectrum.

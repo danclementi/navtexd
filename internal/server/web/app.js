@@ -91,9 +91,18 @@
   const L = (i, sel) => document.querySelector(`.chline[data-ch="${i}"] ${sel}`);
   // box(i): channel i's small spectrum in the header
   const box = (i) => document.querySelector(`.specgrp[data-ch="${i}"]`);
+  const M = (i, sel) => box(i).querySelector(sel);
   function showLeds(i) {
     const m = state.chans[i].meters;
     if (!m) return;
+    { // the words under the small spectrum
+      const c = state.chans[i].controls, auto = !c || c.autotune, adm = state.role === "admin";
+      led(M(i, ".m-sync"), m.sync); led(M(i, ".m-data"), m.data ? 2 : 0);
+      const lk = M(i, ".m-lock");
+      lk.textContent = auto ? "LOCKED" : "MANUAL"; led(lk, auto ? (m.have ? 2 : 0) : 1);
+      lk.title = adm ? (auto ? "Press for MANUAL carrier adjust" : "Press for AUTO carrier adjust") : (auto ? "Lit while the carrier is found automatically" : "The carrier is set by hand");
+      M(i, ".m-sync").title = adm ? "Press to force RESYNC" : "Lit while the decoder is synchronised";
+    }
     led(L(i, ".l-sync"), m.sync);
     led(L(i, ".l-data"), m.data ? 2 : 0);
     const c = state.chans[i].controls, auto = !c || c.autotune;
@@ -115,6 +124,7 @@
     chip.textContent = c.label || c.name || `Channel ${i + 1}`;
     if (i === state.sel) showInprog();
     chip.classList.toggle("on", i === state.sel);
+    const mc = M(i, ".m-chip"); mc.replaceChildren(String(c.channel), Object.assign(document.createElement("span"), { className: "u", textContent: " kHz" })); mc.title = (c.label || c.name || `Channel ${i + 1}`) + " - make this the active channel"; mc.classList.toggle("on", i === state.sel);
     L(i, ".chfreq").textContent = c.channel + " kHz";
     const cm = L(i, ".chcmt"); cm.textContent = c.note || ""; cm.title = c.note ? "Channel comment: " + c.note : "Channel comment (change it in Options)";
   }
@@ -129,7 +139,7 @@
   // lines, boxes and the add chip follow the number of channels
   function renderLines() {
     const act = activeList(), many = act.length > 1, admin = state.role === "admin";
-    for (let i = 0; i < N; i++) { const ln = document.querySelector(`.chline[data-ch="${i}"]`); ln.hidden = !act.includes(i); ln.querySelector(".chip").classList.toggle("on", i === state.sel); }
+    for (let i = 0; i < N; i++) { const ln = document.querySelector(`.chline[data-ch="${i}"]`); ln.hidden = !act.includes(i); ln.querySelector(".chip").classList.toggle("on", i === state.sel); box(i).classList.toggle("sel", i === state.sel); M(i, ".m-chip").classList.toggle("on", i === state.sel); }
     for (let i = 0; i < N; i++) box(i).hidden = !act.includes(i);
     const free = act.length < N;
     $("b-addchan").hidden = !free || !admin;
@@ -179,7 +189,7 @@
     const r = $("role");
     r.textContent = admin ? "admin" : "view only";
     r.className = "pill " + (admin ? "ok" : "");
-    document.querySelectorAll("#chlines select, #chlines input, #chlines .b-resync, .specgrp input, #b-clip").forEach((el) => { el.disabled = !admin; });
+    document.querySelectorAll("#chlines select, #chlines input, #chlines .b-resync, .specgrp input, .m-lock, .m-sync, #b-clip").forEach((el) => { el.disabled = !admin; });
     $("login").hidden = !needToken;
     if (state.tab === "options") loadOptions(true);
     if (state.tab === "syslog") loadLog();
@@ -240,49 +250,6 @@
     pre.textContent = txt;
     if (atEnd) pre.scrollTop = pre.scrollHeight;
     $("ticker").textContent = state.text.replace(/\r/g, "").replace(/\n+/g, " \u21b5 ").slice(-160);
-  }
-
-  // ---- draggable split between the in-progress message and the recent records ----
-  (() => {
-    const sp = $("st-split"), cols = sp.parentElement, root = document.documentElement;
-    const KEY = "nx-rec-w";
-    const set = (px) => {
-      const total = cols.clientWidth;
-      px = Math.max(200, Math.min(total - 240, px));
-      root.style.setProperty("--rec-w", px + "px");
-      return px;
-    };
-    try { const v = Number(localStorage.getItem(KEY)); if (v > 0) root.style.setProperty("--rec-w", v + "px"); } catch {}
-    const save = () => { try { localStorage.setItem(KEY, String(Math.round(document.querySelector("#tab-status .reccol").getBoundingClientRect().width))); } catch {} };
-    sp.addEventListener("pointerdown", (ev) => {
-      sp.setPointerCapture(ev.pointerId); sp.classList.add("drag");
-      const move = (e) => set(cols.getBoundingClientRect().right - e.clientX - 6);
-      const up = () => { sp.classList.remove("drag"); sp.removeEventListener("pointermove", move); sp.removeEventListener("pointerup", up); save(); };
-      sp.addEventListener("pointermove", move); sp.addEventListener("pointerup", up);
-      ev.preventDefault();
-    });
-    sp.addEventListener("dblclick", () => { root.style.removeProperty("--rec-w"); try { localStorage.removeItem(KEY); } catch {} });
-    sp.addEventListener("keydown", (e) => {
-      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-      const w = document.querySelector("#tab-status .reccol").getBoundingClientRect().width;
-      set(w + (e.key === "ArrowLeft" ? 30 : -30)); save(); e.preventDefault();
-    });
-    window.addEventListener("resize", () => { if (root.style.getPropertyValue("--rec-w")) set(parseFloat(root.style.getPropertyValue("--rec-w"))); });
-  })();
-
-  // ---- recent records ----
-  function loadRecent() {
-    fetch("/api/messages?limit=60&order=newest").then((r) => r.json()).then((j) => {
-      const tb = document.querySelector("#recent tbody");
-      tb.replaceChildren();
-      j.records.forEach((r, i) => {
-        const tr = document.createElement("tr");
-        tr.dataset.i = String(i); tr.dataset.id = String(r.id); tr.title = "Record " + NX.hex(r.id) + ". Double-click to open";
-        const cells = [NX.stamp(r.rx).slice(5, 16) + (NX.multiOn() ? " \u00b7" + ((r.rcv || 0) + 1) : ""), r.kind, r.b1 + r.b2 + r.ser, r.st, r.q.toFixed(0)];
-        for (const c of cells) { const td = document.createElement("td"); td.textContent = c; tr.appendChild(td); }
-        tb.appendChild(tr);
-      });
-    }).catch(() => {});
   }
 
   let showScale = () => {};
@@ -517,7 +484,6 @@
       try { const v = Number(localStorage.getItem("nx-chan")); if (v > 0 && v < N && enabledCh(v)) state.sel = v; } catch (e) { /* no storage */ }
       applySel();
       showNet(h.net); if (!h.net) { $("t-users").textContent = String(h.clients || 1); }
-      loadRecent();
       fire("hello", h);
     });
     on("location", () => { if (state.role !== "admin") { es.close(); connect(); } }); // the operator changed who may see location information
@@ -541,7 +507,7 @@
     on("run", (r) => { const i = rc(r); state.chans[i].run = r; showInfo(i); if (i === state.sel) showRun(r); });
     on("record", (r) => {
       if (r.action === "new") { const i = rc(r); if (i === state.sel) { state.lines = []; state.tail = ""; scheduleText(); } else { state.chans[i].lines = []; state.chans[i].tail = ""; } }
-      loadRecent(); fire("record", r);
+      fire("record", r);
     });
     on("stations", (r) => fire("stations", r));
     on("log", (e) => { if (state.tab === "syslog") appendLog(e); });
@@ -552,8 +518,19 @@
   // channel's own (controls, meters, run, spectrum, text, lines), kept up to date from the events.
   // a click on a small spectrum selects its channel; a double-click also shows the Spectrum tab
   for (let i = 0; i < N; i++) {
-    box(i).addEventListener("click", () => selectChan(i));
-    box(i).addEventListener("dblclick", () => { selectChan(i); document.querySelector("#tabs button[data-tab=spectrum]").click(); });
+    let t = 0; // a click selects the channel and opens Monitor (after a moment, so that a double-click can go to Spectrum instead)
+    box(i).addEventListener("click", (e) => {
+      if (e.target.closest(".m-lock, .m-sync")) return;
+      selectChan(i); clearTimeout(t);
+      t = setTimeout(() => { if (state.tab !== "status") document.querySelector("#tabs button[data-tab=status]").click(); }, 250);
+    });
+    box(i).addEventListener("dblclick", (e) => {
+      if (e.target.closest(".m-lock, .m-sync")) return;
+      clearTimeout(t); selectChan(i); document.querySelector("#tabs button[data-tab=spectrum]").click();
+    });
+    M(i, ".m-lock").onclick = (e) => { e.stopPropagation(); const c = state.chans[i].controls; control("autotune", !(c ? c.autotune : true), i); };
+    M(i, ".m-sync").onclick = (e) => { e.stopPropagation(); control("resync", undefined, i); };
+    for (const b of [M(i, ".m-lock"), M(i, ".m-sync")]) b.ondblclick = (e) => e.stopPropagation();
   }
   // the channel lines: the first is in the page, the others are copies of it
   { const first = document.querySelector('.chline[data-ch="0"]'); for (let i = 1; i < N; i++) { const c = first.cloneNode(true); c.dataset.ch = i; c.hidden = true; first.parentNode.insertBefore(c, $("b-addchan")); } }

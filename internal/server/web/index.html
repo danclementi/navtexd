@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>NAVTEX</title>
+<title>navtexd</title>
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
@@ -12,9 +12,6 @@
   <div class="hdrrow">
     <fieldset class="grp" id="grp-main">
       <div class="mainrow">
-        <div class="logo" title="Claude's attempted NAVTEX Decoder">
-          <img src="cand_logo.png" alt="CaND" width="116" height="62">
-        </div>
         <div class="dials">
           <div class="dial" data-id="level" data-label="INP.LEVEL" data-red="0.9" title="Input level (dBFS); red = near clipping"></div>
           <div class="dial" data-id="q" data-label="QUALITY" data-red="0" title="Signal quality (inverse of the crest factor)"></div>
@@ -26,8 +23,35 @@
     </fieldset>
     <fieldset class="grp specgrp" id="grp-spec" data-ch="0">
       <div class="specwrap2"><canvas id="spec-mini"></canvas></div>
+      <div class="chmini">
+        <button type="button" class="chip m-chip" title="Make this the active channel"></button>
+        <button type="button" class="mw m-lock">LOCKED</button>
+        <button type="button" class="mw m-sync">SYNC</button>
+        <span class="mw m-data" title="Text is being received">DATA</span>
+      </div>
     </fieldset>
   </div>
+  <div id="login" class="row" hidden>
+    <label class="field grow">Access token <input id="tok" type="password" autocomplete="current-password"></label>
+    <button id="b-login">Unlock</button>
+  </div>
+  <div class="tickerrow"><div id="ticker" class="ticker" title="Latest decoded text"></div><input id="msg-color" type="color" value="#8cf0a0" title="Colour of the message text"></div>
+</header>
+<nav id="tabs">
+  <button data-tab="status" class="on">Monitor</button>
+  <button data-tab="spectrum">Spectrum</button>
+  <button data-tab="log">Log</button>
+  <button data-tab="schedule">Schedule</button>
+  <button data-tab="scope">Signal</button>
+  <button data-tab="report">Report</button>
+  <button data-tab="statistics">Statistics</button>
+  <button data-tab="ephemeris">Ephemeris</button>
+  <button data-tab="options">Options</button>
+  <button data-tab="database">Station List</button>
+  <button data-tab="syslog">System Log</button>
+</nav>
+<main>
+  <section id="tab-status">
   <div id="chlines" class="chlines">
     <div class="chline" data-ch="0">
       <button type="button" class="chip" title="Make this the active channel (text, big spectrum, log, Save clip)"></button>
@@ -44,36 +68,10 @@
     </div>
     <button type="button" class="chip add" id="b-addchan" hidden title="Decode a second channel at the same time, from another input">+ Add second channel</button>
   </div>
-  <div id="login" class="row" hidden>
-    <label class="field grow">Access token <input id="tok" type="password" autocomplete="current-password"></label>
-    <button id="b-login">Unlock</button>
-  </div>
-  <div class="tickerrow"><div id="ticker" class="ticker" title="Latest decoded text"></div><input id="msg-color" type="color" value="#8cf0a0" title="Colour of the message text"></div>
-</header>
-<nav id="tabs">
-  <button data-tab="status" class="on">Status</button>
-  <button data-tab="spectrum">Spectrum</button>
-  <button data-tab="log">Log</button>
-  <button data-tab="schedule">Schedule</button>
-  <button data-tab="scope">Signal</button>
-  <button data-tab="report">Report</button>
-  <button data-tab="statistics">Statistics</button>
-  <button data-tab="ephemeris">Ephemeris</button>
-  <button data-tab="options">Options</button>
-  <button data-tab="database">Station List</button>
-  <button data-tab="syslog">System Log</button>
-</nav>
-<main>
-  <section id="tab-status">
     <div class="cols">
       <div class="col grow textcol">
         <h3>In-progress message<span id="inprog-ch" class="chtag"></span></h3>
         <pre id="text"></pre>
-      </div>
-      <div id="st-split" class="splitter" role="separator" aria-orientation="vertical" tabindex="0" title="Drag to change the split (double-click: reset)"></div>
-      <div class="col reccol">
-        <h3>Recent records</h3>
-        <div class="tablewrap fill"><table id="recent"><thead><tr><th>UTC</th><th>Kind</th><th>ID</th><th>Station</th><th>Q</th></tr></thead><tbody></tbody></table></div>
       </div>
     </div>
   </section>
@@ -216,17 +214,6 @@
     <pre id="log" class="tallpre"></pre>
   </section>
 </main>
-<dialog id="rec-dlg" aria-label="Message">
-  <div class="dlghead">
-    <button id="dlg-older" type="button" title="Older record (left arrow key)">&#9664;</button>
-    <button id="dlg-newer" type="button" title="Newer record (right arrow key)">&#9654;</button>
-    <b id="dlg-title"></b>
-    <span class="grow"></span>
-    <button id="dlg-close" type="button" title="Close (Esc)" aria-label="Close">&#10005;</button>
-  </div>
-  <dl id="dlg-info" class="dlginfo"></dl>
-  <pre id="dlg-text"></pre>
-</dialog>
 <dialog id="rp-dlg" aria-label="Edit report">
   <div class="dlghead">
     <b>Edit report</b><span id="re-count" class="small"></span>
@@ -334,7 +321,6 @@
 <script src="replist.js"></script>
 <script src="log.js"></script>
 <script src="report.js"></script>
-<script src="recdlg.js"></script>
 <script src="db.js"></script>
 <script src="clips.js"></script>
 <script src="schedule.js"></script>

@@ -26,7 +26,7 @@ It is a single self-contained program written in pure Go (standard library only,
   misses the signal. Switch it off with `meters.spectrum_show_channel`.
 - A live input that stops delivering samples, or delivers the same value over and over, is reported in the System Log
   after `input.watchdog_s` seconds (default 10, 0 = off).
-- Multi-client web interface: **Status**, **Spectrum**, **Log**, **Schedule**, **Signal**, **Report**,
+- Multi-client web interface: **Monitor**, **Spectrum**, **Log**, **Schedule**, **Signal**, **Report**,
   **Statistics**, **Ephemeris**, **Options**, **Database** and **System Log** tabs.
 - The big spectrum can be zoomed (mouse wheel) and moved (drag); double-click shows the whole slice again. Administrators can drag
   beyond the received slice and the server then sends a slice centered there (`channel.view_offset_hz`, applied at once; double-click

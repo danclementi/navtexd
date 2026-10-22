@@ -7,6 +7,7 @@
 *.zip
 *.tgz
 *.tar.gz
+navtexd-linux*
 dist/
 
 # --- runtime data of a running server: settings (operator position!), logs, clips, reports ---
