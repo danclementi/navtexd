@@ -287,8 +287,8 @@
     add("Frequency", r.ch + " kHz");
     add("Header", (r.b1 || "?") + (r.b2 || "?") + (r.ser || "??"));
     add("Quality", r.q.toFixed(1));
-    add("Station", r.st + (r.im ? `  (${r.im}, score ${r.is.toFixed(1)})` : ""));
-    if (r.km) add("Distance", `${r.km.toFixed(0)} km, bearing ${r.brg.toFixed(0)}\u00b0`);
+    add("Station", r.st);
+    add("Set by", (r.im ? `${r.im} (score ${r.is.toFixed(1)})` : r.man ? "operator" : "not set") + (r.im && r.man ? "; B1 / NAVAREA set by operator" : ""));
     // B1 and NAVAREA can be set by the operator here (and only here)
     const fieldIn = (f, val, len, ok, title) => {
       const inp = el("input", { type: "text", class: "mini", maxlength: String(len), value: val, disabled: !admin(), title });
@@ -303,7 +303,6 @@
     };
     add("B1 / NAVAREA", el("span", { class: "nowrap" }, fieldIn("b1", r.b1 || "", 1, (v) => /^[A-Za-z?]$/.test(v), "Station ID letter (B1) set by the operator"), " / ", fieldIn("area", String(r.area || ""), 2, (v) => /^\d{1,2}$/.test(v), "NAVAREA number set by the operator")));
     if (r.sfix) add("Start", `${r.sfix} read as ZCZC (recognized by its position and what follows)`);
-    if (r.man) add("Set by", "operator (B1 / NAVAREA)");
     if (r.rev && r.rev.length) add("Revised", `${r.rev.length} stretch${r.rev.length > 1 ? "es" : ""} replaced by the operator (shown in <angle brackets>)`);
     const cm = el("input", { type: "text", value: r.cmt || "", maxlength: "120", disabled: !admin(), placeholder: "comment" });
     cm.onchange = () => patch({ cmt: cm.value });
@@ -311,21 +310,16 @@
     add("Comment", cm);
     const box = $("rec-info");
     box.replaceChildren(dl);
-    if (r.cand && r.cand.length) {
-      const cands = el("div", { class: "cands" }, el("span", { class: "small", text: "Candidate stations:" }));
-      box.append(cands);
-      for (const c of r.cand) {
-        const b = el("button", { text: "Use", disabled: !admin(), title: "Identify the message as this station (sets B1 and NAVAREA to its own)" });
-        b.onclick = () => useCandidate(c.id);
-        cands.append(el("span", { class: "cand" }, `${c.label}  (${c.score.toFixed(1)}) `, b));
-      }
-    }
-    slotStations(r, box).catch(() => {});
+    candidates(r, box).catch(() => {});
   }
 
-  // Stations that normally transmit at the time the record was received (the operator picks; US stations often keep
-  // to their slots only loosely, so nothing is assigned automatically). Works for any record: the result is a "forced ID".
-  async function slotStations(r, box) {
+  // Station choices under the message data: at most two likely stations and a list of all stations of the frequency.
+  //  1. the (up to) two candidates with a score above zero, best first;
+  //  2. else, when the header has a B1, the two closest stations with that B1 (the sender is probably out of its time slot);
+  //  3. else only the list.
+  // Works for any record: the result is a "forced ID" when the message text does not support it. Distances are used
+  // only to choose, never shown.
+  async function candidates(r, box) {
     const id = r.id;
     const byId = await NX.loadStations();
     if (!L.rec || L.rec.id !== id) return;
@@ -333,23 +327,29 @@
     const mins = (t) => { const [h, mm] = String(t).split(":").map(Number); return h * 60 + mm; };
     const on = (s) => s.times.some((t) => t && !isNaN(mins(t)) && ((m - mins(t)) % 1440 + 1440) % 1440 < 10);
     const same = [...byId.values()].filter((s) => s.freq === r.ch);
-    const slot = same.filter(on);
     const lab = (s) => `${s.area}${s.b1} ${s.name},${s.cc}`;
-    const wrap = el("div", { class: "cands" }, el("span", { class: "small", text: slot.length ? `On air at ${NX.pad(d.getUTCHours())}:${NX.pad(d.getUTCMinutes())} UTC on ${r.ch} kHz:` : `No station scheduled at ${NX.pad(d.getUTCHours())}:${NX.pad(d.getUTCMinutes())} UTC on ${r.ch} kHz.` }));
+    let pick = (r.cand || []).filter((c) => c.score > 0).sort((x, y) => y.score - x.score).slice(0, 2)
+      .map((c) => ({ id: c.id, label: c.label, score: c.score }));
+    if (!pick.length && r.b1 && r.b1 !== "?") {
+      pick = same.filter((s) => s.b1 === r.b1).sort((x, y) => (x.km || 0) - (y.km || 0) || x.area - y.area).slice(0, 2)
+        .map((s) => ({ id: s.id, label: lab(s) }));
+    }
     const tip = "Identify the record as this station (sets B1 and NAVAREA to its own). The identification is marked \"forced ID\" when the message text does not support it.";
-    for (const st of slot) {
+    const wrap = el("div", { class: "cands" });
+    for (const c of pick) {
       const b = el("button", { text: "Use", disabled: !admin(), title: tip });
-      b.onclick = () => useCandidate(st.id);
-      wrap.append(el("span", { class: "cand" }, lab(st) + (st.km ? `  ${st.km.toFixed(0)} km ` : " "), b));
+      b.onclick = () => useCandidate(c.id);
+      wrap.append(el("span", { class: "cand" }, c.label + (c.score ? `  (${c.score.toFixed(1)}) ` : " "), b));
     }
     if (same.length) {
       const sel = el("select", { disabled: !admin(), title: "Any station of this frequency" }, el("option", { value: "", text: "other station\u2026" }));
-      for (const st of same.filter((x) => !on(x)).sort((a, b) => a.area - b.area || a.b1.localeCompare(b.b1))) sel.append(el("option", { value: String(st.id), text: lab(st) }));
+      for (const st of same.slice().sort((a, b) => a.area - b.area || a.b1.localeCompare(b.b1))) sel.append(el("option", { value: String(st.id), text: lab(st) }));
       const b = el("button", { text: "Use", disabled: !admin(), title: tip });
       b.onclick = () => { if (sel.value) useCandidate(Number(sel.value)); };
-      wrap.append(el("span", { class: "cand" }, sel, " ", b));
+      const slot = [...new Set(same.filter(on).map((s) => s.b1))].sort();
+      wrap.append(el("span", { class: "cand" }, sel, " ", b, " ", el("span", { class: "small", text: slot.length ? `message started in time slot '${slot.join("/")}'` : "message started outside any scheduled time slot" })));
     }
-    box.append(wrap);
+    if (wrap.childNodes.length) box.append(wrap);
   }
 
   // The server sets B1 and NAVAREA from the station and remembers the choice (several stations can share all three)

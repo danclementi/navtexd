@@ -79,6 +79,11 @@ try:
         check("delete leaves 5", pg.inner_text("#n-total") == "5", pg.inner_text("#n-total"))
         pg.click("#ld-undo"); pg.wait_for_timeout(1200)
         check("undo of the deletion: same record, same place", hexof(pg) == h3 and num(pg) == (3, 6), title(pg))
+        # the station area: fixed fields, no distance or bearing, at most two candidates plus the list
+        info = pg.inner_text("#rec-info"); pg.screenshot(path="/tmp/rec.png")
+        check("pop-up has Set by, no distance/bearing", "Set by" in info and "Distance" not in info and "bearing" not in info.lower() and " km" not in info, info)
+        check("at most two candidate buttons plus one for the list", pg.locator("#rec-info .cands button").count() <= 3, pg.locator("#rec-info .cands button").count())
+        check("time slot text", "time slot" in info, info)
         # Use selection
         box = pg.locator("#rec-text .tx").first.bounding_box()
         pg.mouse.move(box["x"] + 5, box["y"] + 8); pg.mouse.down(); pg.mouse.move(box["x"] + 120, box["y"] + 8, steps=8); pg.mouse.up()
