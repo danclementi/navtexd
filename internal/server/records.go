@@ -18,6 +18,7 @@ import (
 
 func (s *Server) recordRoutes(mux *http.ServeMux, tunnel bool) {
 	mux.HandleFunc("GET /api/messages", s.viewer(tunnel, s.messages))
+	mux.HandleFunc("GET /api/messages/locate", s.viewer(tunnel, s.locate))
 	mux.HandleFunc("GET /api/messages/{id}", s.viewer(tunnel, s.message))
 	mux.HandleFunc("PATCH /api/messages/{id}", s.admin(tunnel, s.patchMessage))
 	mux.HandleFunc("DELETE /api/messages/{id}", s.admin(tunnel, s.deleteMessage))
@@ -114,6 +115,17 @@ func (s *Server) messages(w http.ResponseWriter, r *http.Request, id Identity) {
 		out[i] = brief(x, dist)
 	}
 	writeJSON(w, 200, map[string]any{"total": total, "all": s.st.Count(), "records": out})
+}
+
+// locate gives the position of record ?id= in the list the same filter and order parameters select (-1: not in it).
+func (s *Server) locate(w http.ResponseWriter, r *http.Request, id Identity) {
+	f, err := logFilter(r.URL.Query(), s.withDist(id))
+	if err != nil {
+		fail(w, 400, err)
+		return
+	}
+	n, _ := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
+	writeJSON(w, 200, map[string]any{"index": s.st.Locate(f, n)})
 }
 
 func (s *Server) message(w http.ResponseWriter, r *http.Request, id Identity) {
@@ -225,7 +237,26 @@ func (s *Server) patchMessage(w http.ResponseWriter, r *http.Request, id Identit
 		s.run.Correct(&rec) // the autocorrection works on the revised text
 		s.run.Log("info", fmt.Sprintf("record %s revised: %s", hexID(rec.ID), note))
 	}
-	saved, err := s.st.Update(rec)
+	var parts []string // what the operator did, for the Undo button
+	if body.B1 != nil {
+		parts = append(parts, "B1 change")
+	}
+	if body.NavArea != nil {
+		parts = append(parts, "NAVAREA change")
+	}
+	if body.Station != nil {
+		parts = append(parts, "station choice")
+	}
+	if body.Comment != nil {
+		parts = append(parts, "comment change")
+	}
+	if body.Rev != nil {
+		parts = append(parts, "text revision")
+	}
+	if len(parts) == 0 {
+		parts = []string{"edit"}
+	}
+	saved, err := s.st.UpdateUndoable(rec, strings.Join(parts, " and "))
 	switch {
 	case errors.Is(err, store.ErrConflict):
 		fail(w, 409, errors.New("the record was changed elsewhere; reloaded"))
@@ -292,7 +323,7 @@ func (s *Server) undoState() map[string]any {
 	if !ok {
 		return map[string]any{"available": false}
 	}
-	return map[string]any{"available": true, "count": b.Count, "at": b.At.UnixMilli()}
+	return map[string]any{"available": true, "count": b.Count, "at": b.At.UnixMilli(), "kind": b.Kind, "desc": b.Desc, "id": b.RecID, "hex": hexID(b.RecID), "rx": b.Rx.UnixMilli()}
 }
 
 func (s *Server) undoInfo(w http.ResponseWriter, r *http.Request, id Identity) {
@@ -301,6 +332,7 @@ func (s *Server) undoInfo(w http.ResponseWriter, r *http.Request, id Identity) {
 
 // undoDelete brings back the records of the last deletion.
 func (s *Server) undoDelete(w http.ResponseWriter, r *http.Request, id Identity) {
+	last, _ := s.st.LastDeletion()
 	recs, err := s.st.Undo()
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
@@ -310,13 +342,21 @@ func (s *Server) undoDelete(w http.ResponseWriter, r *http.Request, id Identity)
 		}
 		return
 	}
-	if len(recs) == 1 {
+	switch {
+	case last.Kind == "edit" && len(recs) == 1:
+		s.run.Log("info", fmt.Sprintf("record %s: %s undone", hexID(recs[0].ID), last.Desc))
+		s.publishRecord("update", recs[0])
+	case len(recs) == 1:
 		s.run.Log("info", fmt.Sprintf("record %s restored", hexID(recs[0].ID)))
-	} else {
+	default:
 		s.run.Log("info", fmt.Sprintf("%d records restored", len(recs)))
 	}
 	s.hub.Publish("record", recordMsg{Action: "restore"}, false, false)
-	writeJSON(w, 200, map[string]any{"restored": len(recs), "undo": s.undoState()})
+	ids := make([]int64, len(recs))
+	for i, x := range recs {
+		ids[i] = x.ID
+	}
+	writeJSON(w, 200, map[string]any{"restored": len(recs), "kind": last.Kind, "ids": ids, "undo": s.undoState()})
 }
 
 // dbInfo describes the log database for the Database dialog.

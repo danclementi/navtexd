@@ -197,7 +197,7 @@
   // ---- selection and record text ----
   // show one record (the "current" one) in the text pane; `keep` leaves the selection set alone
   async function select(id, keep) {
-    L.selId = id;
+    L.selId = id; if (!keep) L.gone = false;
     if (!keep) L.sel = id ? new Set([id]) : new Set();
     render();
     if (!id) { $("rec-text").textContent = ""; $("rev-sug").hidden = true; $("rec-info").replaceChildren(); $("rec-title").textContent = ""; L.rec = null; return; }
@@ -212,8 +212,8 @@
     if (i < 0) return;
     L.anchor = i;
     scrollToIndex(i);
-    const r = L.cache.get(i) || await atIndex(i);
-    if (r) select(r.id);
+    const r = (!L.gone && L.cache.get(i)) || (await fetchRange(i, 1)).records[0]; // (after an edit the cached rows can be out of date)
+    if (r) { L.cache.set(i, r); select(r.id); }
   }
 
   // The record's lines for display: the effective text (raw with the operator's <revisions>), with the autocorrected words
@@ -364,18 +364,43 @@
       const i = idxOf(saved.id);
       if (i >= 0) L.cache.set(i, rowOf(saved, L.cache.get(i)));
     } catch (e) { alert(e.message); }
+    await locate(); // the edit may have taken the record out of the filtered list
     select(L.selId, true);
   }
 
   // ---- the record pop-up: opened by double-click or Enter, the arrows step through the (filtered) list as shown ----
   const dlg = $("log-dlg");
-  const curIndex = () => { const i = idxOf(L.selId); return i >= 0 ? i : L.anchor; };
+  // ---- the cursor: which record is current and where it is in the list (used by the table keys, the pop-up arrows, delete and undo) ----
+  // Where the current record is in the list now. When an edit took it out of the filtered list (L.gone) the position is the
+  // gap it left: stepping forward then goes to the record that moved into the gap, stepping back to the one before it, so
+  // none of the original neighbours is skipped.
+  const pos = () => (L.selId && L.anchor >= 0 ? L.anchor : (() => { const i = idxOf(L.selId); return i >= 0 ? i : L.anchor; })());
+  async function locate() {
+    const i = pos();
+    if (!L.selId || i < 0) { L.gone = false; return; }
+    const from = Math.max(0, i - 3);
+    try {
+      const j = await fetchRange(from, 7);
+      L.total = j.total;
+      const k = j.records.findIndex((r) => r.id === L.selId);
+      if (k >= 0) { L.anchor = from + k; L.gone = false; } else { L.anchor = Math.min(i, j.total); L.gone = true; }
+    } catch (e) { /* keep what we know */ }
+  }
+  // may the pop-up step in direction d (+1 = down the list as shown)?
+  function canStep(d) {
+    const i = pos(), n = L.total;
+    if (i < 0) return false;
+    return L.gone ? (d > 0 ? i < n : i - 1 >= 0) : i + d >= 0 && i + d < n;
+  }
+  // left / right always mean earlier / later in time, whichever way the list is sorted
+  const earlier = () => (newestFirst() ? 1 : -1);
   function updateNav() {
-    const i = curIndex(), n = L.total;
-    const pos = i >= 0 && n ? ` ${i + 1} of ${n}${filterOn() ? " (filtered)" : ""}` : "";
-    $("rec-title").textContent = L.rec ? `${L.rec.kind}${pos} (${NX.hex(L.rec.id)})` : "";
-    $("ld-prev").disabled = i <= 0;
-    $("ld-next").disabled = i < 0 || i + 1 >= n;
+    const i = pos(), n = L.total;
+    const rank = newestFirst() ? n - i : i + 1; // counted in time, whichever way the list is sorted: the newest record is "n of n"
+    const where = i >= 0 && n && !L.gone ? ` ${rank} of ${n}${filterOn() ? " (filtered)" : ""}` : L.gone ? " (no longer in the filtered list)" : "";
+    $("rec-title").textContent = L.rec ? `${L.rec.kind}${where} (${NX.hex(L.rec.id)})` : "";
+    $("ld-prev").disabled = !canStep(earlier());
+    $("ld-next").disabled = !canStep(-earlier());
     $("ld-report").hidden = false;
     $("ld-delete").disabled = !admin();
   }
@@ -388,21 +413,26 @@
   let stepping = false;
   async function step(d) {
     if (stepping) return;
-    const i = curIndex();
-    if (i < 0) return;
-    const to = i + d;
-    if (to < 0 || to >= L.total) return;
     stepping = true;
-    try { await selectIndex(to); } finally { stepping = false; }
+    try {
+      await locate(); // (asks the server: the cached rows may be out of date after an edit)
+      if (!canStep(d)) { updateNav(); return; }
+      const i = pos(), to = L.gone ? (d > 0 ? i : i - 1) : i + d;
+      const j = await fetchRange(to, 1), r = j.records[0];
+      if (!r) return;
+      L.gone = false; L.anchor = to; L.cache.set(to, r);
+      scrollToIndex(to);
+      select(r.id);
+    } finally { stepping = false; }
   }
-  $("ld-prev").onclick = () => step(-1);
-  $("ld-next").onclick = () => step(1);
+  $("ld-prev").onclick = () => step(earlier());
+  $("ld-next").onclick = () => step(-earlier());
   $("ld-close").onclick = () => dlg.close();
   dlg.addEventListener("close", () => { sc.focus({ preventScroll: true }); render(); });
   dlg.addEventListener("keydown", (e) => {
     if (e.ctrlKey || e.altKey || e.metaKey || /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
-    if (e.key === "ArrowLeft") { e.preventDefault(); step(-1); }
-    else if (e.key === "ArrowRight") { e.preventDefault(); step(1); }
+    if (e.key === "ArrowLeft") { e.preventDefault(); step(earlier()); }
+    else if (e.key === "ArrowRight") { e.preventDefault(); step(-earlier()); }
   });
   dlg.addEventListener("mousedown", (e) => { if (e.target === dlg) dlg.close(); }); // a click on the backdrop
   $("n-open").onclick = openDialog;
@@ -461,8 +491,9 @@
   document.addEventListener("keydown", (e) => {
     if (NX.state.tab !== "log" || dlg.open || /INPUT|SELECT|TEXTAREA|BUTTON/.test(document.activeElement.tagName) || e.ctrlKey || e.altKey || e.metaKey) return;
     if (e.key === "Enter") { if (L.selId) { e.preventDefault(); openDialog(); } return; }
-    const cur = idxOf(L.selId), page = Math.max(1, visRows() - 1);
-    const to = { ArrowDown: cur + 1, ArrowUp: cur - 1, PageDown: cur + page, PageUp: cur - page, Home: 0, End: L.total - 1 }[e.key];
+    const cur = L.selId ? pos() : -1, page = Math.max(1, visRows() - 1);
+    const g = L.gone ? 1 : 0; // the selected record left the list: its place is a gap, the record after it is at the same index
+    const to = { ArrowDown: cur + 1 - g, ArrowUp: cur - 1, PageDown: cur + page - g, PageUp: cur - page, Home: 0, End: L.total - 1 }[e.key];
     if (to === undefined) return;
     e.preventDefault();
     if (cur < 0) { selectIndex(Math.floor(sc.scrollTop / ROW) + 1); return; }
@@ -524,32 +555,57 @@
     if (tab) { tab.classList.toggle("filtered", on); tab.title = on ? `A filter is applied in the Log tab (${L.lt} of ${L.la} records shown${hid ? `, ${hid} new hidden` : ""})` : ""; }
   }
   // delete records; from the pop-up the next record in the list is shown afterwards (or the pop-up closes)
-  async function deleteSelected() {
+  async function deleteSelected(fromDlg) {
+    if (fromDlg === true && L.selId) L.sel = new Set([L.selId]); // the pop-up deletes the record it shows, nothing else
     if (!admin() || !L.sel.size) return;
-    const list = [...L.sel], at = curIndex();
-    if (!confirm(list.length === 1 && L.rec ? `Delete record ${NX.hex(L.rec.id)} (${NX.stamp(Date.parse(L.rec.rx))}, ${L.rec.st})?\nUndo delete brings it back.` : `Delete ${list.length} records?\nUndo delete brings them back.`)) return;
+    const list = [...L.sel], at = pos();
+    if (fromDlg !== true && !confirm(list.length === 1 && L.rec ? `Delete record ${NX.hex(L.rec.id)} (${NX.stamp(Date.parse(L.rec.rx))}, ${L.rec.st})?\nUndo brings it back.` : `Delete ${list.length} records?\nUndo brings them back.`)) return;
     try { const r = await api("POST", "/api/messages/delete", { ids: list }); showUndo(r.undo); } catch (e) { alert(e.message); }
-    L.sel = new Set(); L.selId = 0; L.rec = null;
+    L.sel = new Set(); L.selId = 0; L.rec = null; L.gone = false;
     const top = sc.scrollTop;
     L.gen++; L.cache.clear(); L.chunks.clear();
     try { const j = await fetchRange(0, 1); L.total = j.total; L.all = j.all; L.lt = j.total; L.la = j.all; } catch (e) { return; }
     sc.scrollTop = top; select(0);
     if (dlg.open) { if (L.total && at >= 0) selectIndex(Math.min(at, L.total - 1)); else dlg.close(); }
   }
-  // Undo delete: the server keeps the records of every deletion (30 days); this brings back the last one
+  // Undo: the server keeps every deletion and every edit of a record (30 days) on one stack; this takes back the last one
+  // what Undo would do: the last action (a deletion or an edit of a record), with the date of the message it concerns
+  function undoTip(u) {
+    const when = NX.stamp(u.rx).slice(0, 16) + " UTC";
+    if (u.kind === "edit") return `Undo ${u.desc} on message ${u.hex} (${when})`;
+    return u.count > 1 ? `Bring back the ${u.count} deleted records, the first is message ${u.hex} (${when}), in their old places` : `Bring back deleted message ${u.hex} (${when}) in its old place`;
+  }
   function showUndo(u) {
     const b = $("n-undo"), ok = !!(u && u.available);
     b.hidden = !ok || !admin(); b.disabled = !ok;
-    if (ok) b.textContent = `Undo delete (${u.count})`, b.title = `Bring back the ${u.count} record${u.count > 1 ? "s" : ""} deleted ${NX.stamp(u.at).slice(5, 19)} UTC`;
+    $("ld-undo").disabled = !ok || !admin();
+    $("ld-undo").title = ok ? undoTip(u) : "Nothing to undo";
+    if (ok) b.textContent = "Undo", b.title = undoTip(u);
   }
   const loadUndo = () => { if (admin()) api("GET", "/api/messages/undo").then(showUndo).catch(() => {}); };
-  $("n-undo").onclick = async () => {
+  // the record(s) come back as they were (old numbers and places); the first one is shown (selected) again
+  async function undoDelete() {
     try {
       const r = await api("POST", "/api/messages/undo"); showUndo(r.undo);
-      await reload(); indicate();
-      $("n-selinfo").textContent = `${r.restored} record${r.restored > 1 ? "s" : ""} restored`;
+      L.gen++; L.cache.clear(); L.chunks.clear();
+      const j = await fetchRange(0, 1); L.total = j.total; L.all = j.all; L.lt = j.total; L.la = j.all;
+      const ids = r.ids || [], p = params(); p.set("order", $("n-order").value); p.set("id", ids[0]);
+      const at = ids.length ? (await api("GET", "/api/messages/locate?" + p)).index : -1;
+      L.gone = false;
+      if (at >= 0) {
+        L.anchor = at; L.sel = new Set(ids); L.selId = ids[0];
+        scrollToIndex(at); render();
+        await select(ids[0], true);
+        $("n-selinfo").textContent = r.kind === "edit" ? "edit undone" : `${r.restored} record${r.restored > 1 ? "s" : ""} restored`;
+      } else {
+        render(); indicate();
+        $("n-selinfo").textContent = (r.kind === "edit" ? "edit undone" : `${r.restored} record${r.restored > 1 ? "s" : ""} restored`) + " (not in the current filter)";
+      }
+      indicate();
     } catch (e) { alert(e.message); loadUndo(); }
-  };
+  }
+  $("n-undo").onclick = undoDelete;
+  $("ld-undo").onclick = undoDelete;
   // ---- Database dialog (administrators): compact, export, import ----
   const ddlg = $("db-dlg"), dmsg = (t) => { $("db-msg").textContent = t; };
   const fmtB = (n) => (n < 1024 ? n + " B" : n < 1048576 ? (n / 1024).toFixed(1) + " kB" : (n / 1048576).toFixed(1) + " MB");
@@ -592,8 +648,8 @@
     } catch (e) { dmsg("Not imported: " + e.message); }
   };
   const showDbBtn = () => { $("n-db").hidden = !admin(); };
-  $("n-delete").onclick = deleteSelected;
-  $("ld-delete").onclick = deleteSelected;
+  $("n-delete").onclick = () => deleteSelected(false);
+  $("ld-delete").onclick = () => deleteSelected(true); // no question asked: UNDO is next to it
   $("ld-report").onclick = () => { if (L.selId) addToReport([L.selId]); };
 
   // ---- the report list ----
@@ -619,6 +675,7 @@
   }
   $("rev-in").addEventListener("input", () => setRevSource(null));
   $("rev-out").addEventListener("input", updateApply);
+  $("rev-sel").addEventListener("mousedown", (e) => e.preventDefault()); // (a click must not clear the selection in the message)
   $("rev-sel").onclick = () => {
     const sel = window.getSelection(), t = String(sel);
     if (!t) return;
@@ -651,7 +708,7 @@
 
   // ---- live updates ----
   NX.listen("record", (r) => {
-    if (r && (r.action === "delete" || r.action === "restore")) loadUndo();
+    if (r && (r.action === "delete" || r.action === "restore" || r.action === "update")) loadUndo();
     clearTimeout(L.timer);
     if (NX.state.tab === "log") { L.timer = setTimeout(refresh, 400); return; }
     if (L.loaded && filterOn()) L.timer = setTimeout(liveCounts, 1000); // keep the "new hidden" count and the tab dot current

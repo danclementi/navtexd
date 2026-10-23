@@ -383,12 +383,22 @@ func (s *Store) Get(id int64) (Record, bool) {
 func (s *Store) Update(r Record) (Record, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.updateLocked(r, "")
+}
+
+// updateLocked is Update with the store locked; a non-empty desc also saves the old record on the undo stack.
+func (s *Store) updateLocked(r Record, desc string) (Record, error) {
 	old, ok := s.byID[r.ID]
 	if !ok {
 		return Record{}, ErrNotFound
 	}
 	if old.Version != r.Version {
 		return Record{}, ErrConflict
+	}
+	if desc != "" {
+		if err := s.archiveEdit(old, desc); err != nil {
+			return Record{}, err
+		}
 	}
 	r.Version++
 	normalize(&r)
@@ -401,6 +411,14 @@ func (s *Store) Update(r Record) (Record, error) {
 		s.sortRecs()
 	}
 	return r, nil
+}
+
+// UpdateUndoable is Update for an edit by the operator: the record as it was is saved first, so that Undo can bring it back
+// (desc says what was changed).
+func (s *Store) UpdateUndoable(r Record, desc string) (Record, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.updateLocked(r, desc)
 }
 
 // Delete removes records; it returns how many existed.
@@ -490,6 +508,30 @@ func (s *Store) Query(f Filter) ([]Record, int) {
 		out[i] = *s.recs[k]
 	}
 	return out, total
+}
+
+// Locate returns the position of record id in the list f selects (ordered as Query would, Limit and Offset ignored), or -1
+// when it is not in it.
+func (s *Store) Locate(f Filter, id int64) int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var idx []int64
+	for _, r := range s.recs {
+		if f.match(r) {
+			idx = append(idx, r.ID)
+		}
+	}
+	if f.Newest {
+		for i, j := 0, len(idx)-1; i < j; i, j = i+1, j-1 {
+			idx[i], idx[j] = idx[j], idx[i]
+		}
+	}
+	for i, v := range idx {
+		if v == id {
+			return i
+		}
+	}
+	return -1
 }
 
 // Compact rewrites the message file with only the live records.

@@ -507,3 +507,8 @@ button.mw:disabled, button.mw:disabled:hover { cursor: default; opacity: 1; colo
 .chmini .chip { padding: 0 2px; font-size: 12px; }
 .specgrp.sel { border-color: var(--accent, #2a6fdb); }
 #tab-status #chlines { flex: 0 0 auto; margin-bottom: 8px; }
+
+.dlgsep { display: inline-block; width: 14px; }
+/* the record pop-up: only the controls, the message and the shift reverser boxes can be selected */
+#log-dlg, #log-dlg * { -webkit-user-select: none; user-select: none; }
+#log-dlg #rec-text, #log-dlg #rec-text *, #log-dlg input, #log-dlg textarea { -webkit-user-select: text; user-select: text; }

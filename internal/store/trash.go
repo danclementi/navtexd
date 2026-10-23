@@ -19,15 +19,33 @@ const (
 type trashLine struct {
 	Batch int64     `json:"b,omitempty"`
 	At    time.Time `json:"at,omitempty"`
+	Kind  string    `json:"k,omitempty"` // "" or "delete": the records were deleted; "edit": the record as it was before an edit
+	Desc  string    `json:"d,omitempty"` // what the edit was, for the Undo button
 	Recs  []*Record `json:"recs,omitempty"`
 	Undo  int64     `json:"u,omitempty"` // this batch was restored
 }
 
-// TrashBatch describes one deletion that can be undone.
+// TrashBatch describes one action (a deletion or an edit of a record) that can be undone. The actions form one stack:
+// Undo takes back the latest.
 type TrashBatch struct {
 	ID    int64
 	At    time.Time
 	Count int
+	Kind  string    // "delete" or "edit"
+	Desc  string    // for an edit: what was changed
+	RecID int64     // the (first) record concerned
+	Rx    time.Time // when that record was received
+}
+
+func batchOf(l trashLine) TrashBatch {
+	b := TrashBatch{ID: l.Batch, At: l.At, Count: len(l.Recs), Kind: "delete", Desc: l.Desc}
+	if l.Kind == "edit" {
+		b.Kind = "edit"
+	}
+	if len(l.Recs) > 0 {
+		b.RecID, b.Rx = l.Recs[0].ID, l.Recs[0].Received
+	}
+	return b
 }
 
 func (s *Store) trashPath() string { return filepath.Join(s.dir, trashFile) }
@@ -85,7 +103,7 @@ func (s *Store) loadTrash() error {
 		}
 	}
 	for _, l := range keep {
-		s.trash = append(s.trash, TrashBatch{ID: l.Batch, At: l.At, Count: len(l.Recs)})
+		s.trash = append(s.trash, batchOf(l))
 		for _, r := range l.Recs {
 			if r.ID >= s.next {
 				s.next = r.ID + 1
@@ -122,11 +140,22 @@ func (s *Store) archive(ids []int64) error {
 	if len(recs) == 0 {
 		return nil
 	}
-	b := TrashBatch{ID: time.Now().UnixNano(), At: time.Now().UTC(), Count: len(recs)}
-	if err := s.appendTrash(trashLine{Batch: b.ID, At: b.At, Recs: recs}); err != nil {
+	l := trashLine{Batch: time.Now().UnixNano(), At: time.Now().UTC(), Recs: recs}
+	if err := s.appendTrash(l); err != nil {
 		return err
 	}
-	s.trash = append(s.trash, b)
+	s.trash = append(s.trash, batchOf(l))
+	return nil
+}
+
+// archiveEdit saves the record as it is before an edit (store locked).
+func (s *Store) archiveEdit(old *Record, desc string) error {
+	c := *old
+	l := trashLine{Batch: time.Now().UnixNano(), At: time.Now().UTC(), Kind: "edit", Desc: desc, Recs: []*Record{&c}}
+	if err := s.appendTrash(l); err != nil {
+		return err
+	}
+	s.trash = append(s.trash, batchOf(l))
 	return nil
 }
 
@@ -159,6 +188,32 @@ func (s *Store) Undo() ([]Record, error) {
 	})
 	if err != nil {
 		return nil, err
+	}
+	if last.Kind == "edit" { // the record goes back to how it was before the edit
+		var out []Record
+		for _, r := range recs {
+			if cur, ok := s.byID[r.ID]; ok {
+				r.Version = cur.Version + 1 // clients that kept the edited copy refetch it
+				if err := s.appendOp(op{Op: "put", R: r}); err != nil {
+					return out, err
+				}
+				*cur = *r
+			} else { // (deleted since, and that deletion is no longer on the stack)
+				r.Version++
+				if err := s.appendOp(op{Op: "put", R: r}); err != nil {
+					return out, err
+				}
+				s.byID[r.ID] = r
+				s.recs = append(s.recs, r)
+			}
+			out = append(out, *r)
+		}
+		s.sortRecs()
+		if err := s.appendTrash(trashLine{Undo: last.ID}); err != nil {
+			return out, err
+		}
+		s.trash = s.trash[:len(s.trash)-1]
+		return out, nil
 	}
 	var out []Record
 	for _, r := range recs {

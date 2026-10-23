@@ -87,3 +87,82 @@ func TestExportImport(t *testing.T) {
 		t.Errorf("garbage must be refused and change nothing: %v %d", err, b.Count())
 	}
 }
+
+// A restored record returns to its old place in the list, and Locate finds it in either order.
+func TestUndoRestoresPlace(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []int64
+	for i := 0; i < 5; i++ {
+		r, _ := s.Add(Record{Received: time.Date(2026, 1, 1, 0, i, 0, 0, time.UTC), Kind: "message", B1: "E"})
+		ids = append(ids, r.ID)
+	}
+	s.Delete(ids[2])
+	if s.Locate(Filter{}, ids[2]) != -1 {
+		t.Fatal("deleted record still located")
+	}
+	rs, err := s.Undo()
+	if err != nil || len(rs) != 1 || rs[0].ID != ids[2] {
+		t.Fatalf("undo: %v %v", rs, err)
+	}
+	if i := s.Locate(Filter{}, ids[2]); i != 2 {
+		t.Fatalf("oldest first: index %d, want 2", i)
+	}
+	if i := s.Locate(Filter{Newest: true}, ids[0]); i != 4 {
+		t.Fatalf("newest first: index %d, want 4", i)
+	}
+	if i := s.Locate(Filter{B1: "X"}, ids[2]); i != -1 {
+		t.Fatalf("filtered out: index %d", i)
+	}
+}
+
+// Edits go on the same undo stack as deletions: Undo takes back the latest of either.
+func TestUndoEdit(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, _ := s.Add(Record{Received: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Kind: "message", B1: "E", NavArea: 4})
+	b, _ := s.Add(Record{Received: time.Date(2026, 1, 1, 0, 1, 0, 0, time.UTC), Kind: "message", B1: "E"})
+	a.B1 = "F"
+	a, err = s.UpdateUndoable(a, "B1 change")
+	if err != nil || a.B1 != "F" {
+		t.Fatalf("edit: %+v %v", a, err)
+	}
+	s.Delete(b.ID)
+	if last, _ := s.LastDeletion(); last.Kind != "delete" || last.RecID != b.ID {
+		t.Fatalf("last action %+v", last)
+	}
+	if _, err := s.Undo(); err != nil { // the deletion first
+		t.Fatal(err)
+	}
+	last, ok := s.LastDeletion()
+	if !ok || last.Kind != "edit" || last.Desc != "B1 change" || last.RecID != a.ID || !last.Rx.Equal(a.Received) {
+		t.Fatalf("last action %+v %v", last, ok)
+	}
+	if _, err := s.UpdateUndoable(Record{ID: a.ID, Version: 0}, "x"); err != ErrConflict {
+		t.Fatalf("a stale edit must conflict and leave no undo entry: %v", err)
+	}
+	rs, err := s.Undo()
+	if err != nil || len(rs) != 1 || rs[0].B1 != "E" || rs[0].NavArea != 4 {
+		t.Fatalf("undo edit: %+v %v", rs, err)
+	}
+	got, _ := s.Get(a.ID)
+	if got.B1 != "E" || got.Version <= a.Version {
+		t.Fatalf("record after undo %+v (edited version %d)", got, a.Version)
+	}
+	if _, ok := s.LastDeletion(); ok {
+		t.Fatal("stack should be empty")
+	}
+	s.Close()
+	s, err = Open(dir) // survives a restart
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = s.Get(a.ID); got.B1 != "E" {
+		t.Fatalf("after reopening: %+v", got)
+	}
+}
