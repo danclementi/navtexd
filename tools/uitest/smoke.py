@@ -81,7 +81,7 @@ try:
         check("undo of the deletion: same record, same place", hexof(pg) == h3 and num(pg) == (3, 6), title(pg))
         # the station area: fixed fields, no distance or bearing, at most two candidates plus the list
         info = pg.inner_text("#rec-info"); pg.screenshot(path="/tmp/rec.png")
-        check("pop-up has Set by, no distance/bearing", "Set by" in info and "Distance" not in info and "bearing" not in info.lower() and " km" not in info, info)
+        check("pop-up has Set by, no distance/bearing", "Set by" in info and "Msg ID#" in info and "Distance" not in info and "bearing" not in info.lower() and " km" not in info, info)
         check("at most two candidate buttons plus one for the list", pg.locator("#rec-info .cands button").count() <= 3, pg.locator("#rec-info .cands button").count())
         check("time slot text", "time slot" in info, info)
         # Use selection

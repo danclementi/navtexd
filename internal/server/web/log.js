@@ -281,14 +281,8 @@
     const r = L.rec;
     updateNav();
     showText();
-    const dl = el("dl", { class: "dlginfo" });
-    const add = (k, v) => { dl.append(el("dt", { text: k }), el("dd", {}, v)); };
-    add("Received", NX.stamp(Date.parse(r.rx)) + " UTC");
-    add("Frequency", r.ch + " kHz");
-    add("Header", (r.b1 || "?") + (r.b2 || "?") + (r.ser || "??"));
-    add("Quality", r.q.toFixed(1));
-    add("Station", r.st);
-    add("Set by", (r.im ? `${r.im} (score ${r.is.toFixed(1)})` : r.man ? "operator" : "not set") + (r.im && r.man ? "; B1 / NAVAREA set by operator" : ""));
+    // fixed grid, three rows of three label/value pairs; values never wrap, so nothing moves
+    const val = (t, tip) => el("span", { class: "v", text: t, title: tip || t });
     // B1 and NAVAREA can be set by the operator here (and only here)
     const fieldIn = (f, val, len, ok, title) => {
       const inp = el("input", { type: "text", class: "mini", maxlength: String(len), value: val, disabled: !admin(), title });
@@ -301,13 +295,17 @@
       };
       return inp;
     };
-    add("B1 / NAVAREA", el("span", { class: "nowrap" }, fieldIn("b1", r.b1 || "", 1, (v) => /^[A-Za-z?]$/.test(v), "Station ID letter (B1) set by the operator"), " / ", fieldIn("area", String(r.area || ""), 2, (v) => /^\d{1,2}$/.test(v), "NAVAREA number set by the operator")));
-    if (r.sfix) add("Start", `${r.sfix} read as ZCZC (recognized by its position and what follows)`);
-    if (r.rev && r.rev.length) add("Revised", `${r.rev.length} stretch${r.rev.length > 1 ? "es" : ""} replaced by the operator (shown in <angle brackets>)`);
+    const b1na = el("span", { class: "nowrap" }, fieldIn("b1", r.b1 || "", 1, (v) => /^[A-Za-z?]$/.test(v), "Station ID letter (B1) set by the operator"), " / ", fieldIn("area", String(r.area || ""), 2, (v) => /^\d{1,2}$/.test(v), "NAVAREA number set by the operator"));
+    const setBy = (r.im ? `${r.im} (score ${r.is.toFixed(1)})` : r.man ? "operator" : "not set") + (r.im && r.man ? "; B1 / NAVAREA set by operator" : "");
     const cm = el("input", { type: "text", value: r.cmt || "", maxlength: "120", disabled: !admin(), placeholder: "comment" });
     cm.onchange = () => patch({ cmt: cm.value });
     cm.onkeydown = (e) => { if (e.key === "Enter") cm.blur(); e.stopPropagation(); };
-    add("Comment", cm);
+    const notes = [r.sfix ? `Start: ${r.sfix} read as ZCZC (recognized by its position and what follows)` : "", r.rev && r.rev.length ? `${r.rev.length} stretch${r.rev.length > 1 ? "es" : ""} replaced by the operator (shown in <angle brackets>)` : ""].filter(Boolean).join("\n");
+    const dl = el("dl", { class: "dlginfo" });
+    const add = (k, v) => dl.append(el("dt", { text: k }), el("dd", {}, v));
+    add("Msg Start", val(NX.stamp(Date.parse(r.rx)) + " UTC")); add("B1 / NAVAREA", b1na); add("Set by", val(setBy));
+    add("Frequency", val(r.ch + " kHz")); add("Msg Header", val((r.b1 || "?") + (r.b2 || "?") + (r.ser || "??"), notes || undefined)); add("Comment", cm);
+    add("Station", val(r.st)); add("Msg ID#", val(NX.hex(r.id), `Quality ${r.q.toFixed(1)}`)); add("", ""); add("", "");
     const box = $("rec-info");
     box.replaceChildren(dl);
     candidates(r, box).catch(() => {});
@@ -336,6 +334,7 @@
     }
     const tip = "Identify the record as this station (sets B1 and NAVAREA to its own). The identification is marked \"forced ID\" when the message text does not support it.";
     const wrap = el("div", { class: "cands" });
+    if (pick.length) wrap.append(el("span", { class: "small", text: "Suggested" }));
     for (const c of pick) {
       const b = el("button", { text: "Use", disabled: !admin(), title: tip });
       b.onclick = () => useCandidate(c.id);

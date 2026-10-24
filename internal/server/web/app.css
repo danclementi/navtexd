@@ -362,7 +362,11 @@ dialog#log-dlg { width: min(1000px, 96vw); height: min(780px, 94vh); padding: 0;
 dialog#log-dlg[open] { display: flex; flex-direction: column; }
 dialog#log-dlg::backdrop { background: rgba(0, 0, 0, .45); }
 #log-dlg .ldinfo { padding: 0 0 4px; border-bottom: 1px solid var(--line); }
-#log-dlg .ldinfo .dlginfo { grid-template-columns: auto 1fr auto 1fr auto 1fr; }
+#log-dlg .ldinfo .dlginfo { grid-template-columns: auto 16em auto 7em auto minmax(0, 1fr); align-items: center; }
+#log-dlg .ldinfo .dlginfo dd { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#log-dlg .ldinfo .dlginfo .v { display: block; overflow: hidden; text-overflow: ellipsis; }
+#log-dlg .ldinfo .dlginfo dd input:not(.mini) { width: 100%; box-sizing: border-box; }
+#log-dlg .cands select { width: 15em; }
 #log-dlg .ldinfo input[type=text] { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 1px 4px; width: 100%; }
 #log-dlg .ldinfo input.mini { width: 2.6em; text-align: center; }
 #log-dlg .ldinfo input.bad { background: color-mix(in srgb, var(--bad) 30%, transparent); }
