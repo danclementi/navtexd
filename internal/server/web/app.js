@@ -516,19 +516,23 @@
   // ---- decoding channels ----
   // The server decodes up to N channels (config.Channels). state.* holds the selected channel's live data; state.chans[i] holds each
   // channel's own (controls, meters, run, spectrum, text, lines), kept up to date from the events.
-  // a click on a small spectrum selects its channel; a double-click also shows the Spectrum tab
+  // a click on a small spectrum selects its channel (nothing else); a double-click also shows the Spectrum tab
   for (let i = 0; i < N; i++) {
-    let t = 0; // a click selects the channel and opens Monitor (after a moment, so that a double-click can go to Spectrum instead)
     box(i).addEventListener("click", (e) => {
       if (e.target.closest(".m-lock, .m-sync")) return;
-      selectChan(i); clearTimeout(t);
-      t = setTimeout(() => { if (state.tab !== "status") document.querySelector("#tabs button[data-tab=status]").click(); }, 250);
+      selectChan(i);
     });
     box(i).addEventListener("dblclick", (e) => {
       if (e.target.closest(".m-lock, .m-sync")) return;
-      clearTimeout(t); selectChan(i); document.querySelector("#tabs button[data-tab=spectrum]").click();
+      selectChan(i); document.querySelector("#tabs button[data-tab=spectrum]").click();
     });
-    M(i, ".m-lock").onclick = (e) => { e.stopPropagation(); const c = state.chans[i].controls; control("autotune", !(c ? c.autotune : true), i); };
+    // LOCKED -> MANUAL selects the channel and opens Spectrum, where the carrier is adjusted; MANUAL -> AUTO changes nothing else
+    M(i, ".m-lock").onclick = (e) => {
+      e.stopPropagation();
+      const c = state.chans[i].controls, auto = c ? c.autotune : true;
+      control("autotune", !auto, i);
+      if (auto && state.role === "admin") { selectChan(i); document.querySelector("#tabs button[data-tab=spectrum]").click(); }
+    };
     M(i, ".m-sync").onclick = (e) => { e.stopPropagation(); control("resync", undefined, i); };
     for (const b of [M(i, ".m-lock"), M(i, ".m-sync")]) b.ondblclick = (e) => e.stopPropagation();
   }

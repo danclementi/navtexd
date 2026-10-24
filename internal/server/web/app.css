@@ -256,7 +256,7 @@ input.entry, #c-comment { background: var(--entry); color: var(--ink); border: 2
 /* message text: teleprinter style */
 .ticker, pre#text, pre#rec-text, pre#rev-out, pre#rp-text, #rev-in { font-family: var(--mono); font-size: 13px; background: var(--msg-bg); color: var(--msg-ink); border-color: var(--spec-grid); }
 .ticker { height: 28px; line-height: 20px; }
-.fix { background: color-mix(in srgb, var(--msg-ink) 22%, transparent); }
+.fix { background: var(--msg-ink); color: var(--msg-bg); } /* autocorrected words: reverse video */
 #rec-text .linkbtn, #rev-sug .linkbtn { font-family: var(--mono); }
 
 /* status bar */

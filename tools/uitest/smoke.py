@@ -94,9 +94,14 @@ try:
         # Ctrl-A in the table
         pg.locator("#logscroll tbody tr").first.locator("td").nth(1).click(); pg.keyboard.press("Control+a"); pg.wait_for_timeout(800)
         check("Ctrl-A selects the whole list", "6 selected" in pg.inner_text("#n-selinfo") or "5 selected" in pg.inner_text("#n-selinfo"), pg.inner_text("#n-selinfo"))
-        # a click on a small spectrum opens Monitor
+        # a click on a small spectrum only selects the channel
         pg.click("#spec-mini"); pg.wait_for_timeout(600)
-        check("click on the small spectrum opens Monitor", pg.evaluate("document.querySelector('#tabs button.on').dataset.tab") == "status")
+        check("click on the small spectrum does not change the tab", pg.evaluate("document.querySelector('#tabs button.on').dataset.tab") == "log")
+        pg.click(".specgrp[data-ch='0'] .m-lock"); pg.wait_for_timeout(800)
+        check("LOCKED -> MANUAL opens Spectrum", pg.evaluate("document.querySelector('#tabs button.on').dataset.tab") == "spectrum")
+        pg.click("button[data-tab=log]"); pg.wait_for_timeout(300)
+        pg.click(".specgrp[data-ch='0'] .m-lock"); pg.wait_for_timeout(800)
+        check("MANUAL -> AUTO stays on the tab", pg.evaluate("document.querySelector('#tabs button.on').dataset.tab") == "log")
         b.close()
 finally:
     srv.terminate()
