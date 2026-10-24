@@ -263,7 +263,10 @@
       <label class="field">Kind <select id="f-kind"><option value="">all</option><option value="message">message</option><option value="incomplete">incomplete</option><option value="fragment">fragment</option></select></label>
     </div>
     <div class="fcol fright">
-      <div class="frowd"><label class="field">From <input id="f-from" class="iso" type="text" placeholder="yyyy-mm-dd"></label> <label class="field">To <input id="f-to" class="iso" type="text" placeholder="yyyy-mm-dd"></label></div>
+      <div class="fdt">
+        <span>From</span><input id="f-from" class="iso" type="text" placeholder="yyyy-mm-dd"><input id="f-fromt" class="tm" type="text" maxlength="5" placeholder="hh:mm" title="Time of day, 24 hours (optional: without it From is the start of the day)"><span class="dim">UTC</span>
+        <span>To</span><input id="f-to" class="iso" type="text" placeholder="yyyy-mm-dd"><input id="f-tot" class="tm" type="text" maxlength="5" placeholder="hh:mm" title="Time of day, 24 hours (optional: without it To is the end of the day)"><span class="dim">UTC</span>
+      </div>
       <span class="field" id="f-km-wrap">Distance <input id="f-kmin" type="number" min="0" step="any" placeholder="0" title="Minimum distance (km)"> to <input id="f-kmax" type="number" min="0" step="any" placeholder="&#8734;" title="Maximum distance (km); empty = no limit"> km</span>
       <div class="frowd"><label class="check"><input id="f-unid" type="checkbox"> UNID only</label> <label class="check"><input id="f-omit" type="checkbox"> Omit UNID</label></div>
       <label class="field grow">Body text <input id="f-text" type="text" placeholder="search the message text"></label>

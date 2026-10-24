@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -555,5 +556,18 @@ func TestStationTableImportKeepsBackup(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(filepath.Join(dir, "backups", m["backup"].(string))); len(got) == 0 {
 		t.Error("the previous table is not in the backups folder")
+	}
+}
+
+// From / To take a date or a date and minute; To includes the whole day or the whole minute named.
+func TestLogFilterTimes(t *testing.T) {
+	for _, c := range []struct{ to, want string }{
+		{"2026-09-29", "2026-09-30T00:00:00Z"},
+		{"2026-09-29T00:40", "2026-09-29T00:41:00Z"},
+	} {
+		f, err := logFilter(url.Values{"from": {"2026-09-29T00:10"}, "to": {c.to}}, false)
+		if err != nil || f.To.UTC().Format(time.RFC3339) != c.want || f.From.UTC().Format(time.RFC3339) != "2026-09-29T00:10:00Z" {
+			t.Errorf("to=%s: %v %v %v", c.to, f.From, f.To, err)
+		}
 	}
 }

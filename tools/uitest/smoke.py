@@ -79,6 +79,16 @@ try:
         check("delete leaves 5", pg.inner_text("#n-total") == "5", pg.inner_text("#n-total"))
         pg.click("#ld-undo"); pg.wait_for_timeout(1200)
         check("undo of the deletion: same record, same place", hexof(pg) == h3 and num(pg) == (3, 6), title(pg))
+        # From / To keep date and time (UTC) between visits
+        pg.keyboard.press("Escape"); pg.wait_for_timeout(300)
+        pg.click("#f-edit"); pg.fill("#f-fromt", ""); pg.type("#f-fromt", "3299")
+        check("impossible time digits are refused", pg.input_value("#f-fromt") == "29", pg.input_value("#f-fromt"))
+        pg.fill("#f-from", "2026-09-29"); pg.fill("#f-fromt", "00:10"); pg.fill("#f-to", "2026-09-29")
+        for i in ("#f-from", "#f-fromt", "#f-to"): pg.dispatch_event(i, "change")
+        pg.reload(); pg.wait_for_timeout(1200); pg.click("button[data-tab=log]"); pg.wait_for_timeout(500); pg.click("#f-edit")
+        check("From and To are remembered", pg.input_value("#f-from") == "2026-09-29" and pg.input_value("#f-fromt") == "00:10" and pg.input_value("#f-to") == "2026-09-29", pg.input_value("#f-fromt"))
+        pg.click("#f-clear"); pg.dispatch_event("#f-from", "change"); pg.dispatch_event("#f-fromt", "change"); pg.dispatch_event("#f-to", "change"); pg.click("#f-apply"); pg.wait_for_timeout(600)
+        open_row(pg, 2)
         # the station area: fixed fields, no distance or bearing, at most two candidates plus the list
         info = pg.inner_text("#rec-info"); pg.screenshot(path="/tmp/rec.png")
         check("pop-up has Set by, no distance/bearing", "Set by" in info and "Msg ID#" in info and "Distance" not in info and "bearing" not in info.lower() and " km" not in info, info)

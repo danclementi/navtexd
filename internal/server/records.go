@@ -89,8 +89,13 @@ func logFilter(q url.Values, withDist bool) (store.Filter, error) {
 	if f.To, err = parseTime(q.Get("to")); err != nil {
 		return f, err
 	}
-	if !f.To.IsZero() && len(q.Get("to")) == 10 {
-		f.To = f.To.Add(24 * time.Hour) // a date means the whole day
+	if !f.To.IsZero() {
+		switch len(q.Get("to")) {
+		case 10:
+			f.To = f.To.Add(24 * time.Hour) // a date means the whole day
+		case 16:
+			f.To = f.To.Add(time.Minute) // yyyy-mm-ddThh:mm includes that minute
+		}
 	}
 	if withDist {
 		f.MaxDistance, _ = strconv.ParseFloat(q.Get("maxkm"), 64)

@@ -27,9 +27,14 @@
   }
   function fixEmpty(k) { if (pickBoxes(k).every((x) => !x.checked)) { for (const x of pickBoxes(k)) x.checked = true; $("p-" + k).classList.remove("empty"); pickRead(k); $("f-" + k).dispatchEvent(new Event("input", { bubbles: true })); } }
 
-  const ids = ["freq", "rcv", "area", "b1", "kind", "text", "from", "to", "kmin", "kmax"];
+  const ids = ["freq", "rcv", "area", "b1", "kind", "text", "from", "fromt", "to", "tot", "kmin", "kmax"];
   // dates are typed and shown as yyyy-mm-dd (like the UTC column) with a calendar button for picking
   const isoOk = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(Date.parse(v + "T00:00:00Z")) && new Date(v + "T00:00:00Z").toISOString().slice(0, 10) === v;
+  // From / To: a date (calendar button) and an optional time of day, hh:mm (24 hours, UTC). Without a time From is the start and
+  // To the end of the day. The four boxes are remembered between visits.
+  const tmOk = (v) => /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
+  const KEEP = "nx-log-";
+  const stamp = (k) => { const d = $("f-" + k).value.trim(), t = $("f-" + k + "t").value.trim(); return !isoOk(d) ? "" : tmOk(t) ? d + "T" + t : d; };
   function isoField(inp) {
     const wrap = document.createElement("span"); wrap.className = "isodate";
     const btn = document.createElement("button"); btn.type = "button"; btn.className = "cal"; btn.title = "Pick a date from a calendar"; btn.setAttribute("aria-label", "Pick a date");
@@ -40,10 +45,25 @@
     pick.onchange = () => { if (pick.value) { inp.value = pick.value; inp.classList.remove("bad"); inp.dispatchEvent(new Event("input", { bubbles: true })); inp.dispatchEvent(new Event("change", { bubbles: true })); } };
     inp.addEventListener("input", () => { const d = inp.value.replace(/[^\d-]/g, ""); if (d !== inp.value) inp.value = d; inp.classList.toggle("bad", inp.value !== "" && inp.value.length >= 10 && !isoOk(inp.value)); });
   }
-  for (const id of ["n-date", "f-from", "f-to"]) isoField($(id));
+  isoField($("n-date"));
+  isoField($("f-from")); isoField($("f-to"));
+  for (const id of ["f-from", "f-fromt", "f-to", "f-tot"]) {
+    try { const v = localStorage.getItem(KEEP + id); if (v) $(id).value = v; } catch (e) { /* no storage */ }
+    $(id).addEventListener("change", () => { try { localStorage.setItem(KEEP + id, $(id).value.trim()); } catch (e) { /* no storage */ } });
+    if (id.endsWith("t")) { // 24-hour time: impossible digits are refused as they are typed (hh 00-23, mm 00-59), the colon is added
+      const el = $(id);
+      el.addEventListener("input", () => {
+        const raw = el.value.replace(/\D/g, "").slice(0, 4); let d = "";
+        for (const ch of raw) { const n = d.length, x = +ch; if (n === 0 ? x > 2 : n === 1 ? (d[0] === "2" && x > 3) : n === 2 ? x > 5 : false) break; d += ch; }
+        el.value = d.length > 2 ? d.slice(0, 2) + ":" + d.slice(2) : d;
+        el.classList.remove("bad");
+      });
+      el.addEventListener("blur", () => { const v = el.value.trim(); if (v && !tmOk(v)) el.classList.add("bad"); });
+    }
+  }
   function params() {
     const p = new URLSearchParams();
-    for (const k of ids) { let v = $("f-" + k).value.trim(); if ((k === "from" || k === "to") && !isoOk(v)) v = ""; if (v) p.set(k === "freq" ? "freq" : k === "area" ? "navarea" : k === "kmin" ? "minkm" : k === "kmax" ? "maxkm" : k, v); }
+    for (const k of ids) { let v = $("f-" + k).value.trim(); if (k === "fromt" || k === "tot") continue; if (k === "from" || k === "to") v = stamp(k); if (v) p.set(k === "freq" ? "freq" : k === "area" ? "navarea" : k === "kmin" ? "minkm" : k === "kmax" ? "maxkm" : k, v); }
     if ($("f-unid").checked) p.set("unid", "1");
     if ($("f-omit").checked) p.set("omitunid", "1");
     return $("f-on").checked ? p : new URLSearchParams(); // switched off: the settings stay in the boxes but nothing is filtered
@@ -526,7 +546,7 @@
     if (v("area")) parts.push("NAVAREA " + v("area").replace(/,/g, ", "));
     if (v("b1")) parts.push("ID letter " + v("b1").replace(/,/g, ", "));
     if (v("kind")) parts.push("Kind " + v("kind"));
-    if (v("from") || v("to")) parts.push("Dates " + (v("from") || "\u2026") + " to " + (v("to") || "\u2026"));
+    if (v("from") || v("to")) { const t = (k) => v(k) ? v(k) + (tmOk(v(k + "t")) ? " " + v(k + "t") : "") : "\u2026"; parts.push("Dates " + t("from") + " to " + t("to") + " UTC"); }
     if (v("kmin") || v("kmax")) parts.push("Distance " + (v("kmin") || "0") + "\u2013" + (v("kmax") || "\u221e") + " km");
     if ($("f-unid").checked) parts.push("UNID only");
     if ($("f-omit").checked) parts.push("UNID omitted");
