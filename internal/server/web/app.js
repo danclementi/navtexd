@@ -603,6 +603,11 @@
   });
 
   // ---- options ----
+  // Receiver, Decoder and Down-converter settings are shown only when "sudo" was typed in the admin box (see below); the choice is
+  // kept in this browser. More groups can be added to ADVANCED.
+  const ADVANCED = ["receiver", "decoder", "ddc"];
+  const advOn = () => { try { return localStorage.getItem("nx-advanced") === "1"; } catch (e) { return false; } };
+  NX.advOn = advOn;
   let fields = [], optHist = [], optPage = "station", optPages = new Map(), optMsgTimer = 0;
   async function loadOptions(force) {
     if (!force && pendingCount()) return; // keep unsaved edits when coming back to this tab
@@ -663,6 +668,10 @@
         };
         bar2.append(pb, rb); page.appendChild(bar2);
       }
+      if (mch && advOn()) {
+        const n = document.createElement("p"); n.className = "small advnote"; n.textContent = "Advanced options are shown (Receiver, Decoder, Down-converter). To hide them again, click \u201cadmin\u201d at the bottom right and type exit.";
+        page.insertBefore(n, page.firstChild);
+      }
       if (id === "logging") {
         const n = document.createElement("p"); n.className = "small"; n.textContent = "These settings are shared by all channels. Dropping fragments (min_fragment_chars, min_fragment_words and the related settings under Message segmentation) is set separately for each channel, on its Channel tab.";
         page.appendChild(n);
@@ -670,6 +679,7 @@
       }
       for (const g of gs) {
         if (!groups.has(g)) continue;
+        if (!advOn() && ADVANCED.includes(g.replace(/^extra\.\d+\.?/, ""))) continue;
         const fs = document.createElement("fieldset"); fs.className = "optgrp"; if (g.startsWith("input.")) fs.dataset.src = g.slice(6);
         const gx = /^extra\.(\d+)\.input\.(.+)$/.exec(g); if (gx) { fs.dataset.srcx = gx[1]; fs.dataset.src2 = gx[2]; }
         const lg = document.createElement("legend"); const gb = g.replace(/^extra\.\d+\.?/, ""); // the group without its channel prefix
@@ -783,6 +793,7 @@
   const typed = (f, inp) => (f.kind === "bool" ? inp.checked : f.kind === "int" || f.kind === "float" ? Number(inp.value) : inp.value);
   const valueOf = (inp) => (inp.type === "checkbox" ? String(inp.checked) : inp.value);
   // pending (unsaved) changes: counted per sub-tab; the sub-tab gets a dot, the Save button the total
+  NX.reloadOptions = () => { if (state.tab === "options" && !pendingCount()) loadOptions(true); }; // (unsaved edits are kept; the new view then shows at the next visit)
   const pendingCount = () => { let n = 0; for (const p of optPages.values()) n += p.querySelectorAll(".opt.changed").length; return n; };
   function updatePending() {
     let n = 0;
@@ -872,4 +883,19 @@
   $("about-ver").onclick = () => { $("about-contact").hidden = window.NX.state.role !== "admin"; dlg.showModal(); };
   $("about-close").onclick = () => dlg.close();
   dlg.addEventListener("mousedown", (e) => { if (e.target === dlg) dlg.close(); });
+  // the "admin" badge opens a box with one unlabelled field: sudo shows the advanced options, exit hides them again
+  const adm = $("adm-dlg"), inp = $("adm-in"), role = $("role");
+  let changed = false;
+  role.addEventListener("click", () => { if (window.NX.state.role !== "admin") return; inp.value = ""; changed = false; adm.showModal(); inp.focus(); });
+  inp.addEventListener("keydown", (e) => {
+    e.stopPropagation();
+    if (e.key !== "Enter") return;
+    const w = inp.value.trim().toLowerCase(); inp.value = "";
+    if (w !== "sudo" && w !== "exit") return;
+    try { localStorage.setItem("nx-advanced", w === "sudo" ? "1" : "0"); } catch (err) { /* no storage */ }
+    changed = true;
+  });
+  $("adm-close").onclick = () => adm.close();
+  adm.addEventListener("mousedown", (e) => { if (e.target === adm) adm.close(); });
+  adm.addEventListener("close", () => { if (changed) { changed = false; if (window.NX.reloadOptions) window.NX.reloadOptions(); } });
 })();

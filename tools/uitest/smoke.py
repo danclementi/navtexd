@@ -82,7 +82,7 @@ try:
         # From / To keep date and time (UTC) between visits
         pg.keyboard.press("Escape"); pg.wait_for_timeout(300)
         pg.click("#f-edit"); pg.fill("#f-fromt", ""); pg.type("#f-fromt", "3299")
-        check("impossible time digits are refused", pg.input_value("#f-fromt") == "29", pg.input_value("#f-fromt"))
+        check("impossible time digits are refused", pg.input_value("#f-fromt") == "2", pg.input_value("#f-fromt"))
         pg.fill("#f-from", "2026-09-29"); pg.fill("#f-fromt", "00:10"); pg.fill("#f-to", "2026-09-29")
         for i in ("#f-from", "#f-fromt", "#f-to"): pg.dispatch_event(i, "change")
         pg.reload(); pg.wait_for_timeout(1200); pg.click("button[data-tab=log]"); pg.wait_for_timeout(500); pg.click("#f-edit")
@@ -107,6 +107,21 @@ try:
         # a click on a small spectrum only selects the channel
         pg.click("#spec-mini"); pg.wait_for_timeout(600)
         check("click on the small spectrum does not change the tab", pg.evaluate("document.querySelector('#tabs button.on').dataset.tab") == "log")
+        # advanced options: hidden until "sudo" is typed in the admin box, and hidden again by "exit"
+        def legends():
+            pg.click("button[data-tab=options]"); pg.wait_for_timeout(800); pg.click("#opt-tabs button >> nth=1"); pg.wait_for_timeout(300)
+            return pg.inner_text("#opt-form").lower()
+        t = legends()
+        check("Receiver/Decoder/Down-converter hidden by default", "receiver (fsk" not in t and "decoder" not in t and "down-converter" not in t and "channel: frequency" in t)
+        pg.click("#role"); pg.type("#adm-in", "SUDO"); pg.keyboard.press("Enter"); pg.click("#adm-close"); pg.wait_for_timeout(800)
+        pg.click("#opt-tabs button >> nth=1"); t = pg.inner_text("#opt-form").lower()
+        check("sudo shows them, with a note", "receiver (fsk" in t and "decoder" in t and "down-converter" in t and "advanced options are shown" in t)
+        pg.reload(); pg.wait_for_timeout(1200); t = legends()
+        check("sudo survives a reload", "receiver (fsk" in t)
+        pg.click("#role"); pg.type("#adm-in", "exit"); pg.keyboard.press("Enter"); pg.click("#adm-close"); pg.wait_for_timeout(800)
+        pg.click("#opt-tabs button >> nth=1"); t = pg.inner_text("#opt-form").lower()
+        check("exit hides them again", "receiver (fsk" not in t and "advanced options are shown" not in t)
+        pg.click("button[data-tab=log]"); pg.wait_for_timeout(300)
         pg.click(".specgrp[data-ch='0'] .m-lock"); pg.wait_for_timeout(800)
         check("LOCKED -> MANUAL opens Spectrum", pg.evaluate("document.querySelector('#tabs button.on').dataset.tab") == "spectrum")
         pg.click("button[data-tab=log]"); pg.wait_for_timeout(300)

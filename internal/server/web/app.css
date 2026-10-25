@@ -522,3 +522,5 @@ input.tm.bad { border-color: var(--bad); }
 #f-dlg .fdt input.iso { width: 100px; }
 #f-dlg .fdt .dim { color: var(--dim); font-size: 12px; }
 #f-dlg .fdt > span:not(.dim) { color: var(--dim); font-size: 13px; }
+#role.ok { cursor: pointer; }
+#adm-in { width: 100%; box-sizing: border-box; }
