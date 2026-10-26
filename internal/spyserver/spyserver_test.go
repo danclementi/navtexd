@@ -134,10 +134,8 @@ func (f *fake) serve(c net.Conn) {
 			f.streaming = v == 1
 		}
 		f.mu.Unlock()
-		if id == 101 {
+		if on { // like the real server, the new I/Q centre is reported once streaming has started
 			f.sync(c)
-		}
-		if on {
 			go f.stream(c)
 		}
 	}

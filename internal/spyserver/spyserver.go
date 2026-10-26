@@ -258,18 +258,23 @@ func (s *Source) setup(ctx context.Context, c net.Conn) error {
 			return err
 		}
 	}
-	// the server confirms the I/Q centre in a client sync
+	// the server reports the new I/Q centre in a client sync once streaming has started (not before), so streaming is
+	// switched on first and the report is checked afterwards
+	if err := s.set(c, setStreamingMode, streamIQOnly); err != nil {
+		return err
+	}
+	if err := s.set(c, setStreamingEnabled, 1); err != nil {
+		return err
+	}
 	if err := s.waitCentre(ctx, want); err != nil {
+		s.set(c, setStreamingEnabled, 0)
 		return err
 	}
 	s.mu.Lock()
 	s.lo = float64(s.last.iqCentre)
 	s.armed = true
 	s.mu.Unlock()
-	if err := s.set(c, setStreamingMode, streamIQOnly); err != nil {
-		return err
-	}
-	return s.set(c, setStreamingEnabled, 1)
+	return nil
 }
 
 // waitCentre waits until a client sync reports the wanted I/Q centre frequency.
