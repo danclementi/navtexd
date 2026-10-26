@@ -30,6 +30,7 @@ type fake struct {
 	refuseRate         bool
 	controlAfterSelect bool   // can_control becomes true only once a receiver is selected (headless SDRconnect)
 	lockCentre         string // if set, device_center_frequency cannot be changed
+	refreshing         int    // the next n answers about the receiver lists are "Refreshing..." (SDRconnect just started)
 	recentre           bool   // the centre follows the VFO when that leaves the span (SDRconnect 1.0.10, 250 kS/s)
 	conn               net.Conn
 	ln                 net.Listener
@@ -139,6 +140,12 @@ func (f *fake) handle(p []byte) {
 	case "get_property":
 		f.mu.Lock()
 		v := f.props[m.Property]
+		if (m.Property == "valid_devices" || m.Property == "active_device") && f.refreshing > 0 {
+			v = "Refreshing..."
+			if m.Property == "active_device" {
+				f.refreshing--
+			}
+		}
 		f.mu.Unlock()
 		f.sendJSON("get_property_response", m.Property, v)
 	case "set_property":
@@ -500,4 +507,47 @@ func TestRecentreThroughVFO(t *testing.T) {
 		t.Errorf("centre %v warn %q", s.CentreHz(), warn)
 	}
 	readN(t, s, 1000)
+}
+
+func TestReconnectAfterRefreshingRunsOnce(t *testing.T) {
+	retryEvery = 100 * time.Millisecond
+	defer func() { retryEvery = 5 * time.Second }()
+	f := newFake(t, 0)
+	var mu sync.Mutex
+	var notes []string
+	o := opts(f.addr())
+	o.Device = "RSPduo"
+	o.Notice = func(level, text string) { mu.Lock(); notes = append(notes, text); mu.Unlock() }
+	s, err := Open(context.Background(), o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	count := func(sub string) int {
+		mu.Lock()
+		defer mu.Unlock()
+		n := 0
+		for _, x := range notes {
+			if strings.Contains(x, sub) {
+				n++
+			}
+		}
+		return n
+	}
+	drop := func(want int) {
+		f.mu.Lock()
+		f.refreshing = 1 // the first attempt finds SDRconnect still starting up and gives up
+		f.conn.Close()
+		f.mu.Unlock()
+		for i := 0; i < 100 && count("is back") < want; i++ {
+			time.Sleep(50 * time.Millisecond)
+		}
+		time.Sleep(600 * time.Millisecond) // a second reconnect loop would show up now
+	}
+	drop(1)
+	drop(2)
+	if count("closed the connection") != 2 || count("is back") != 2 {
+		t.Errorf("closed %d, back %d (want 2 and 2): %v", count("closed the connection"), count("is back"), notes)
+	}
+	readN(t, s, 5000)
 }

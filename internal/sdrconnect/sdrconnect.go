@@ -67,18 +67,19 @@ type Source struct {
 	gen   map[string]int
 	wake  chan struct{} // closed and replaced on every update of props
 
-	stages     []*ddc.Decimator
-	data       chan []complex64
-	cur        []complex64
-	done       chan struct{}
-	once       sync.Once
-	err        error // why the stream ended (read under mu)
-	drops      int
-	lastW      time.Time
-	startedDev bool
-	armed      bool    // the stream is running: changes made by others matter (under mu)
-	lo0        float64 // the centre frequency the channel was set up with
-	radioOff   bool    // SDRconnect reported started = false (under mu)
+	stages       []*ddc.Decimator
+	data         chan []complex64
+	cur          []complex64
+	done         chan struct{}
+	once         sync.Once
+	err          error // why the stream ended (read under mu)
+	drops        int
+	lastW        time.Time
+	startedDev   bool
+	armed        bool    // the stream is running: changes made by others matter (under mu)
+	lo0          float64 // the centre frequency the channel was set up with
+	radioOff     bool    // SDRconnect reported started = false (under mu)
+	reconnecting bool    // a reconnect loop is running (under mu)
 }
 
 func (s *Source) conn() *ws.Conn { s.mu.Lock(); defer s.mu.Unlock(); return s.c }
@@ -143,8 +144,15 @@ func (s *Source) reader(c *ws.Conn) {
 			default:
 				c.Close()
 				s.mu.Lock()
-				s.armed = false
+				stale := s.c != c || s.reconnecting // a connection that a reconnect attempt gave up on closes with an error too
+				if !stale {
+					s.armed = false
+					s.reconnecting = true
+				}
 				s.mu.Unlock()
+				if stale {
+					return
+				}
 				s.say("warn", fmt.Sprintf("SDRconnect closed the connection (%v); trying to reconnect every %s", err, retryEvery))
 				go s.reconnect()
 			}
@@ -262,6 +270,7 @@ var retryEvery = 5 * time.Second
 func (s *Source) reconnect() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	defer func() { s.mu.Lock(); s.reconnecting = false; s.mu.Unlock() }()
 	go func() {
 		select {
 		case <-s.done:
