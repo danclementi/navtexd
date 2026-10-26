@@ -121,7 +121,7 @@ func Open(ctx context.Context, cfg config.Config, opts ...Option) (*Opened, erro
 		}
 		sc := cfg.Input.SDRconnect
 		centre := cfg.LiveCentreHz()
-		s, err := sdrconnect.Open(ctx, sdrconnect.Options{Addr: strings.TrimSpace(sc.Address), Device: sc.Device, RateHz: sc.SampleRateHz, LOHz: centre,
+		s, err := sdrconnect.Open(ctx, sdrconnect.Options{Addr: strings.TrimSpace(sc.Address), Device: sc.Device, RateHz: config.SDRconnectRateHz, LOHz: centre,
 			DialHz: cfg.Channel.FrequencyHz, Antenna: sc.Antenna, LNAState: sc.LNAState, SwapIQ: sc.SwapIQ, Debug: cfg.Output.Verbose, Notice: say})
 		if err != nil {
 			// the messages of a failed set-up are never read by the caller: put them into the error

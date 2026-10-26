@@ -29,7 +29,7 @@
 With `output.verbose` on (Options, Command line), every message sent to and received from SDRconnect (apart from the signal readings) is written to the system log. This shows, for example, whether SDRconnect answers a centre-frequency request and then puts it back.
 
 ## Several channels from one receiver
-The received span is the sample rate (2 MHz gives +-1 MHz), so 518, 490 and 424 kHz are all inside it. Give the first channel the SDRconnect input and set the other channels' `shared_from` to that channel ("same input as Channel 1"): they are decoded from the same stream, each with its own down-converter, and only one connection to SDRconnect is made. (Tested with the stand-in server: a second channel at 490 kHz decodes from the stream of the first.)
+The sample rate is fixed at 250 kS/s (`config.SDRconnectRateHz`; there is no setting), so the received span is +-125 kHz around the centre: 518 and 490 kHz are inside it, 424 kHz is at its very edge. Give the first channel the SDRconnect input and set the other channels' `shared_from` to that channel ("same input as Channel 1"): they are decoded from the same stream, each with its own down-converter, and only one connection to SDRconnect is made. (Tested with the stand-in server: a second channel at 490 kHz decodes from the stream of the first.)
 
 ## Changes made by others while running
 
@@ -39,4 +39,4 @@ The received span is the sample rate (2 MHz gives +-1 MHz), so 518, 490 and 424 
 
 ## Centre frequency (SDRconnect 1.0.10)
 
-Measured with API probes: `device_center_frequency` writes are silently ignored. SDRconnect re-centres only when the tuned frequency (VFO) leaves the received span; the new centre is then VFO plus an offset of its own, except at 250 kS/s where the centre equals the VFO. The centre is never below 0.4 x the sample rate. Hence the set-up tunes the VFO far outside the span and then to the wanted centre (`recentre`), and 250 kS/s is the recommended (default) rate. At other rates the result is checked, and SDRconnect's own centre is used with a warning if it is still off.
+Measured with API probes: `device_center_frequency` writes are silently ignored. SDRconnect re-centres only when the tuned frequency (VFO) leaves the received span; the new centre is then VFO plus an offset of its own, except at 250 kS/s where the centre equals the VFO. The centre is never below 0.4 x the sample rate. Hence the set-up tunes the VFO far outside the span and then to the wanted centre (`recentre`), and the rate is therefore fixed at 250 kS/s (the old `sample_rate_hz` setting is hidden and ignored; older files that contain it still load). The result is checked, and SDRconnect's own centre is used with a warning if it is still off.

@@ -674,7 +674,7 @@ func (r *Runner) openShared(ctx context.Context, owner int, chHz float64) (*sour
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case <-deadline.C:
-			return nil, fmt.Errorf("%s has no input to share (is it running?)", name)
+			return nil, fmt.Errorf("%s has no input to share (it is not running, or it failed to start: see its error)", name)
 		case <-time.After(50 * time.Millisecond):
 		}
 	}

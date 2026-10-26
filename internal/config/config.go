@@ -216,7 +216,7 @@ type HPSDRInput struct {
 type SDRconnectInput struct {
 	Address         string  `json:"address" doc:"host:port of SDRconnect's WebSocket server (SDRconnect: Preferences, WebSocket Server). Empty = 127.0.0.1:5454, i.e. SDRconnect on this computer"`
 	Device          string  `json:"device" doc:"Part of the receiver's name in SDRconnect's list (e.g. RSPduo or a serial number). Empty = the receiver SDRconnect has selected"`
-	SampleRateHz    float64 `json:"sample_rate_hz" unit:"Hz" doc:"I/Q sample rate of the receiver; the program reduces it to 250 kHz. 250000 is recommended: SDRconnect then puts its centre exactly where asked (higher rates add an offset of its own); a higher rate needs more processing" choices:"250000,500000,1000000,2000000"`
+	SampleRateHz    float64 `json:"sample_rate_hz" hidden:"true"` // no longer a setting (always 250000, see SDRconnectRateHz); old files may still have it
 	Antenna         string  `json:"antenna" doc:"Antenna or input of the receiver as SDRconnect names it (e.g. HiZ Port, Tuner 1 50 ohm; a unique part of the name is enough). Empty = leave as it is"`
 	LNAState        int     `json:"lna_state" doc:"LNA state (gain reduction step) of the receiver. -1 = leave as it is"`
 	SwapIQ          bool    `json:"swap_iq" doc:"Exchange I and Q (mirror the spectrum)"`
@@ -305,7 +305,7 @@ func (c Config) SampleRate() float64 {
 	case "hpsdr":
 		return c.Input.HPSDR.SampleRateHz
 	case "sdrconnect":
-		return c.Input.SDRconnect.SampleRateHz
+		return SDRconnectRateHz
 	case "stdin":
 		return c.Input.Stdin.SampleRateHz
 	case "device":
@@ -340,7 +340,7 @@ func defaultInput() Input {
 	return Input{Source: "device", BlockSize: 16384, WatchdogS: 10,
 		Device:     DeviceInput{SampleRateHz: 48000, Channels: 1, LoBelowHz: DefaultCarrierHz, Autotune: true, ManualCarrierHz: DefaultCarrierHz},
 		HPSDR:      HPSDRInput{SampleRateHz: 48000, LoBelowHz: HPSDRCarrierHz, Autotune: true, ManualCarrierHz: HPSDRCarrierHz},
-		SDRconnect: SDRconnectInput{SampleRateHz: 250000, LNAState: -1, LoBelowHz: DefaultCarrierHz, Autotune: true, ManualCarrierHz: DefaultCarrierHz},
+		SDRconnect: SDRconnectInput{SampleRateHz: SDRconnectRateHz, LNAState: -1, LoBelowHz: DefaultCarrierHz, Autotune: true, ManualCarrierHz: DefaultCarrierHz},
 		Stdin:      StdinInput{SampleRateHz: 48000, Channels: 1, PCMFormat: "s16le", LoBelowHz: DefaultCarrierHz, Autotune: true, ManualCarrierHz: DefaultCarrierHz},
 		File:       FileInput{Autotune: true, ManualCarrierHz: DefaultCarrierHz}}
 }
@@ -393,11 +393,6 @@ func (c Config) validate(top bool) error {
 	case "file", "device", "stdin", "hpsdr", "sdrconnect":
 	default:
 		bad("input.source %q: want file, device, stdin, hpsdr or sdrconnect", c.Input.Source)
-	}
-	switch c.Input.SDRconnect.SampleRateHz {
-	case 250000, 500000, 1000000, 2000000:
-	default:
-		bad("input.sdrconnect.sample_rate_hz must be 250000, 500000, 1000000 or 2000000")
 	}
 	if c.Input.SDRconnect.LNAState < -1 {
 		bad("input.sdrconnect.lna_state must be -1 (leave as it is) or 0 or more")
@@ -726,6 +721,10 @@ func (c *Config) SetCentre(hz float64) {
 }
 
 // DefaultCarrierHz is the audio frequency of the NAVTEX carrier of a live stream by default (the LO 1000 Hz below).
+// SDRconnectRateHz is the sample rate asked of SDRconnect. At 250 kS/s SDRconnect puts its centre exactly where asked;
+// higher rates add an offset of its own and cannot be centred below 0.4 x the rate (see docs/SDRCONNECT_DESIGN.md).
+const SDRconnectRateHz = 250000.0
+
 const DefaultCarrierHz = 1000.0
 
 // HPSDRCarrierHz is where the NAVTEX carrier lands in the I/Q stream of a radio by default (the LO 3000 Hz below): a few kHz
