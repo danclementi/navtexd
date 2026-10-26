@@ -33,7 +33,7 @@ import (
 var webFS embed.FS
 
 // Version is shown in the client.
-const Version = "0.4"
+const Version = "0.6"
 
 // Server serves the API, the live event stream and the web client.
 type Server struct {
@@ -758,6 +758,10 @@ func (s *Server) input(w http.ResponseWriter, r *http.Request, id Identity) {
 	}
 	c := s.run.ChanConfig(ch).Input
 	m := map[string]string{"source": c.Source, "device": c.Device.Name, "radio": c.HPSDR.Address}
+	if c.Source == "sdrconnect" {
+		m["radio"] = strings.TrimSpace(c.SDRconnect.Address)
+		m["device"] = c.SDRconnect.Device
+	}
 	if c.SharedFrom > 0 {
 		m["shared"] = s.run.Config().Label(c.SharedFrom - 1)
 	}

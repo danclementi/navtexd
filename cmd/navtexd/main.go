@@ -119,7 +119,7 @@ func main() {
 	if *stdin {
 		cfg.Input.Source = "stdin"
 	}
-	group := map[string]string{"device": "device", "hpsdr": "hpsdr", "stdin": "stdin", "file": "file"}[cfg.Input.Source]
+	group := map[string]string{"device": "device", "hpsdr": "hpsdr", "sdrconnect": "sdrconnect", "stdin": "stdin", "file": "file"}[cfg.Input.Source]
 	flag.Visit(func(f *flag.Flag) {
 		path, ok := shortcuts[f.Name]
 		if !ok {

@@ -14,6 +14,7 @@ import (
 	"navtex/internal/config"
 	"navtex/internal/hpsdr"
 	"navtex/internal/iq"
+	"navtex/internal/sdrconnect"
 )
 
 // Opened is an open source. Start is the UTC time of the first sample of a recording; zero means live (system clock).
@@ -110,6 +111,38 @@ func Open(ctx context.Context, cfg config.Config, opts ...Option) (*Opened, erro
 		o.Info = fmt.Sprintf("radio %s, receiver %d: I/Q %.0f Hz, channel %.1f kHz, receiver LO %.1f kHz (carrier expected near %.0f Hz)",
 			h.Radio(), h.Receiver(), cfg.Input.HPSDR.SampleRateHz, cfg.Channel.FrequencyHz/1e3, centre/1e3, cfg.Channel.FrequencyHz-centre)
 		return o, nil
+	case "sdrconnect":
+		notes := make(chan Notice, 4096)
+		say := func(level, text string) {
+			select {
+			case notes <- Notice{level, text}:
+			default:
+			}
+		}
+		sc := cfg.Input.SDRconnect
+		centre := cfg.LiveCentreHz()
+		s, err := sdrconnect.Open(ctx, sdrconnect.Options{Addr: strings.TrimSpace(sc.Address), Device: sc.Device, RateHz: sc.SampleRateHz, LOHz: centre,
+			DialHz: cfg.Channel.FrequencyHz, Antenna: sc.Antenna, LNAState: sc.LNAState, SwapIQ: sc.SwapIQ, Debug: cfg.Output.Verbose, Notice: say})
+		if err != nil {
+			// the messages of a failed set-up are never read by the caller: put them into the error
+			var trace []string
+			for done := false; !done; {
+				select {
+				case n := <-notes:
+					trace = append(trace, n.Text)
+				default:
+					done = true
+				}
+			}
+			if len(trace) > 0 {
+				err = fmt.Errorf("%w\n  messages with SDRconnect:\n  %s", err, strings.Join(trace, "\n  "))
+			}
+			return nil, err
+		}
+		o := &Opened{Source: s, Close: s.Close, Live: true, Notices: notes}
+		o.Info = fmt.Sprintf("%s: I/Q %.0f Hz (reduced to %.0f Hz), channel %.1f kHz, receiver LO %.1f kHz (carrier expected near %.0f Hz)",
+			s.Describe(), sc.SampleRateHz, s.SampleRate(), cfg.Channel.FrequencyHz/1e3, s.CentreHz()/1e3, cfg.Channel.FrequencyHz-s.CentreHz())
+		return o, nil
 	case "device", "stdin":
 		rate, channels, swap := cfg.Input.Stdin.SampleRateHz, cfg.Input.Stdin.Channels, cfg.Input.Stdin.SwapIQ
 		format, _ := iq.ParsePCMFormat(cfg.Input.Stdin.PCMFormat)
@@ -142,5 +175,5 @@ func Open(ctx context.Context, cfg config.Config, opts ...Option) (*Opened, erro
 			what, rate, channels, cfg.Channel.FrequencyHz/1e3, cfg.LiveCentreHz()/1e3, cfg.Channel.FrequencyHz-cfg.LiveCentreHz())
 		return o, nil
 	}
-	return nil, fmt.Errorf("input.source %q: want file, device, stdin or hpsdr", cfg.Input.Source)
+	return nil, fmt.Errorf("input.source %q: want file, device, stdin, hpsdr or sdrconnect", cfg.Input.Source)
 }

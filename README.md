@@ -19,7 +19,7 @@ It is a single self-contained program written in pure Go (standard library only,
 - Streaming decoder: carrier search and tracking, symbol timing, SITOR-B framing, diversity combining of the two
   transmitted copies of every character, optional spelling correction of unreadable characters (the raw received text
   is always kept unchanged).
-- Input from a sound card or virtual audio cable, a WAV file (real audio or I/Q), raw samples on stdin, or I/Q straight from an OpenHPSDR (Metis / Hermes) radio over the network (Protocol 1: Hermes, Hermes Lite, ANAN, Pavel Demin's Red Pitaya and QMtech images). Receive only.
+- Input from a sound card or virtual audio cable, a WAV file (real audio or I/Q), raw samples on stdin, or I/Q straight from an OpenHPSDR (Metis / Hermes) radio over the network (Protocol 1: Hermes, Hermes Lite, ANAN, Pavel Demin's Red Pitaya and QMtech images). Receive only. An SDRplay RSP can also be used through SDRconnect's WebSocket API (SDRconnect, also its headless version, does the receiver; this program asks it for the I/Q stream, tunes it and decodes) — see `docs/SDRCONNECT_DESIGN.md`.
 - The **Spectrum** tab (and the small spectrum in the header) draws the input spectrum together with a second,
   orange trace: the signal after the receiver's narrow channel filter, which is what the demodulator actually sees. If
   the carrier frequency or the filtering is wrong (easy to do with a broadband I/Q stream) the orange trace is flat or

@@ -142,7 +142,7 @@ func TestLiveListMatchesRestartRule(t *testing.T) {
 		}
 		base := base
 		// an option of a source that is not selected changes nothing, so test each one with its own source selected
-		for _, g := range []string{"device", "hpsdr", "stdin", "file"} {
+		for _, g := range []string{"device", "hpsdr", "sdrconnect", "stdin", "file"} {
 			if strings.HasPrefix(f.Path, "input."+g+".") {
 				base.Input.Source = g
 			}
@@ -181,6 +181,8 @@ func TestLiveListMatchesRestartRule(t *testing.T) {
 			v = "2"
 		case "input.hpsdr.sample_rate_hz":
 			v = "96000"
+		case "input.sdrconnect.sample_rate_hz":
+			v = "1000000"
 		case "meters.spectrum_fft":
 			v = "512"
 		case "meters.spectrum_smooth", "meters.quality_eye_weight":
