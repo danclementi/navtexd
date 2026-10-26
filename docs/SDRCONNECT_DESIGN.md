@@ -36,3 +36,7 @@ The received span is the sample rate (2 MHz gives +-1 MHz), so 518, 490 and 424 
 - Radio stopped/started in SDRconnect (`started`): the connection and the I/Q subscription survive; samples resume by themselves. Logged as a warning and an info line.
 - Connection lost (headless SDRconnect stopped, GUI closed): the source retries every 5 s, then repeats the whole set-up. If the centre frequency differs from the one the channel started with, the channel stops with an explanation.
 - Sample rate or centre frequency changed by someone else (the GUI moves its centre when the tuned frequency leaves the received span, and does not move it back): the channel stops with an explanation rather than compensating, because the carrier is no longer where the decoder looks.
+
+## Centre frequency (SDRconnect 1.0.10)
+
+Measured with API probes: `device_center_frequency` writes are silently ignored. SDRconnect re-centres only when the tuned frequency (VFO) leaves the received span; the new centre is then VFO plus an offset of its own, except at 250 kS/s where the centre equals the VFO. The centre is never below 0.4 x the sample rate. Hence the set-up tunes the VFO far outside the span and then to the wanted centre (`recentre`), and 250 kS/s is the recommended (default) rate. At other rates the result is checked, and SDRconnect's own centre is used with a warning if it is still off.

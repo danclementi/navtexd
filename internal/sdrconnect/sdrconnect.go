@@ -357,10 +357,14 @@ func (s *Source) wait(ctx context.Context, prop string, ok func(v string, gen in
 
 // set sets a property and waits until SDRconnect reports the wanted value (read back by asking).
 func (s *Source) set(ctx context.Context, prop, value string, same func(got string) bool) error {
+	return s.setWait(ctx, prop, value, same, 4*time.Second)
+}
+
+func (s *Source) setWait(ctx context.Context, prop, value string, same func(got string) bool, wait time.Duration) error {
 	if err := s.send(msg{EventType: "set_property", Property: prop, Value: value}); err != nil {
 		return err
 	}
-	deadline := time.Now().Add(4 * time.Second)
+	deadline := time.Now().Add(wait)
 	var got string
 	for time.Now().Before(deadline) {
 		select {
@@ -430,13 +434,18 @@ func (s *Source) setup(ctx context.Context) error {
 		return err
 	}
 	wantLO := math.Round(s.o.LOHz)
-	if err := s.set(ctx, "device_center_frequency", strconv.FormatInt(int64(wantLO), 10), sameNum(wantLO)); err != nil {
-		// SDRconnect keeps its own centre (for example while its window controls the tuning): use it if the channel is inside the span
+	if err := s.setWait(ctx, "device_center_frequency", strconv.FormatInt(int64(wantLO), 10), sameNum(wantLO), 1500*time.Millisecond); err != nil {
+		// SDRconnect 1.0.10 ignores writes of the centre frequency. It re-centres by itself when the tuned frequency
+		// (VFO) leaves the received span, and at 250 kS/s it then puts the centre exactly on the VFO (at higher rates it
+		// adds an offset of its own). So the VFO is moved away from the span and then onto the wanted centre.
+		s.recentre(ctx, wantLO)
 		cur, gerr := s.get(ctx, "device_center_frequency")
 		if gerr != nil || math.Abs(s.o.DialHz-num(cur)) > 0.4*OutRateHz {
 			return err
 		}
-		s.say("warn", fmt.Sprintf("SDRconnect would not move its centre frequency (it stays at %.0f Hz instead of %.0f Hz); using it as it is, the carrier is expected %.0f Hz from it", num(cur), wantLO, s.o.DialHz-num(cur)))
+		if math.Abs(num(cur)-wantLO) > 1000 {
+			s.say("warn", fmt.Sprintf("SDRconnect would not move its centre frequency (it stays at %.0f Hz instead of %.0f Hz); using it as it is, the carrier is expected %.0f Hz from it", num(cur), wantLO, s.o.DialHz-num(cur)))
+		}
 	}
 	if s.o.DialHz > 0 { // keep the VFO inside the received span, so that SDRconnect does not move the centre to follow it
 		s.set(ctx, "device_vfo_frequency", strconv.FormatInt(int64(math.Round(s.o.DialHz)), 10), sameNum(math.Round(s.o.DialHz)))
@@ -457,6 +466,23 @@ func (s *Source) setup(ctx context.Context) error {
 		time.Sleep(500 * time.Millisecond)
 	}
 	return s.send(msg{EventType: "iq_stream_enable", Property: "", Value: "true"})
+}
+
+// recentre makes SDRconnect move its centre frequency to want by way of the VFO: tuned well outside the received span
+// (so that SDRconnect has to re-centre), then onto want. The result is read back by the caller.
+func (s *Source) recentre(ctx context.Context, want float64) {
+	far := want + 2*s.o.RateHz + 500000
+	if far > 1.9e9 {
+		far = want - 2*s.o.RateHz - 500000
+	}
+	if far < 1000 {
+		return
+	}
+	s.say("info", fmt.Sprintf("SDRconnect: re-centring through the tuned frequency (%.0f Hz, then %.0f Hz)", far, want))
+	s.setWait(ctx, "device_vfo_frequency", strconv.FormatInt(int64(far), 10), sameNum(far), 2*time.Second)
+	time.Sleep(500 * time.Millisecond)
+	s.setWait(ctx, "device_vfo_frequency", strconv.FormatInt(int64(want), 10), sameNum(want), 2*time.Second)
+	time.Sleep(500 * time.Millisecond)
 }
 
 // needControl makes sure the receiver is open for this client. If can_control is false the receiver is selected

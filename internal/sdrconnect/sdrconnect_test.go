@@ -30,6 +30,7 @@ type fake struct {
 	refuseRate         bool
 	controlAfterSelect bool   // can_control becomes true only once a receiver is selected (headless SDRconnect)
 	lockCentre         string // if set, device_center_frequency cannot be changed
+	recentre           bool   // the centre follows the VFO when that leaves the span (SDRconnect 1.0.10, 250 kS/s)
 	conn               net.Conn
 	ln                 net.Listener
 }
@@ -146,6 +147,21 @@ func (f *fake) handle(p []byte) {
 		}
 		if m.Property == "device_center_frequency" && f.lockCentre != "" {
 			return
+		}
+		if m.Property == "device_vfo_frequency" && f.recentre {
+			v, _ := strconv.ParseFloat(m.Value, 64)
+			f.mu.Lock()
+			c, _ := strconv.ParseFloat(f.props["device_center_frequency"], 64)
+			r, _ := strconv.ParseFloat(f.props["device_sample_rate"], 64)
+			f.mu.Unlock()
+			if math.Abs(v-c) > r/2 {
+				go func() {
+					f.mu.Lock()
+					f.props["device_center_frequency"] = m.Value
+					f.mu.Unlock()
+					f.sendJSON("property_changed", "device_center_frequency", m.Value)
+				}()
+			}
 		}
 		go func() {
 			if m.Property == "device_sample_rate" {
@@ -458,4 +474,30 @@ func TestCentreStaysPut(t *testing.T) {
 	if _, err := Open(context.Background(), opts(f.addr())); err == nil || !strings.Contains(err.Error(), "did not accept device_center_frequency") {
 		t.Errorf("far centre: %v", err)
 	}
+}
+
+func TestRecentreThroughVFO(t *testing.T) {
+	f := newFake(t, 0)
+	f.lockCentre = "800000"
+	f.recentre = true
+	f.props["device_center_frequency"] = "800000"
+	f.props["device_vfo_frequency"] = "517000"
+	o := opts(f.addr())
+	o.RateHz = 250000
+	o.LOHz, o.DialHz = 515000, 518000
+	var warn string
+	o.Notice = func(level, text string) {
+		if level == "warn" {
+			warn = text
+		}
+	}
+	s, err := Open(context.Background(), o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if s.CentreHz() != 515000 || warn != "" {
+		t.Errorf("centre %v warn %q", s.CentreHz(), warn)
+	}
+	readN(t, s, 1000)
 }

@@ -216,7 +216,7 @@ type HPSDRInput struct {
 type SDRconnectInput struct {
 	Address         string  `json:"address" doc:"host:port of SDRconnect's WebSocket server (SDRconnect: Preferences, WebSocket Server). Empty = 127.0.0.1:5454, i.e. SDRconnect on this computer"`
 	Device          string  `json:"device" doc:"Part of the receiver's name in SDRconnect's list (e.g. RSPduo or a serial number). Empty = the receiver SDRconnect has selected"`
-	SampleRateHz    float64 `json:"sample_rate_hz" unit:"Hz" doc:"I/Q sample rate of the receiver; the program reduces it to 250 kHz. A lower rate needs less processing" choices:"250000,500000,1000000,2000000"`
+	SampleRateHz    float64 `json:"sample_rate_hz" unit:"Hz" doc:"I/Q sample rate of the receiver; the program reduces it to 250 kHz. 250000 is recommended: SDRconnect then puts its centre exactly where asked (higher rates add an offset of its own); a higher rate needs more processing" choices:"250000,500000,1000000,2000000"`
 	Antenna         string  `json:"antenna" doc:"Antenna or input of the receiver as SDRconnect names it (e.g. HiZ Port, Tuner 1 50 ohm; a unique part of the name is enough). Empty = leave as it is"`
 	LNAState        int     `json:"lna_state" doc:"LNA state (gain reduction step) of the receiver. -1 = leave as it is"`
 	SwapIQ          bool    `json:"swap_iq" doc:"Exchange I and Q (mirror the spectrum)"`
@@ -340,7 +340,7 @@ func defaultInput() Input {
 	return Input{Source: "device", BlockSize: 16384, WatchdogS: 10,
 		Device:     DeviceInput{SampleRateHz: 48000, Channels: 1, LoBelowHz: DefaultCarrierHz, Autotune: true, ManualCarrierHz: DefaultCarrierHz},
 		HPSDR:      HPSDRInput{SampleRateHz: 48000, LoBelowHz: HPSDRCarrierHz, Autotune: true, ManualCarrierHz: HPSDRCarrierHz},
-		SDRconnect: SDRconnectInput{SampleRateHz: 2000000, LNAState: -1, LoBelowHz: HPSDRCarrierHz, Autotune: true, ManualCarrierHz: HPSDRCarrierHz},
+		SDRconnect: SDRconnectInput{SampleRateHz: 250000, LNAState: -1, LoBelowHz: DefaultCarrierHz, Autotune: true, ManualCarrierHz: DefaultCarrierHz},
 		Stdin:      StdinInput{SampleRateHz: 48000, Channels: 1, PCMFormat: "s16le", LoBelowHz: DefaultCarrierHz, Autotune: true, ManualCarrierHz: DefaultCarrierHz},
 		File:       FileInput{Autotune: true, ManualCarrierHz: DefaultCarrierHz}}
 }
