@@ -171,6 +171,7 @@
     let t;
     if (i.shared) t = "same input as " + i.shared;
     else if (i.source === "hpsdr") { const r = (NX.knownRadios || []).find((x) => x.addr === i.radio); t = r ? r.label : i.radio ? "Radio " + i.radio : "Radio (searching the network)"; }
+    else if (i.source === "spyserver") t = "SpyServer" + (i.radio ? " (" + i.radio + ")" : "");
     else if (i.source === "sdrconnect") t = "SDRconnect" + (i.device ? " " + i.device : "") + (i.radio ? " (" + i.radio + ")" : "");
     else if (i.source === "file") t = "WAV file";
     else if (i.source === "stdin") t = "Raw stream";
@@ -620,12 +621,12 @@
     }
     note.hidden = true; $("opt-bar").hidden = false; $("opt-hint").hidden = false;
     try { const sj = await api("GET", "/api/settings"); fields = sj.fields; optHist = sj.history || []; } catch (e) { note.hidden = false; note.textContent = e.message; return; }
-    const title = { operator: "Operator and position", input: "Input source", "input.device": "Audio input (sound card or virtual audio cable)", "input.hpsdr": "Radio (OpenHPSDR / Metis)", "input.sdrconnect": "SDRplay RSP (through SDRconnect)", "input.stdin": "Raw stream (standard input)", "input.file": "WAV file", channel: "Channel", ddc: "Down-converter", decoder: "Decoder", receiver: "Receiver (FSK demodulator)", segment: "Message segmentation", logging: "Logging", autocorrect: "Word autocorrection", meters: "Meters and spectrum", server: "Network server", output: "Output (command line)" };
+    const title = { operator: "Operator and position", input: "Input source", "input.device": "Audio input (sound card or virtual audio cable)", "input.hpsdr": "Radio (OpenHPSDR / Metis)", "input.sdrconnect": "SDRplay RSP (through SDRconnect)", "input.spyserver": "Airspy HF+ (through SpyServer)", "input.stdin": "Raw stream (standard input)", "input.file": "WAV file", channel: "Channel", ddc: "Down-converter", decoder: "Decoder", receiver: "Receiver (FSK demodulator)", segment: "Message segmentation", logging: "Logging", autocorrect: "Word autocorrection", meters: "Meters and spectrum", server: "Network server", output: "Output (command line)" };
     const nameOf = (p, d) => { const f = fields.find((x) => x.path === p); return (f && String(f.value).trim()) || d; };
     const pages = [
       ["station", "Station", ["operator"]],
-      ["channel1", nameOf("channel.name", "Channel 1"), ["channel", "input", "input.device", "input.hpsdr", "input.sdrconnect", "input.stdin", "input.file", "receiver", "decoder", "segment", "ddc"]],
-      ...[0, 1, 2].map((k) => { const p = `extra.${k}.`; return ["channel" + (k + 2), nameOf(p + "channel.name", "Channel " + (k + 2)), ["extra." + k, ...["channel", "input", "input.device", "input.hpsdr", "input.sdrconnect", "input.stdin", "input.file", "receiver", "decoder", "segment", "ddc"].map((x) => p + x)]]; }),
+      ["channel1", nameOf("channel.name", "Channel 1"), ["channel", "input", "input.device", "input.hpsdr", "input.sdrconnect", "input.spyserver", "input.stdin", "input.file", "receiver", "decoder", "segment", "ddc"]],
+      ...[0, 1, 2].map((k) => { const p = `extra.${k}.`; return ["channel" + (k + 2), nameOf(p + "channel.name", "Channel " + (k + 2)), ["extra." + k, ...["channel", "input", "input.device", "input.hpsdr", "input.sdrconnect", "input.spyserver", "input.stdin", "input.file", "receiver", "decoder", "segment", "ddc"].map((x) => p + x)]]; }),
       ["logging", "Logging", ["logging", "autocorrect"]],
       ["display", "Display", ["meters"]],
       ["network", "Network", ["server"]],
@@ -715,6 +716,7 @@
             inp.value = String(f.value);
           }
           else if (/(^|\.)input\.sdrconnect\.address$/.test(f.path)) { inp = document.createElement("input"); inp.type = "text"; inp.value = f.value; inp.placeholder = "empty = 127.0.0.1:5454"; }
+          else if (/(^|\.)input\.spyserver\.address$/.test(f.path)) { inp = document.createElement("input"); inp.type = "text"; inp.value = f.value; inp.placeholder = "empty = 127.0.0.1:5555"; }
           else if (f.path === "input.hpsdr.address") {
             inp = document.createElement("input"); inp.type = "text"; inp.value = f.value; inp.placeholder = "empty = search the network";
             inp.setAttribute("list", "radio-list");

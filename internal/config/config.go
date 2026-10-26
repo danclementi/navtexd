@@ -181,12 +181,13 @@ type Server struct {
 // remembers its own carrier position. Only the group of the selected source is used.
 type Input struct {
 	SharedFrom int             `json:"shared_from" doc:"own input = typical - this channel has its own source or is the primary user of its source; same input as Channel x = use this to share another channel's I/Q source if it contains a second channel"`
-	Source     string          `json:"source" doc:"file = WAV recording; device = sound card or virtual audio cable; stdin = raw PCM piped in; hpsdr = OpenHPSDR / Metis radio; sdrconnect = SDRplay RSP through the SDRconnect program" choices:"file,device,stdin,hpsdr,sdrconnect"`
+	Source     string          `json:"source" doc:"file = WAV recording; device = sound card or virtual audio cable; stdin = raw PCM piped in; hpsdr = OpenHPSDR / Metis radio; sdrconnect = SDRplay RSP through the SDRconnect program; spyserver = Airspy HF+ through the SpyServer program" choices:"file,device,stdin,hpsdr,sdrconnect,spyserver"`
 	BlockSize  int             `json:"block_size" unit:"samples" doc:"Samples read from the source at a time"`
 	WatchdogS  float64         `json:"watchdog_s" unit:"s" doc:"Warn when a live input (sound card, radio, stdin) delivers no new samples, or the same value over and over, for this long; 0 = off"`
 	Device     DeviceInput     `json:"device"`
 	HPSDR      HPSDRInput      `json:"hpsdr"`
 	SDRconnect SDRconnectInput `json:"sdrconnect"`
+	SpyServer  SpyServerInput  `json:"spyserver"`
 	Stdin      StdinInput      `json:"stdin"`
 	File       FileInput       `json:"file"`
 }
@@ -223,6 +224,17 @@ type SDRconnectInput struct {
 	LoBelowHz       float64 `json:"lo_below_hz" unit:"Hz" doc:"How far below the channel frequency the receiver is tuned (its LO), i.e. where the carrier is expected in the baseband. A few kHz keeps the carrier away from the receiver's DC spur. A negative value puts the LO above the channel. The LO follows the channel frequency"`
 	Autotune        bool    `json:"autotune" doc:"Find and follow the carrier automatically. Off: the carrier stays at manual_carrier_hz"`
 	ManualCarrierHz float64 `json:"manual_carrier_hz" unit:"Hz" doc:"Frequency of the carrier in the receiver's baseband (channel frequency minus LO), used when autotune is off (the carrier marker in the spectrum can be dragged to set it)"`
+}
+
+// SpyServerInput: an Airspy HF+ Discovery (or Airspy One, RTL-SDR) through Airspy's SpyServer program, which runs on this or
+// another computer.
+type SpyServerInput struct {
+	Address         string  `json:"address" doc:"host:port of the SpyServer. Empty = 127.0.0.1:5555, i.e. SpyServer on this computer"`
+	Gain            int     `json:"gain" doc:"Gain index of the receiver as SpyServer offers it (0 up to its maximum). -1 = leave as the server has it"`
+	SwapIQ          bool    `json:"swap_iq" doc:"Exchange I and Q (mirror the spectrum)"`
+	LoBelowHz       float64 `json:"lo_below_hz" unit:"Hz" doc:"How far below the channel frequency the I/Q stream is centred, i.e. where the carrier is expected in the baseband. A few kHz keeps the carrier away from the receiver's DC spur. A negative value puts the centre above the channel. The centre follows the channel frequency"`
+	Autotune        bool    `json:"autotune" doc:"Find and follow the carrier automatically. Off: the carrier stays at manual_carrier_hz"`
+	ManualCarrierHz float64 `json:"manual_carrier_hz" unit:"Hz" doc:"Frequency of the carrier in the receiver's baseband (channel frequency minus centre), used when autotune is off (the carrier marker in the spectrum can be dragged to set it)"`
 }
 
 // StdinInput: raw PCM piped into the program.
@@ -266,6 +278,9 @@ func (c Config) Tuning() Tuning {
 	case "sdrconnect":
 		h := c.Input.SDRconnect
 		return Tuning{LoBelowHz: h.LoBelowHz, Autotune: h.Autotune, ManualCarrierHz: h.ManualCarrierHz}
+	case "spyserver":
+		h := c.Input.SpyServer
+		return Tuning{LoBelowHz: h.LoBelowHz, Autotune: h.Autotune, ManualCarrierHz: h.ManualCarrierHz}
 	case "stdin":
 		h := c.Input.Stdin
 		return Tuning{LoBelowHz: h.LoBelowHz, Autotune: h.Autotune, ManualCarrierHz: h.ManualCarrierHz}
@@ -284,6 +299,8 @@ func (c *Config) SetTuning(t Tuning) {
 		c.Input.HPSDR.LoBelowHz, c.Input.HPSDR.Autotune, c.Input.HPSDR.ManualCarrierHz = t.LoBelowHz, t.Autotune, t.ManualCarrierHz
 	case "sdrconnect":
 		c.Input.SDRconnect.LoBelowHz, c.Input.SDRconnect.Autotune, c.Input.SDRconnect.ManualCarrierHz = t.LoBelowHz, t.Autotune, t.ManualCarrierHz
+	case "spyserver":
+		c.Input.SpyServer.LoBelowHz, c.Input.SpyServer.Autotune, c.Input.SpyServer.ManualCarrierHz = t.LoBelowHz, t.Autotune, t.ManualCarrierHz
 	case "stdin":
 		c.Input.Stdin.LoBelowHz, c.Input.Stdin.Autotune, c.Input.Stdin.ManualCarrierHz = t.LoBelowHz, t.Autotune, t.ManualCarrierHz
 	case "file":
@@ -306,6 +323,8 @@ func (c Config) SampleRate() float64 {
 		return c.Input.HPSDR.SampleRateHz
 	case "sdrconnect":
 		return SDRconnectRateHz
+	case "spyserver":
+		return 0 // set by the server (a decimation stage near 250 kS/s)
 	case "stdin":
 		return c.Input.Stdin.SampleRateHz
 	case "device":
@@ -341,6 +360,7 @@ func defaultInput() Input {
 		Device:     DeviceInput{SampleRateHz: 48000, Channels: 1, LoBelowHz: DefaultCarrierHz, Autotune: true, ManualCarrierHz: DefaultCarrierHz},
 		HPSDR:      HPSDRInput{SampleRateHz: 48000, LoBelowHz: HPSDRCarrierHz, Autotune: true, ManualCarrierHz: HPSDRCarrierHz},
 		SDRconnect: SDRconnectInput{SampleRateHz: SDRconnectRateHz, LNAState: -1, LoBelowHz: DefaultCarrierHz, Autotune: true, ManualCarrierHz: DefaultCarrierHz},
+		SpyServer:  SpyServerInput{Gain: -1, LoBelowHz: DefaultCarrierHz, Autotune: true, ManualCarrierHz: DefaultCarrierHz},
 		Stdin:      StdinInput{SampleRateHz: 48000, Channels: 1, PCMFormat: "s16le", LoBelowHz: DefaultCarrierHz, Autotune: true, ManualCarrierHz: DefaultCarrierHz},
 		File:       FileInput{Autotune: true, ManualCarrierHz: DefaultCarrierHz}}
 }
@@ -390,9 +410,12 @@ func (c Config) validate(top bool) error {
 		bad("ddc.target_rate_hz must be at least 1000")
 	}
 	switch c.Input.Source {
-	case "file", "device", "stdin", "hpsdr", "sdrconnect":
+	case "file", "device", "stdin", "hpsdr", "sdrconnect", "spyserver":
 	default:
-		bad("input.source %q: want file, device, stdin, hpsdr or sdrconnect", c.Input.Source)
+		bad("input.source %q: want file, device, stdin, hpsdr, sdrconnect or spyserver", c.Input.Source)
+	}
+	if c.Input.SpyServer.Gain < -1 {
+		bad("input.spyserver.gain must be -1 (leave as it is) or 0 or more")
 	}
 	if c.Input.SDRconnect.LNAState < -1 {
 		bad("input.sdrconnect.lna_state must be -1 (leave as it is) or 0 or more")
@@ -735,7 +758,7 @@ const HPSDRCarrierHz = 3000.0
 // RestartNeeded. The tests check that this list and RestartNeeded agree for every option.
 var liveFields = []string{
 	"operator.", "logging.", "autocorrect.", "meters.", "segment.", "channel.name", "channel.comment", "decoder.", "input.device.autotune", "input.device.manual_carrier_hz", "input.hpsdr.autotune",
-	"input.hpsdr.manual_carrier_hz", "input.sdrconnect.autotune", "input.sdrconnect.manual_carrier_hz", "channel.view_offset_hz", "input.stdin.autotune", "input.stdin.manual_carrier_hz", "input.file.autotune", "input.file.manual_carrier_hz",
+	"input.hpsdr.manual_carrier_hz", "input.sdrconnect.autotune", "input.sdrconnect.manual_carrier_hz", "input.spyserver.autotune", "input.spyserver.manual_carrier_hz", "channel.view_offset_hz", "input.stdin.autotune", "input.stdin.manual_carrier_hz", "input.file.autotune", "input.file.manual_carrier_hz",
 	"receiver.demod.presence_db", "receiver.demod.presence_offset_hz", "receiver.demod.timing_gain",
 	"receiver.demod.timing_confidence", "receiver.demod.timing_lost_blocks",
 	"receiver.blanker_threshold", "receiver.search_", "receiver.lose_carrier_after_s", "receiver.track_",
@@ -802,17 +825,21 @@ func restartNeededSingle(a, b Config) bool {
 		t.Autotune, t.ManualCarrierHz = false, 0
 		c.SetTuning(t)
 		in := &c.Input
-		switch in.Source {
+		keep := *in
+		*in = Input{Source: keep.Source, SharedFrom: keep.SharedFrom, BlockSize: keep.BlockSize, WatchdogS: keep.WatchdogS}
+		switch keep.Source {
 		case "hpsdr":
-			in.Device, in.Stdin, in.File, in.SDRconnect = DeviceInput{}, StdinInput{}, FileInput{}, SDRconnectInput{}
+			in.HPSDR = keep.HPSDR
 		case "sdrconnect":
-			in.Device, in.HPSDR, in.Stdin, in.File = DeviceInput{}, HPSDRInput{}, StdinInput{}, FileInput{}
+			in.SDRconnect = keep.SDRconnect
+		case "spyserver":
+			in.SpyServer = keep.SpyServer
 		case "stdin":
-			in.Device, in.HPSDR, in.File, in.SDRconnect = DeviceInput{}, HPSDRInput{}, FileInput{}, SDRconnectInput{}
+			in.Stdin = keep.Stdin
 		case "file":
-			in.Device, in.HPSDR, in.Stdin, in.SDRconnect = DeviceInput{}, HPSDRInput{}, StdinInput{}, SDRconnectInput{}
+			in.File = keep.File
 		default:
-			in.HPSDR, in.Stdin, in.File, in.SDRconnect = HPSDRInput{}, StdinInput{}, FileInput{}, SDRconnectInput{}
+			in.Device = keep.Device
 		}
 		c.Decoder = sitor.Config{ShiftHz: c.Decoder.ShiftHz}
 		r := &c.Receiver

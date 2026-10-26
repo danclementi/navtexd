@@ -15,6 +15,7 @@ import (
 	"navtex/internal/hpsdr"
 	"navtex/internal/iq"
 	"navtex/internal/sdrconnect"
+	"navtex/internal/spyserver"
 )
 
 // Opened is an open source. Start is the UTC time of the first sample of a recording; zero means live (system clock).
@@ -143,6 +144,36 @@ func Open(ctx context.Context, cfg config.Config, opts ...Option) (*Opened, erro
 		o.Info = fmt.Sprintf("%s: I/Q %.0f Hz (reduced to %.0f Hz), channel %.1f kHz, receiver LO %.1f kHz (carrier expected near %.0f Hz)",
 			s.Describe(), sc.SampleRateHz, s.SampleRate(), cfg.Channel.FrequencyHz/1e3, s.CentreHz()/1e3, cfg.Channel.FrequencyHz-s.CentreHz())
 		return o, nil
+	case "spyserver":
+		notes := make(chan Notice, 4096)
+		say := func(level, text string) {
+			select {
+			case notes <- Notice{level, text}:
+			default:
+			}
+		}
+		sc := cfg.Input.SpyServer
+		s, err := spyserver.Open(ctx, spyserver.Options{Addr: strings.TrimSpace(sc.Address), LOHz: cfg.LiveCentreHz(), Gain: sc.Gain, SwapIQ: sc.SwapIQ,
+			Debug: cfg.Output.Verbose, Notice: say})
+		if err != nil {
+			var trace []string
+			for done := false; !done; {
+				select {
+				case n := <-notes:
+					trace = append(trace, n.Text)
+				default:
+					done = true
+				}
+			}
+			if len(trace) > 0 {
+				err = fmt.Errorf("%w\n  messages with SpyServer:\n  %s", err, strings.Join(trace, "\n  "))
+			}
+			return nil, err
+		}
+		o := &Opened{Source: s, Close: s.Close, Live: true, Notices: notes}
+		o.Info = fmt.Sprintf("%s: I/Q %.0f Hz, channel %.1f kHz, centre %.1f kHz (carrier expected near %.0f Hz)",
+			s.Describe(), s.SampleRate(), cfg.Channel.FrequencyHz/1e3, s.CentreHz()/1e3, cfg.Channel.FrequencyHz-s.CentreHz())
+		return o, nil
 	case "device", "stdin":
 		rate, channels, swap := cfg.Input.Stdin.SampleRateHz, cfg.Input.Stdin.Channels, cfg.Input.Stdin.SwapIQ
 		format, _ := iq.ParsePCMFormat(cfg.Input.Stdin.PCMFormat)
@@ -175,5 +206,5 @@ func Open(ctx context.Context, cfg config.Config, opts ...Option) (*Opened, erro
 			what, rate, channels, cfg.Channel.FrequencyHz/1e3, cfg.LiveCentreHz()/1e3, cfg.Channel.FrequencyHz-cfg.LiveCentreHz())
 		return o, nil
 	}
-	return nil, fmt.Errorf("input.source %q: want file, device, stdin, hpsdr or sdrconnect", cfg.Input.Source)
+	return nil, fmt.Errorf("input.source %q: want file, device, stdin, hpsdr, sdrconnect or spyserver", cfg.Input.Source)
 }

@@ -762,6 +762,9 @@ func (s *Server) input(w http.ResponseWriter, r *http.Request, id Identity) {
 		m["radio"] = strings.TrimSpace(c.SDRconnect.Address)
 		m["device"] = c.SDRconnect.Device
 	}
+	if c.Source == "spyserver" {
+		m["radio"] = strings.TrimSpace(c.SpyServer.Address)
+	}
 	if c.SharedFrom > 0 {
 		m["shared"] = s.run.Config().Label(c.SharedFrom - 1)
 	}

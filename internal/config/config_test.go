@@ -142,7 +142,7 @@ func TestLiveListMatchesRestartRule(t *testing.T) {
 		}
 		base := base
 		// an option of a source that is not selected changes nothing, so test each one with its own source selected
-		for _, g := range []string{"device", "hpsdr", "sdrconnect", "stdin", "file"} {
+		for _, g := range []string{"device", "hpsdr", "sdrconnect", "spyserver", "stdin", "file"} {
 			if strings.HasPrefix(f.Path, "input."+g+".") {
 				base.Input.Source = g
 			}
