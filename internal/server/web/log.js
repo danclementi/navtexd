@@ -527,7 +527,7 @@
   $("n-latest").onclick = () => { $("n-date").value = ""; jumpLatest(); if (L.total) selectIndex(newestFirst() ? 0 : L.total - 1); };
   $("n-date").onchange = gotoDate; // picking or typing a date goes there at once
   $("n-date").onkeydown = (e) => { if (e.key === "Enter") gotoDate(); };
-  // the filter is edited in a pop-up: Apply (or Enter) uses the settings, Cancel (or Esc) puts the old ones back, Reset empties the boxes
+  // the filter is edited in a pop-up: Apply (or Enter) uses the settings, Cancel (or Esc) puts the old ones back, Clear empties the boxes
   const fdlg = $("f-dlg");
   const snap = () => ({ v: ids.map((k) => $("f-" + k).value), u: $("f-unid").checked, o: $("f-omit").checked });
   let before = snap();

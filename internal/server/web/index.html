@@ -11,6 +11,14 @@
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
 <symbol id="i-arrow-bar-to-right" viewBox="0 0 24 24"><path d="M14 12l-10 0" /> <path d="M14 12l-4 4" /> <path d="M14 12l-4 -4" /> <path d="M20 4l0 16" /></symbol>
 <symbol id="i-report-medical" viewBox="0 0 24 24"><path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2" /> <path d="M9 5a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2" /> <path d="M10 14l4 0" /> <path d="M12 12l0 4" /></symbol>
+<symbol id="i-filter-x" viewBox="0 0 24 24"><path d="M13.758 19.414l-4.758 1.586v-8.5l-4.48 -4.928a2 2 0 0 1 -.52 -1.345v-2.227h16v2.172a2 2 0 0 1 -.586 1.414l-4.414 4.414v1.5" /> <path d="M22 22l-5 -5" /> <path d="M17 22l5 -5" /></symbol>
+<symbol id="i-thumb-up" viewBox="0 0 24 24"><path d="M7 11v8a1 1 0 0 1 -1 1h-2a1 1 0 0 1 -1 -1v-7a1 1 0 0 1 1 -1h3a4 4 0 0 0 4 -4v-1a2 2 0 0 1 4 0v5h3a2 2 0 0 1 2 2l-1 5a2 3 0 0 1 -2 2h-7a3 3 0 0 1 -3 -3" /></symbol>
+<symbol id="i-cancel" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" /> <path d="M18.364 5.636l-12.728 12.728" /></symbol>
+<symbol id="i-playlist-x" viewBox="0 0 24 24"><path d="M19 8h-14" /> <path d="M5 12h7" /> <path d="M12 16h-7" /> <path d="M16 14l4 4" /> <path d="M20 14l-4 4" /></symbol>
+<symbol id="i-file-x" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4" /> <path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2" /> <path d="M10 12l4 4m0 -4l-4 4" /></symbol>
+<symbol id="i-edit" viewBox="0 0 24 24"><path d="M7 7h-1a2 2 0 0 0 -2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2 -2v-1" /> <path d="M20.385 6.585a2.1 2.1 0 0 0 -2.97 -2.97l-8.415 8.385v3h3l8.385 -8.415" /> <path d="M16 5l3 3" /></symbol>
+<symbol id="i-device-floppy" viewBox="0 0 24 24"><path d="M6 4h10l4 4v10a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2" /> <path d="M10 14a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /> <path d="M14 4l0 4l-6 0l0 -4" /></symbol>
+<symbol id="i-clipboard-copy" viewBox="0 0 24 24"><path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h3m9 -9v-5a2 2 0 0 0 -2 -2h-2" /> <path d="M13 17v-1a1 1 0 0 1 1 -1h1m3 0h1a1 1 0 0 1 1 1v1m0 3v1a1 1 0 0 1 -1 1h-1m-3 0h-1a1 1 0 0 1 -1 -1v-1" /> <path d="M9 5a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2" /></symbol>
 <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7l16 0" /> <path d="M10 11l0 6" /> <path d="M14 11l0 6" /> <path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12" /> <path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3" /></symbol>
 <symbol id="i-arrow-back-up" viewBox="0 0 24 24"><path d="M9 14l-4 -4l4 -4" /> <path d="M5 10h11a4 4 0 1 1 0 8h-1" /></symbol>
 <symbol id="i-database" viewBox="0 0 24 24"><path d="M4 6a8 3 0 1 0 16 0a8 3 0 1 0 -16 0" /> <path d="M4 6v6a8 3 0 0 0 16 0v-6" /> <path d="M4 12v6a8 3 0 0 0 16 0v-6" /></symbol>
@@ -173,16 +181,17 @@
   <section id="tab-report" hidden>
     <p class="note">Records you add from the Log tab ("Add to report", or the button in the record window). Your list is kept in this browser; other users have their own. The NavtexDX report format itself is planned for a later milestone.</p>
     <div class="row">
-      <button id="rp-remove" disabled>Remove selected</button><button id="rp-clear" disabled>Clear list</button><span id="rp-count" class="small"></span>
+      <button id="rp-remove" class="tb" disabled title="Remove the selected records from the report"><svg class="ic" aria-hidden="true"><use href="#i-playlist-x"/></svg><span>remove</span></button><button id="rp-clear" class="tb" disabled title="Empty the report list"><svg class="ic" aria-hidden="true"><use href="#i-file-x"/></svg><span>clear</span></button><span id="rp-count" class="small"></span>
       <span class="grow"></span>
       <fieldset id="rp-info" class="radios"><legend>Personal info</legend>
         <label class="check"><input type="radio" name="rp-info" value="omit"> Omit</label>
         <label class="check"><input type="radio" name="rp-info" value="header" checked> As header</label>
         <label class="check"><input type="radio" name="rp-info" value="footer"> As footer</label>
       </fieldset>
-      <button id="rp-edit" disabled title="Edit the report text before saving or copying it">Edit report</button>
-      <button id="rp-save" disabled title="Save the report as a text file">Save Report</button>
-      <button id="rp-copy" disabled title="Copy the report text to the clipboard">Copy to Clipboard</button>
+      <span class="grow"></span>
+      <button id="rp-edit" class="tb" disabled title="Edit the report text before saving or copying it"><svg class="ic" aria-hidden="true"><use href="#i-edit"/></svg><span>edit</span></button>
+      <button id="rp-save" class="tb" disabled title="Save the report as a text file"><svg class="ic" aria-hidden="true"><use href="#i-device-floppy"/></svg><span>save</span></button>
+      <button id="rp-copy" class="tb" disabled title="Copy the report text to the clipboard"><svg class="ic" aria-hidden="true"><use href="#i-clipboard-copy"/></svg><span>copy</span></button>
       <span id="rp-edited" class="small" hidden>edited text <button id="rp-unedit" class="linkbtn" type="button" title="Throw the edits away and use the generated report again">revert</button></span>
       <span id="rp-msg" class="small"></span>
     </div>
@@ -297,10 +306,10 @@
     </div>
   </div>
   <div class="dlgfoot">
-    <button id="f-clear" type="button" title="Empty every field">Reset</button>
+    <button id="f-clear" type="button" class="tb" title="Empty every field"><svg class="ic" aria-hidden="true"><use href="#i-filter-x"/></svg><span>clear</span></button>
     <span class="grow"></span>
-    <button id="f-cancel" type="button">Cancel</button>
-    <button id="f-apply" type="button" title="Apply the filter (Enter in a field does the same)">Apply</button>
+    <button id="f-cancel" type="button" class="tb" title="Close without changing the filter"><svg class="ic" aria-hidden="true"><use href="#i-cancel"/></svg><span>cancel</span></button>
+    <button id="f-apply" type="button" class="tb" title="Apply the filter (Enter in a field does the same)"><svg class="ic" aria-hidden="true"><use href="#i-thumb-up"/></svg><span>apply</span></button>
   </div>
 </dialog>
 <dialog id="log-dlg" aria-label="Log record">
