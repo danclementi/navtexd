@@ -93,21 +93,18 @@
     <div class="specwrap"><canvas id="spec" title="Mouse wheel: zoom in or out. Drag: move the view. Double-click: show the whole slice again (administrators: also center it on the channel frequency). Administrators can drag beyond the displayed range, or drag the carrier marker to an edge: the channel then restarts with the spectrum and the receiver centered on the new place."></canvas><div id="spec-scale" class="seg" title="Vertical scale of the spectrum"><button type="button" data-sc="log">LOG</button><button type="button" data-sc="lin">LIN</button></div></div>
   </section>
   <section id="tab-log" hidden>
-    <div class="fbar" id="filters">
-      <input id="f-on" type="checkbox" autocomplete="off" hidden>
-      <button id="f-btn" type="button" class="tb" aria-pressed="false" title="Switch the filter on or off; its settings are kept"><svg class="ic" aria-hidden="true"><use href="#i-filter"/></svg><span>filter</span></button>
-      <button id="f-edit" type="button" class="tb" title="Choose what the list shows"><svg class="ic" aria-hidden="true"><use href="#i-filter-edit"/></svg><span>edit</span></button>
-      <span class="fsum" id="f-sum"></span>
-      <span class="filtind" id="f-ind" title="A filter is applied: only matching records are listed"><i></i><b>FILTER ON</b><span id="f-stat" class="small"></span></span>
-    </div>
     <div class="lognav">
+      <input id="f-on" type="checkbox" autocomplete="off" hidden>
       <input id="n-order" type="hidden" value="oldest">
       <button id="n-chrono" type="button" class="tb" aria-pressed="true" title="Oldest first: the newest record is at the end of the list"><svg class="ic" aria-hidden="true"><use href="#i-sort-ascending-numbers"/></svg><span>chrono</span></button>
       <button id="n-reverse" type="button" class="tb" aria-pressed="false" title="Newest first: the newest record is at the top of the list"><svg class="ic" aria-hidden="true"><use href="#i-sort-descending-numbers"/></svg><span>reverse</span></button>
       <button id="n-latest" type="button" class="tb" title="Jump to the most recent record"><svg class="ic" aria-hidden="true"><use href="#i-arrow-bar-to-right"/></svg><span>newest</span></button>
       <svg class="ic vsep" aria-hidden="true"><use href="#i-minus-vertical"/></svg>
       <label class="gtd" title="Jump to the first record of this day (UTC): type a date or pick one"><span>go to date</span><input id="n-date" class="iso" type="text" placeholder="yyyy-mm-dd"></label>
-      <span id="n-selinfo" class="small selinfo"></span>
+      <span class="sp"></span>
+      <button id="f-btn" type="button" class="tb" aria-pressed="false" title="Switch the filter on or off; its settings are kept"><svg class="ic" aria-hidden="true"><use href="#i-filter"/></svg><span>filter</span></button>
+      <button id="f-edit" type="button" class="tb" title="Choose what the list shows"><svg class="ic" aria-hidden="true"><use href="#i-filter-edit"/></svg><span>edit</span></button>
+      <span class="sp"></span>
       <button id="n-undo" type="button" class="tb ghost" title="Take back the last deletion or edit of a record" disabled><svg class="ic" aria-hidden="true"><use href="#i-arrow-back-up"/></svg><span>undo</span></button>
       <svg class="ic vsep" aria-hidden="true"><use href="#i-minus-vertical"/></svg>
       <button id="n-open" type="button" class="tb" title="Read the selected record (double-click or Enter)" disabled><svg class="ic" aria-hidden="true"><use href="#i-eye"/></svg><span>review</span></button>
@@ -115,6 +112,11 @@
       <button id="n-delete" type="button" class="tb" title="Delete the selected records (they are saved first: Undo brings them back)" disabled><svg class="ic" aria-hidden="true"><use href="#i-trash"/></svg><span>delete</span></button>
       <svg class="ic vsep" aria-hidden="true"><use href="#i-minus-vertical"/></svg>
       <button id="n-db" type="button" class="tb ghost" title="Compact, export or import the log database"><svg class="ic" aria-hidden="true"><use href="#i-database"/></svg><span>database</span></button>
+    </div>
+    <div class="fbar" id="filters">
+      <span class="filtind" id="f-ind" title="A filter is applied: only matching records are listed"><i></i><b>FILTER ON</b><span id="f-stat" class="small"></span></span>
+      <span class="fsum" id="f-sum"></span>
+      <span id="n-selinfo" class="small selinfo"></span>
     </div>
     <div id="logscroll" class="logscroll" tabindex="0" title="Up/Down: one line. Page Up/Down: a page. Double-click or Enter: open the record. Ctrl-click: add or remove a record from the selection. Shift-click: select the range from the last clicked record.">
       <table id="log-table"><thead><tr><th>UTC received</th><th>Freq</th><th>Q</th><th>B1</th><th>B2</th><th>Msg#</th><th>Area</th><th>Station</th><th class="km">Dist km</th><th>Kind</th></tr></thead><tbody></tbody></table>

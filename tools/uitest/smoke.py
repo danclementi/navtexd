@@ -59,10 +59,12 @@ try:
             now = boxes(); moved = [i for i in ids if now[i] != base[i]]
             check("toolbar stays put: " + name, not moved, [(i, base[i], now[i]) for i in moved])
         base = boxes()
-        if os.environ.get("SHOT"): pg.screenshot(path=os.environ["SHOT"] + "-1.png", clip=dict(zip(("x", "y", "width", "height"), (0, pg.evaluate("document.getElementById('filters').getBoundingClientRect().y - 6"), 1400, 140))))
+        if os.environ.get("SHOT"): pg.screenshot(path=os.environ["SHOT"] + "-1.png", clip=dict(zip(("x", "y", "width", "height"), (0, pg.evaluate("document.querySelector('.lognav').getBoundingClientRect().y - 6"), 1400, 140))))
         def visible(name):  # both toolbar rows keep their height and lie above the list, however short the window is
             g = pg.evaluate("(() => { const r = i => document.getElementById(i).getBoundingClientRect(); return [r('filters').bottom, r('n-open').height, r('n-open').bottom, r('logscroll').top]; })()")
             check("toolbar not covered: " + name, g[1] >= 40 and g[2] <= g[3] + 1 and g[0] <= g[3], g)
+        h2 = pg.evaluate("(() => { const a = document.querySelector('.lognav').getBoundingClientRect(), b = document.getElementById('filters').getBoundingClientRect(); return [a.bottom, b.top, a.height, b.height]; })()")
+        check("button row on top, filter row below and lower", h2[0] <= h2[1] + 1 and h2[3] < h2[2], h2)
         pg.evaluate("document.querySelector('#log-table').style.height = '6000px'")  # a long list, as in real use: it is taller than the window
         visible("tall window")
         for h in (700, 520):
@@ -76,7 +78,7 @@ try:
         pg.click("#n-chrono"); pg.wait_for_timeout(400)
         pg.click("#f-edit"); pg.evaluate("const e=document.getElementById('f-b1'); e.value='ZZ'; e.dispatchEvent(new Event('input',{bubbles:true}))"); pg.click("#f-apply"); pg.wait_for_timeout(800)
         same("filter on"); check("filter button is pressed", pg.get_attribute("#f-btn", "aria-pressed") == "true")
-        if os.environ.get("SHOT"): pg.screenshot(path=os.environ["SHOT"] + "-2.png", clip=dict(zip(("x", "y", "width", "height"), (0, pg.evaluate("document.getElementById('filters').getBoundingClientRect().y - 6"), 1400, 140))))
+        if os.environ.get("SHOT"): pg.screenshot(path=os.environ["SHOT"] + "-2.png", clip=dict(zip(("x", "y", "width", "height"), (0, pg.evaluate("document.querySelector('.lognav').getBoundingClientRect().y - 6"), 1400, 140))))
         pg.click("#f-btn"); pg.wait_for_timeout(600); same("filter switched off"); check("filter button is released", pg.get_attribute("#f-btn", "aria-pressed") == "false")
         pg.click("#f-edit"); pg.click("#f-clear"); pg.click("#f-apply"); pg.wait_for_timeout(600)
         pg.click("#f-btn") if pg.get_attribute("#f-btn", "aria-pressed") == "true" else None
@@ -133,7 +135,7 @@ try:
         pg.keyboard.press("Escape"); pg.wait_for_timeout(300)
         # Ctrl-A in the table
         pg.locator("#logscroll tbody tr").first.locator("td").nth(1).click(); pg.keyboard.press("Control+a"); pg.wait_for_timeout(800)
-        check("Ctrl-A selects the whole list", "6 selected" in pg.inner_text("#n-selinfo") or "5 selected" in pg.inner_text("#n-selinfo"), pg.inner_text("#n-selinfo"))
+        check("Ctrl-A selects the whole list", "6 records selected" in pg.inner_text("#n-selinfo") or "5 records selected" in pg.inner_text("#n-selinfo"), pg.inner_text("#n-selinfo"))
         # a click on a small spectrum only selects the channel
         pg.click("#spec-mini"); pg.wait_for_timeout(600)
         check("click on the small spectrum does not change the tab", pg.evaluate("document.querySelector('#tabs button.on').dataset.tab") == "log")

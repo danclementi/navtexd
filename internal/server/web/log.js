@@ -101,7 +101,7 @@
     const first = Math.max(0, Math.floor(sc.scrollTop / ROW)), vis = visRows() + 2;
     const start = Math.max(0, first - 3), end = Math.min(L.total, first + vis + 3);
     const n = L.sel.size;
-    $("n-selinfo").textContent = n > 1 ? `${n} selected` : "";
+    $("n-selinfo").textContent = n > 1 ? `${n} records selected` : "";
     $("n-open").disabled = !L.selId;
     if (dlg.open) updateNav();
     $("n-report").disabled = n < 1;

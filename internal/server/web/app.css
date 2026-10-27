@@ -82,7 +82,8 @@ textarea { width: 100%; min-width: 260px; }
 .vsep { color: var(--dim); width: 14px; margin: 0 2px; }
 .gtd { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 1px; font-size: 10.5px; line-height: 1.1; flex: none; }
 .gtd input { font-size: 12px; }
-.selinfo { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; margin: 0 8px; }
+.selinfo { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; margin: 0 4px 0 8px; }
+.lognav .sp { flex: 1 1 0; min-width: 8px; }
 .tablewrap { max-height: 340px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
 .tablewrap.tall { max-height: 420px; }
 .tablewrap table { width: 100%; }
@@ -356,8 +357,8 @@ dialog#rec-dlg::backdrop { background: rgba(0, 0, 0, .45); }
 .filters .frow .field.grow { flex: 1 1 320px; max-width: 560px; }
 .filters .fsep { align-self: stretch; width: 1px; margin: 0 6px; background: var(--line); }
 .filters #f-km-wrap input[type=number] { width: 72px; }
-.filtind { display: none; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; letter-spacing: .04em; color: var(--warn); }
-.filtind.on { display: inline-flex; }
+.filtind { display: inline-flex; visibility: hidden; flex: none; width: 24em; overflow: hidden; white-space: nowrap; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; letter-spacing: .04em; color: var(--warn); }
+.filtind.on { visibility: visible; }
 .filtind i { width: 13px; height: 13px; border-radius: 50%; background: var(--warn); border: 1px solid var(--warn); box-shadow: 0 0 8px var(--warn); animation: filtpulse 3s ease-in-out infinite; }
 .filtind .small { font-weight: 600; letter-spacing: 0; }
 @keyframes filtpulse { 0%, 100% { opacity: .35; box-shadow: 0 0 2px var(--warn); } 50% { opacity: 1; box-shadow: 0 0 10px var(--warn); } }
@@ -455,6 +456,7 @@ fieldset.specgrp { flex: 1 1 200px; min-width: 150px; padding: 4px 8px 6px; flex
 /* ---- Log filter: one line (switch, Edit, summary) and a pop-up for the settings ---- */
 .fbar { flex: none; display: flex; align-items: center; gap: 4px 8px; margin: 0 0 6px; padding: 3px 6px 3px 6px; border-radius: 4px; border-left: 4px solid transparent; }
 .fbar .fsum { margin: 0 6px; }
+.fbar { min-height: 24px; padding-top: 1px; padding-bottom: 1px; }
 .fbar.active { border-left-color: var(--warn); background: color-mix(in srgb, var(--warn) 9%, transparent); }
 .fswitch { font-weight: 600; white-space: nowrap; }
 .fsum { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
