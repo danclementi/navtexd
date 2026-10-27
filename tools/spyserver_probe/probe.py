@@ -3,9 +3,14 @@
 look at the I/Q stream. Python standard library only; numpy (optional) adds a spectrum peak report.
 
   python probe.py [--addr HOST:PORT] info
+  python probe.py [--addr HOST:PORT] gains FREQ_HZ [--stage N] [--near HZ]
   python probe.py [--addr HOST:PORT] run FREQ_HZ [--stage N] [--format uint8|int16|float] [--gain G] [--secs S] [--ask-twice] [--near HZ]
 
 info  prints the device information and the settings the server reports, and the sample rate of each decimation stage.
+gains steps through every gain index (0 to the server's maximum) at FREQ_HZ and prints, for each, the level of the whole stream
+      (dB relative to full scale, RMS and peak), the share of clipped samples, and (with numpy and --near) the level within
+      +-NEAR Hz of the centre. The change from the previous index shows what a step does (6 dB per step = an attenuator).
+      The gain is put back to its original value at the end.
 run   tunes the I/Q stream to FREQ_HZ at decimation stage N (rate = maximum sample rate / 2^N), starts it for S seconds and
       prints, once per second, blocks, samples/s, sequence gaps and mean level; at the end the centre frequency the server
       reports back (to see whether it moved), and (with numpy) the strongest spectral lines as offsets from the centre.
@@ -84,12 +89,75 @@ def show_info(info, sync):
         print("  stage %d: %.0f S/s" % (st, info[2] / 2 ** st))
 
 
+def collect(s, secs, iqtype, width, discard=0.0):
+    """Read I/Q messages for secs seconds (the first `discard` seconds are thrown away); returns the bytes kept."""
+    keep = bytearray()
+    t0 = time.time()
+    while time.time() - t0 < secs:
+        typ, stream, seq, body = message(s)
+        if typ == iqtype and time.time() - t0 >= discard:
+            keep += body
+    return bytes(keep[:len(keep) // width * width])
+
+
+def gains(s, a, info, sync, stage, rate):
+    import math
+    try:
+        import numpy as np
+    except ImportError:
+        np = None
+    setting(s, 100, 2)
+    setting(s, 102, stage)
+    setting(s, 101, a.freq)
+    setting(s, 0, 1)
+    setting(s, 1, 1)
+    print("\ngain sweep at %d Hz, stage %d (%.0f S/s), original gain %d, maximum %d" % (a.freq, stage, rate, sync[1], info[6]))
+    print("  gain   rms dBFS   peak dBFS   clipped%" + ("   near dB" if np is not None and a.near > 0 else "") + "   change")
+    prev = None
+    for g in range(0, info[6] + 1):
+        setting(s, 2, g)
+        raw = collect(s, 3.0, 101, 4, discard=1.5)
+        if np is None:
+            x = [int.from_bytes(raw[i:i + 2], "little", signed=True) for i in range(0, len(raw), 2)]
+            rms = math.sqrt(sum(v * v for v in x) / max(1, len(x)))
+            peak = max((abs(v) for v in x), default=0)
+            clip = 100.0 * sum(1 for v in x if abs(v) >= 32700) / max(1, len(x))
+            near = None
+        else:
+            x = np.frombuffer(raw, dtype="<i2").astype(np.float64)
+            rms = float(np.sqrt(np.mean(x * x))) if len(x) else 0.0
+            peak = float(np.abs(x).max()) if len(x) else 0.0
+            clip = 100.0 * float(np.mean(np.abs(x) >= 32700)) if len(x) else 0.0
+            near = None
+            if a.near > 0 and len(x) >= 8192:
+                z = x[0::2] + 1j * x[1::2]
+                n = 1 << int(np.log2(min(len(z), 1 << 17)))
+                sp = np.abs(np.fft.fftshift(np.fft.fft(z[:n] * np.hanning(n)))) ** 2
+                fr = np.fft.fftshift(np.fft.fftfreq(n, 1 / rate))
+                near = 10 * math.log10(float(sp[np.abs(fr) <= a.near].sum()) / n / n + 1e-30)
+        db = 20 * math.log10(max(rms, 1e-9) / 32768)
+        pk = 20 * math.log10(max(peak, 1e-9) / 32768)
+        line = "  %4d   %8.1f   %9.1f   %7.2f" % (g, db, pk, clip)
+        if near is not None:
+            line += "   %7.1f" % near
+        line += "   %+6.1f" % (db - prev) if prev is not None else ""
+        print(line)
+        prev = db
+    setting(s, 2, sync[1])
+    setting(s, 1, 0)
+    print("gain put back to %d" % sync[1])
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--addr", default="127.0.0.1:5555")
     ap.add_argument("--hello-len", action="store_true", help="put a name length field in the hello (older/newer servers)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("info")
+    g = sub.add_parser("gains")
+    g.add_argument("freq", type=int)
+    g.add_argument("--stage", type=int, default=None)
+    g.add_argument("--near", type=float, default=0)
     r = sub.add_parser("run")
     r.add_argument("freq", type=int)
     r.add_argument("--stage", type=int, default=None)
@@ -110,6 +178,9 @@ def main():
         return
     stage = a.stage if a.stage is not None else info[4]
     rate = info[2] / 2 ** stage
+    if a.cmd == "gains":
+        gains(s, a, info, sync, stage, rate)
+        return
     print("\nasking for %d Hz, stage %d (%.0f S/s), format %s" % (a.freq, stage, rate, a.format))
     setting(s, 100, FMT[a.format])
     setting(s, 102, stage)
