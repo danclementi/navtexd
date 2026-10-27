@@ -74,7 +74,15 @@ legend { font-weight: 600; padding: 0 6px; text-transform: capitalize; }
 .filters .field input[type=date], .filters .field input[type=number], .filters .field input[type=text], .filters select, textarea, #kw-new, #m-old, #m-km { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; }
 .filters .field input[type=number], #m-km { width: 80px; }
 textarea { width: 100%; min-width: 260px; }
-.lognav { margin: 4px 0; }
+.lognav { flex: none; display: flex; flex-wrap: nowrap; align-items: center; gap: 4px; margin: 4px 0; padding: 0 6px 0 10px; overflow-x: auto; }
+.ic { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.tb { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; width: 58px; height: 44px; padding: 2px 2px; font-size: 10.5px; line-height: 1.1; white-space: nowrap; flex: none; }
+.tb.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.tb.ghost { visibility: hidden; }
+.vsep { color: var(--dim); width: 14px; margin: 0 2px; }
+.gtd { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 1px; font-size: 10.5px; line-height: 1.1; flex: none; }
+.gtd input { font-size: 12px; }
+.selinfo { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; margin: 0 8px; }
 .tablewrap { max-height: 340px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
 .tablewrap.tall { max-height: 420px; }
 .tablewrap table { width: 100%; }
@@ -445,8 +453,9 @@ fieldset.specgrp { flex: 1 1 200px; min-width: 150px; padding: 4px 8px 6px; flex
 .chtag { font-weight: 600; color: var(--accent); text-transform: none; letter-spacing: 0; }
 
 /* ---- Log filter: one line (switch, Edit, summary) and a pop-up for the settings ---- */
-.fbar { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; padding: 3px 6px; border-radius: 4px; }
-.fbar.active { border-left: 4px solid var(--warn); background: color-mix(in srgb, var(--warn) 9%, transparent); }
+.fbar { flex: none; display: flex; align-items: center; gap: 4px 8px; margin: 0 0 6px; padding: 3px 6px 3px 6px; border-radius: 4px; border-left: 4px solid transparent; }
+.fbar .fsum { margin: 0 6px; }
+.fbar.active { border-left-color: var(--warn); background: color-mix(in srgb, var(--warn) 9%, transparent); }
 .fswitch { font-weight: 600; white-space: nowrap; }
 .fsum { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 .fsum.off { color: var(--dim); }

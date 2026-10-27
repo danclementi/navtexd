@@ -95,8 +95,6 @@
   const visRows = () => Math.max(1, Math.floor((sc.clientHeight - HDR) / ROW));
 
   function render() {
-    $("n-total").textContent = L.total;
-    $("n-all").textContent = L.total !== L.all ? `(of ${L.all})` : "";
     $("f-km-wrap").hidden = !NX.state.loc;
     $("f-rcv-wrap").hidden = !NX.secondOn();
     indicate();
@@ -106,10 +104,10 @@
     $("n-selinfo").textContent = n > 1 ? `${n} selected` : "";
     $("n-open").disabled = !L.selId;
     if (dlg.open) updateNav();
-    $("n-report").hidden = n < 1;
-    $("n-report").textContent = n > 1 ? `Add ${n} to report` : "Add to report";
+    $("n-report").disabled = n < 1;
+    $("n-report").title = n > 1 ? `Add the ${n} selected records to your report (kept in this browser)` : "Add the selected record to your report (kept in this browser)";
     $("n-delete").disabled = !admin() || n < 1;
-    $("n-delete").textContent = n > 1 ? `\u2212 Delete ${n} records` : "\u2212 Delete record";
+    $("n-delete").title = n > 1 ? `Delete the ${n} selected records (they are saved first: Undo brings them back)` : "Delete the selected record (it is saved first: Undo brings it back)";
     const tb = document.querySelector("#log-table tbody");
     const rows = [];
     const spacer = (h) => { const tr = el("tr", { class: "spacer" }); tr.style.height = h + "px"; tr.append(el("td", { colspan: "10" })); return tr; };
@@ -146,7 +144,7 @@
   async function reload() {
     L.gen++; L.cache.clear(); L.chunks.clear();
     const q = params().toString();
-    try { const j = await fetchRange(0, 1); L.total = j.total; L.all = j.all; } catch (e) { $("n-total").textContent = "error: " + e.message; return; }
+    try { const j = await fetchRange(0, 1); L.total = j.total; L.all = j.all; } catch (e) { $("n-selinfo").textContent = "error: " + e.message; return; }
     L.q = q; L.lt = L.total; L.la = L.all; L.hid0 = L.all - L.total; // what the filter hid when it was applied
     L.sel = new Set(); L.selId = 0; L.anchor = -1;
     jumpLatest();
@@ -520,7 +518,12 @@
   });
 
   // ---- navigation and filters ----
-  $("n-order").onchange = () => reload();
+  // the two order buttons: chronological (newest last) or reverse (newest first); #n-order holds the choice
+  const syncOrder = () => { for (const [id, v] of [["n-chrono", "oldest"], ["n-reverse", "newest"]]) { const on = $("n-order").value === v; $(id).classList.toggle("on", on); $(id).setAttribute("aria-pressed", on ? "true" : "false"); } };
+  const setOrder = (v) => { if ($("n-order").value === v) return; $("n-order").value = v; syncOrder(); reload(); };
+  $("n-chrono").onclick = () => setOrder("oldest");
+  $("n-reverse").onclick = () => setOrder("newest");
+  syncOrder();
   $("n-latest").onclick = () => { $("n-date").value = ""; jumpLatest(); if (L.total) selectIndex(newestFirst() ? 0 : L.total - 1); };
   $("n-date").onchange = gotoDate; // picking or typing a date goes there at once
   $("n-date").onkeydown = (e) => { if (e.key === "Enter") gotoDate(); };
@@ -535,6 +538,7 @@
   $("f-cancel").onclick = () => { restore(before); fdlg.close(); indicate(); };
   $("f-apply").onclick = applyDlg;
   $("f-on").onchange = () => { reload().then(indicate); };
+  $("f-btn").onclick = () => { $("f-on").checked = !$("f-on").checked; $("f-on").onchange(); indicate(); };
   $("f-clear").onclick = () => { for (const k of ids) { if (PICK[k]) setPick(k, ""); else $("f-" + k).value = ""; } $("f-unid").checked = false; $("f-omit").checked = false; indicate(); };
   $("f-unid").addEventListener("change", () => { if ($("f-unid").checked) $("f-omit").checked = false; }); // UNID only and Omit UNID exclude each other
   $("f-omit").addEventListener("change", () => { if ($("f-omit").checked) $("f-unid").checked = false; });
@@ -564,7 +568,8 @@
     const on = filterOn();
     const hid = Math.max(0, (L.la - L.lt) - L.hid0);
     $("f-ind").classList.toggle("on", on);
-    $("f-stat").textContent = on ? ` \u00b7 showing ${L.lt} of ${L.la}` + (hid ? ` \u00b7 +${hid} new hidden` : "") : "";
+    $("f-stat").textContent = on ? `showing ${L.lt} of ${L.la}` + (hid ? ` \u00b7 +${hid} new hidden` : "") : "";
+    $("f-btn").classList.toggle("on", $("f-on").checked); $("f-btn").setAttribute("aria-pressed", $("f-on").checked ? "true" : "false");
     const sum = summaryText();
     $("f-sum").textContent = !sum ? "No filters selected; all records are shown." : $("f-on").checked ? sum : ""; // switched off: do not show settings that are not in use
     $("f-sum").title = sum;
@@ -596,10 +601,10 @@
   }
   function showUndo(u) {
     const b = $("n-undo"), ok = !!(u && u.available);
-    b.hidden = !ok || !admin(); b.disabled = !ok;
+    b.classList.toggle("ghost", !admin()); b.disabled = !ok || !admin();
     $("ld-undo").disabled = !ok || !admin();
     $("ld-undo").title = ok ? undoTip(u) : "Nothing to undo";
-    if (ok) b.textContent = "Undo", b.title = undoTip(u);
+    b.title = ok ? undoTip(u) : "Nothing to undo";
   }
   const loadUndo = () => { if (admin()) api("GET", "/api/messages/undo").then(showUndo).catch(() => {}); };
   // the record(s) come back as they were (old numbers and places); the first one is shown (selected) again
@@ -666,7 +671,7 @@
       dbInfo(); loadUndo(); await reload(); indicate();
     } catch (e) { dmsg("Not imported: " + e.message); }
   };
-  const showDbBtn = () => { $("n-db").hidden = !admin(); };
+  const showDbBtn = () => { $("n-db").classList.toggle("ghost", !admin()); $("n-undo").classList.toggle("ghost", !admin()); };
   $("n-delete").onclick = () => deleteSelected(false);
   $("ld-delete").onclick = () => deleteSelected(true); // no question asked: UNDO is next to it
   $("ld-report").onclick = () => { if (L.selId) addToReport([L.selId]); };

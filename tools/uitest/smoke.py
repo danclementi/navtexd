@@ -52,16 +52,45 @@ try:
         pg = start(b)
         tabs = pg.inner_text("#tabs")
         check("tab names", "Monitor" in tabs and "Station List" in tabs)
+        # the toolbar stays put: no control moves or changes size when the filter, the selection or the order change
+        ids = ["f-btn", "f-edit", "n-chrono", "n-reverse", "n-latest", "n-date", "n-undo", "n-open", "n-report", "n-delete", "n-db"]
+        def boxes(): return pg.evaluate("ids => Object.fromEntries(ids.map(i => { const r = document.getElementById(i).getBoundingClientRect(); return [i, [Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)]]; }))", ids)
+        def same(name):
+            now = boxes(); moved = [i for i in ids if now[i] != base[i]]
+            check("toolbar stays put: " + name, not moved, [(i, base[i], now[i]) for i in moved])
+        base = boxes()
+        if os.environ.get("SHOT"): pg.screenshot(path=os.environ["SHOT"] + "-1.png", clip=dict(zip(("x", "y", "width", "height"), (0, pg.evaluate("document.getElementById('filters').getBoundingClientRect().y - 6"), 1400, 140))))
+        def visible(name):  # both toolbar rows keep their height and lie above the list, however short the window is
+            g = pg.evaluate("(() => { const r = i => document.getElementById(i).getBoundingClientRect(); return [r('filters').bottom, r('n-open').height, r('n-open').bottom, r('logscroll').top]; })()")
+            check("toolbar not covered: " + name, g[1] >= 40 and g[2] <= g[3] + 1 and g[0] <= g[3], g)
+        pg.evaluate("document.querySelector('#log-table').style.height = '6000px'")  # a long list, as in real use: it is taller than the window
+        visible("tall window")
+        for h in (700, 520):
+            pg.set_viewport_size({"width": 1400, "height": h}); pg.wait_for_timeout(400); visible("%d px high" % h)
+        pg.set_viewport_size({"width": 1400, "height": 900}); pg.wait_for_timeout(400)
+        pg.evaluate("document.querySelector('#log-table').style.height = ''")
+        pg.locator("#logscroll tbody tr").nth(1).locator("td").nth(1).click(); pg.wait_for_timeout(300); same("one record selected")
+        pg.click("#logscroll"); pg.keyboard.press("Control+a"); pg.wait_for_timeout(300); same("all records selected")
+        pg.click("#n-reverse"); pg.wait_for_timeout(500); same("reverse order")
+        check("reverse button is pressed", pg.get_attribute("#n-reverse", "aria-pressed") == "true" and pg.get_attribute("#n-chrono", "aria-pressed") == "false")
+        pg.click("#n-chrono"); pg.wait_for_timeout(400)
+        pg.click("#f-edit"); pg.evaluate("const e=document.getElementById('f-b1'); e.value='ZZ'; e.dispatchEvent(new Event('input',{bubbles:true}))"); pg.click("#f-apply"); pg.wait_for_timeout(800)
+        same("filter on"); check("filter button is pressed", pg.get_attribute("#f-btn", "aria-pressed") == "true")
+        if os.environ.get("SHOT"): pg.screenshot(path=os.environ["SHOT"] + "-2.png", clip=dict(zip(("x", "y", "width", "height"), (0, pg.evaluate("document.getElementById('filters').getBoundingClientRect().y - 6"), 1400, 140))))
+        pg.click("#f-btn"); pg.wait_for_timeout(600); same("filter switched off"); check("filter button is released", pg.get_attribute("#f-btn", "aria-pressed") == "false")
+        pg.click("#f-edit"); pg.click("#f-clear"); pg.click("#f-apply"); pg.wait_for_timeout(600)
+        pg.click("#f-btn") if pg.get_attribute("#f-btn", "aria-pressed") == "true" else None
+        pg.keyboard.press("Escape")
         # numbering follows time, in both orders; left = earlier, right = later
         for order in ("oldest", "newest"):
-            pg.select_option("#n-order", order); pg.wait_for_timeout(500)
+            pg.click("#n-chrono" if order == "oldest" else "#n-reverse"); pg.wait_for_timeout(500)
             rows = pg.locator("#logscroll tbody tr"); open_row(pg, rows.count() - 1 if order == "oldest" else 0)
             check(order + ": newest is 6 of 6", num(pg) == (6, 6), title(pg))
             pg.click("#ld-prev"); pg.wait_for_timeout(600); check(order + ": left goes to 5 of 6", num(pg) == (5, 6), title(pg))
             pg.click("#ld-next"); pg.wait_for_timeout(600); check(order + ": right goes back to 6 of 6", num(pg) == (6, 6), title(pg))
             pg.keyboard.press("Escape"); pg.wait_for_timeout(300)
         # a filtered list: an edit that removes the record must not skip its neighbour
-        pg.select_option("#n-order", "oldest"); pg.wait_for_timeout(400)
+        pg.click("#n-chrono"); pg.wait_for_timeout(400)
         pg.click("#f-edit"); pg.evaluate("const e=document.getElementById('f-b1'); e.value='E'; e.dispatchEvent(new Event('input',{bubbles:true}))"); pg.click("#f-apply"); pg.wait_for_timeout(800)
         open_row(pg, 2)
         h3 = hexof(pg)
@@ -76,7 +105,8 @@ try:
         check("undo of the edit shows the record again", hexof(pg) == h3 and num(pg) == (3, 6), title(pg))
         # DELETE without a question, then UNDO
         pg.click("#ld-delete"); pg.wait_for_timeout(1000)
-        check("delete leaves 5", pg.inner_text("#n-total") == "5", pg.inner_text("#n-total"))
+        total = pg.evaluate("fetch('/api/messages?limit=1').then(r => r.json()).then(j => j.total)")
+        check("delete leaves 5", total == 5, total)
         pg.click("#ld-undo"); pg.wait_for_timeout(1200)
         check("undo of the deletion: same record, same place", hexof(pg) == h3 and num(pg) == (3, 6), title(pg))
         # From / To keep date and time (UTC) between visits

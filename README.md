@@ -162,3 +162,5 @@ The station list and word list shipped with the program are compiled from public
 believe any of it should not be included, please open an issue.
 
 NAVTEX is a service of the IMO/IHO; this project is not affiliated with or endorsed by either, nor by the authors of YaND.
+
+Third-party material (icons): see `THIRD_PARTY_NOTICES.md`.
