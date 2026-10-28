@@ -51,7 +51,7 @@ try:
         b = p.chromium.launch(executable_path=a.chromium) if a.chromium else p.chromium.launch()
         pg = start(b)
         tabs = pg.inner_text("#tabs")
-        check("tab names", "Monitor" in tabs and "Station List" in tabs)
+        check("tab names", "Monitor" in tabs and "Stations" in tabs)
         # the toolbar stays put: no control moves or changes size when the filter, the selection or the order change
         ids = ["f-btn", "f-edit", "n-chrono", "n-reverse", "n-latest", "n-date", "n-undo", "n-open", "n-report", "n-delete", "n-db"]
         def boxes(): return pg.evaluate("ids => Object.fromEntries(ids.map(i => { const r = document.getElementById(i).getBoundingClientRect(); return [i, [Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)]]; }))", ids)

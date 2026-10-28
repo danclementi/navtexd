@@ -128,6 +128,7 @@
       ta.value = initial = R.edited ? R.edited.text : gen;
       $("re-msg").textContent = "";
       counts(); dlg.showModal(); ta.focus({ preventScroll: true }); ta.setSelectionRange(0, 0); ta.scrollTop = 0;
+      void ta.offsetHeight; ta.style.overflow = "hidden"; void ta.offsetHeight; ta.style.overflow = ""; // (lays the text area out again so its scroll bar shows at once)
     } catch (e) { note("Cannot edit: " + e.message); }
   };
   const close = (force) => {
@@ -145,8 +146,6 @@
     if (ta.value !== gen && !confirm("Replace the text with the report as generated from the list?")) return;
     try { gen = (await generated()).replace(/\r\n/g, "\n"); ta.value = gen; counts(); rmsg("Reverted."); } catch (e) { rmsg("Cannot revert: " + e.message); }
   };
-  $("re-copy").onclick = async () => { if (await copyText(crlf(ta.value))) rmsg("Copied."); };
-  $("re-save").onclick = async () => { if (await saveText(crlf(ta.value))) accept(); };
 
   NX.listen("role", render);
   NX.tabs.report = load;

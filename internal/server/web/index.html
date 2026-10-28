@@ -20,6 +20,7 @@
 <symbol id="i-device-floppy" viewBox="0 0 24 24"><path d="M6 4h10l4 4v10a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2" /> <path d="M10 14a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /> <path d="M14 4l0 4l-6 0l0 -4" /></symbol>
 <symbol id="i-clipboard-copy" viewBox="0 0 24 24"><path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h3m9 -9v-5a2 2 0 0 0 -2 -2h-2" /> <path d="M13 17v-1a1 1 0 0 1 1 -1h1m3 0h1a1 1 0 0 1 1 1v1m0 3v1a1 1 0 0 1 -1 1h-1m-3 0h-1a1 1 0 0 1 -1 -1v-1" /> <path d="M9 5a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2" /></symbol>
 <symbol id="i-restore" viewBox="0 0 24 24"><path d="M3.06 13a9 9 0 1 0 .49 -4.087" /> <path d="M3 4.001v5h5" /> <path d="M11 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /></symbol>
+<symbol id="i-wave-sine" viewBox="0 0 24 24"><path d="M21 12h-2c-.894 0 -1.662 -.857 -1.761 -2c-.296 -3.45 -.749 -6 -2.749 -6s-2.5 3.582 -2.5 8s-.5 8 -2.5 8s-2.452 -2.547 -2.749 -6c-.1 -1.147 -.867 -2 -1.763 -2h-2" /></symbol>
 <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7l16 0" /> <path d="M10 11l0 6" /> <path d="M14 11l0 6" /> <path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12" /> <path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3" /></symbol>
 <symbol id="i-arrow-back-up" viewBox="0 0 24 24"><path d="M9 14l-4 -4l4 -4" /> <path d="M5 10h11a4 4 0 1 1 0 8h-1" /></symbol>
 <symbol id="i-database" viewBox="0 0 24 24"><path d="M4 6a8 3 0 1 0 16 0a8 3 0 1 0 -16 0" /> <path d="M4 6v6a8 3 0 0 0 16 0v-6" /> <path d="M4 12v6a8 3 0 0 0 16 0v-6" /></symbol>
@@ -40,9 +41,10 @@
           <div class="dial" data-id="q" data-label="QUALITY" data-red="0" title="Signal quality (inverse of the crest factor)"></div>
           <div class="dial" data-id="cpu" data-label="CPU LOAD" data-red="0.85" data-two="1" title="CPU load: green needle = navtexd, amber needle = the whole computer (percent of all cores)"></div>
         </div>
+        <button id="b-clip" type="button" class="tb" title="Save the last minute of input audio (and a few seconds more)&#10;of the active channel as a WAV file for later analysis."><svg class="ic" aria-hidden="true"><use href="#i-wave-sine"/></svg><span>save clip</span></button>
       </div>
       <div class="timerow"><span id="date">&nbsp;</span><span id="clock">--:--:-- UTC</span></div>
-      <div class="sunrow"><span id="sun" class="msun" title="Receive location">Sunrise: --:-- / Sunset: --:--</span><button id="b-clip" title="Save the last minute of input audio (and a few seconds more)&#10;of the active channel as a WAV file for later analysis.">Save clip</button></div>
+      <div class="sunrow"><span id="sun" class="msun" title="Receive location">Sunrise: --:-- / Sunset: --:--</span></div>
     </fieldset>
     <fieldset class="grp specgrp" id="grp-spec" data-ch="0">
       <div class="specwrap2"><canvas id="spec-mini"></canvas></div>
@@ -64,14 +66,14 @@
   <button data-tab="status" class="on">Monitor</button>
   <button data-tab="spectrum">Spectrum</button>
   <button data-tab="log">Log</button>
-  <button data-tab="schedule">Schedule</button>
-  <button data-tab="scope">Signal</button>
   <button data-tab="report">Report</button>
-  <button data-tab="statistics">Statistics</button>
+  <button data-tab="schedule">Schedule</button>
+  <button data-tab="database">Stations</button>
   <button data-tab="ephemeris">Ephemeris</button>
   <button data-tab="options">Options</button>
-  <button data-tab="database">Station List</button>
   <button data-tab="syslog">System Log</button>
+  <button data-tab="scope" hidden>Signal</button>
+  <button data-tab="statistics" hidden>Statistics</button>
 </nav>
 <main>
   <section id="tab-status">
@@ -250,15 +252,11 @@
     <span class="grow"></span>
     <button id="re-close" type="button" title="Close without keeping the changes (Esc)" aria-label="Close">&#10005;</button>
   </div>
-  <p class="small redit-note">Changes affect only this report text, never the log records. Accept keeps them for save and copy until the report list changes.</p>
+  <p class="small redit-note">Changes affect only this report text, never the log records. Accept keeps them for save and copy in the Report tab until the report list changes; revert regenerates the text from the list.</p>
   <textarea id="re-text" spellcheck="false" wrap="off"></textarea>
   <div class="dlgfoot">
     <button id="re-revert" type="button" class="tb" title="Replace the text with the report as it is generated from the list.
 Your edits in this window are lost."><svg class="ic" aria-hidden="true"><use href="#i-restore"/></svg><span>revert</span></button>
-    <button id="re-copy" type="button" class="tb" title="Copy this text to the clipboard.
-The report text is not changed."><svg class="ic" aria-hidden="true"><use href="#i-clipboard-copy"/></svg><span>copy</span></button>
-    <button id="re-save" type="button" class="tb" title="Save this text as a file and keep it as the report text
-(the same as Accept after saving)."><svg class="ic" aria-hidden="true"><use href="#i-device-floppy"/></svg><span>save</span></button>
     <span class="grow"></span><span id="re-msg" class="small"></span>
     <button id="re-cancel" type="button" class="tb" title="Close without keeping the changes (Esc)"><svg class="ic" aria-hidden="true"><use href="#i-cancel"/></svg><span>cancel</span></button>
     <button id="re-accept" type="button" class="tb" title="Keep the edited text as the report text

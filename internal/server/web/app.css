@@ -413,7 +413,7 @@ dialog#rp-dlg { width: min(1000px, 96vw); height: min(760px, 94vh); padding: 0; 
 dialog#rp-dlg[open] { display: flex; flex-direction: column; }
 dialog#rp-dlg::backdrop { background: rgba(0, 0, 0, .45); }
 #rp-dlg .redit-note { margin: 6px 12px 0; }
-#re-text { flex: 1 1 auto; min-height: 0; margin: 6px 12px; resize: none; white-space: pre; overflow: auto; font-family: var(--mono); background: var(--msg-bg); color: var(--msg-ink); border: 1px solid var(--spec-grid); }
+#re-text { flex: 1 1 auto; min-height: 0; margin: 6px 12px; resize: none; white-space: pre; overflow-x: auto; overflow-y: scroll; font-family: var(--mono); background: var(--msg-bg); color: var(--msg-ink); border: 1px solid var(--spec-grid); }
 #rp-dlg .dlgfoot { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--line); }
 #rp-dlg button.primary { font-weight: 600; border-color: var(--accent); }
 
@@ -537,3 +537,6 @@ input.tm.bad { border-color: var(--bad); }
 #adm-in { width: 100%; box-sizing: border-box; }
 
 #rp-table tbody { user-select: none; -webkit-user-select: none; }
+
+.mainrow { gap: 10px; }
+#b-clip { flex: none; }

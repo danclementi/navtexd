@@ -27,16 +27,16 @@
 
   $("b-clip").onclick = async () => {
     if (busy) return;
-    const b = $("b-clip"), old = b.textContent;
+    const b = $("b-clip"), lab = b.querySelector("span"), old = lab.textContent;
     let wait;
-    try { wait = (await api("POST", "/api/clips" + (NX.state.sel ? "?ch=" + NX.state.sel : ""))).wait_s; } catch (e) { b.textContent = "Not saved"; b.title = e.message; setTimeout(() => { b.textContent = old; }, 3000); return; }
+    try { wait = (await api("POST", "/api/clips" + (NX.state.sel ? "?ch=" + NX.state.sel : ""))).wait_s; } catch (e) { lab.textContent = "failed"; b.title = e.message; setTimeout(() => { lab.textContent = old; }, 3000); return; }
     busy = true; b.disabled = true;
     const end = Date.now() + wait * 1000;
     const tick = () => {
       const left = Math.ceil((end - Date.now()) / 1000);
-      if (left > 0) { b.textContent = "Recording " + left + " s"; setTimeout(tick, 250); return; }
-      b.textContent = "Saved";
-      setTimeout(() => { b.textContent = old; b.disabled = !admin(); busy = false; load(); }, 2000);
+      if (left > 0) { lab.textContent = left + " s"; setTimeout(tick, 250); return; }
+      lab.textContent = "saved";
+      setTimeout(() => { lab.textContent = old; b.disabled = !admin(); busy = false; load(); }, 2000);
     };
     tick();
   };
