@@ -1,7 +1,7 @@
 # navtexd — project context
 
 ## What this is
-A pure-Go (stdlib only, no cgo) NAVTEX decoder (518/490/424 kHz, 100 baud FSK, CCIR 476 / SITOR-B) with an HTTP + SSE
+A pure-Go (stdlib only, no cgo) NAVTEX decoder (518/490/486/424 kHz, 100 baud FSK, CCIR 476 / SITOR-B) with an HTTP + SSE
 server and a multi-client browser UI, comparable to YaND. Public GPL v3 project. The user-facing description is in
 `README.md`; the design is in `docs/DESIGN.md` (decoder) and `docs/SERVER_DESIGN.md` (server/UI), `docs/HPSDR_DESIGN.md` (radio input) and `docs/TODO.md` (what is next).
 

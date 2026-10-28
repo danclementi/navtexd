@@ -889,8 +889,8 @@ func (s *Server) control(w http.ResponseWriter, r *http.Request, id Identity) {
 	case "frequency":
 		var f float64
 		if f, err = asFloat(); err == nil {
-			if f != 518 && f != 490 && f != 424 {
-				err = errors.New("frequency must be 518, 490 or 424 (kHz)")
+			if f != 518 && f != 490 && f != 486 && f != 424 {
+				err = errors.New("frequency must be 518, 490, 486 or 424 (kHz)")
 			} else {
 				var restart bool
 				restart, err = s.run.Modify(func(c *config.Config) error {

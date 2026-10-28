@@ -71,8 +71,8 @@ func Parse(r io.Reader) (*Table, error) {
 		if s.NavArea, err = strconv.Atoi(f[0]); err != nil {
 			return nil, fmt.Errorf("line %d: navarea %q", line, f[0])
 		}
-		if s.FreqKHz, err = strconv.Atoi(f[1]); err != nil || (s.FreqKHz != 490 && s.FreqKHz != 518 && s.FreqKHz != 424) {
-			return nil, fmt.Errorf("line %d: frequency %q (want 490, 518 or 424)", line, f[1])
+		if s.FreqKHz, err = strconv.Atoi(f[1]); err != nil || (s.FreqKHz != 490 && s.FreqKHz != 518 && s.FreqKHz != 486 && s.FreqKHz != 424) {
+			return nil, fmt.Errorf("line %d: frequency %q (want 490, 518, 486 or 424)", line, f[1])
 		}
 		if s.Lat, err = strconv.ParseFloat(f[7], 64); err != nil || s.Lat < -90 || s.Lat > 90 {
 			return nil, fmt.Errorf("line %d: latitude %q", line, f[7])

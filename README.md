@@ -107,7 +107,7 @@ Text received outside any ZCZC...NNNN message is kept as a "fragment". Much of i
 Message segmentation; every channel has its own settings) two settings thin it out: `min_fragment_chars` (fewer visible characters than this: dropped) and the word
 test, `min_fragment_words` words of at least `min_fragment_word_letters` letters (0 = no word test, the default). With
 `fragment_words_after_autocorrect` on, words repaired from the vocabulary count too. `fragment_words_vocabulary` decides what counts as a word: `on` = only words found in the
-vocabulary (it holds words of 5 letters or more), `off` = any run of letters, `auto` (default) = `on` at 518 kHz, `off` at 490 and 424 kHz. Dropped fragments are not stored; the System
+vocabulary (it holds words of 5 letters or more), `off` = any run of letters, `auto` (default) = `on` at 518 kHz, `off` at 490, 486 and 424 kHz. Dropped fragments are not stored; the System
 Log notes each one ("fragment not stored (N words ...)") so that you can tune the numbers. Messages are never affected.
 
 ### Running two copies

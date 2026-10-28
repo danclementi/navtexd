@@ -2,7 +2,7 @@
 // Report tab: the records this user added from the Log tab (the list is kept in this browser, see replist.js), in time order.
 (() => {
   const NX = window.NX, $ = NX.$, el = NX.el, api = NX.api;
-  const R = { rows: [], sel: new Set(), edited: null }; // edited: { text, key } while the operator's edited report text is in use
+  const R = { rows: [], sel: new Set(), anchor: -1, edited: null }; // edited: { text, key } while the operator's edited report text is in use
   const admin = () => NX.state.role === "admin";
 
   function render() {
@@ -24,7 +24,7 @@
     try { R.rows = (await api("POST", "/api/report/list", { ids: NX.replist.ids() })).records; } catch (e) { $("rp-count").textContent = e.message; return; }
     const have = new Set(R.rows.map((r) => r.id));
     NX.replist.keepOnly(R.rows.map((r) => r.id)); // records deleted from the log drop out of the list
-    R.sel = new Set([...R.sel].filter((id) => have.has(id)));
+    R.sel = new Set([...R.sel].filter((id) => have.has(id))); R.anchor = -1;
     if (R.edited && R.edited.key !== key()) {
       // the list changed (records added in the Log tab) since the text was edited
       if (confirm("The report list has changed since you edited the report text.\n\nOK = discard your edits and use the new list.\nCancel = keep your edited text (it will not include the new list).")) R.edited = null;
@@ -39,15 +39,28 @@
       $("rp-text").textContent = r.lines.map((l) => l.x).join("\n");
     } catch (e) { $("rp-text").textContent = e.message; }
   }
+  // selection works as in the Log tab: click selects one record, Ctrl-click adds or removes one, Shift-click selects everything between the
+  // last clicked record (the anchor) and this one, Ctrl-A selects all
+  const rowIdx = (id) => R.rows.findIndex((r) => r.id === id);
   document.querySelector("#rp-table tbody").addEventListener("click", (e) => {
     const tr = e.target.closest("tr[data-id]");
     if (!tr) return;
-    const id = Number(tr.dataset.id);
-    if (e.ctrlKey || e.metaKey) { if (R.sel.has(id)) R.sel.delete(id); else R.sel.add(id); } else R.sel = new Set([id]);
+    const id = Number(tr.dataset.id), i = rowIdx(id);
+    if (e.ctrlKey || e.metaKey) { if (R.sel.has(id)) R.sel.delete(id); else R.sel.add(id); R.anchor = i; }
+    else if (e.shiftKey && R.anchor >= 0 && R.anchor < R.rows.length) {
+      window.getSelection().removeAllRanges();
+      const a = Math.min(R.anchor, i), b = Math.max(R.anchor, i);
+      R.sel = new Set(R.rows.slice(a, b + 1).map((r) => r.id)); // (the anchor stays where it was)
+    } else { R.sel = new Set([id]); R.anchor = i; }
     render(); show(id);
   });
+  document.addEventListener("keydown", (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey || e.key.toLowerCase() !== "a" || NX.state.tab !== "report" || document.querySelector("dialog[open]")) return;
+    if (/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
+    e.preventDefault(); R.sel = new Set(R.rows.map((r) => r.id)); render();
+  });
   const dropEdits = () => { if (!R.edited) return true; if (!confirm("Your edits to the report text will be discarded. Continue?")) return false; R.edited = null; return true; };
-  $("rp-remove").onclick = async () => { if (!dropEdits()) return; NX.replist.remove([...R.sel]); R.sel = new Set(); await load(); };
+  $("rp-remove").onclick = async () => { if (!dropEdits()) return; NX.replist.remove([...R.sel]); R.sel = new Set(); R.anchor = -1; await load(); };
   $("rp-clear").onclick = async () => {
     if (!confirm("Remove all records from the report list? (The records stay in the log.)")) return;
     if (!dropEdits()) return;

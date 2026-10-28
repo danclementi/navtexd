@@ -698,9 +698,9 @@
             for (const c of f.choices || [f.value]) inp.add(new Option(c, c));
             inp.value = f.value;
           } else if (f.path === "operator.info") { inp = document.createElement("textarea"); inp.rows = 5; inp.value = f.value; row.classList.add("wide"); }
-          else if (/(^|\.)channel\.frequency_hz$/.test(f.path)) { // only the three NAVTEX channels
+          else if (/(^|\.)channel\.frequency_hz$/.test(f.path)) { // only the four NAVTEX channels
             inp = document.createElement("select");
-            const hz = [518000, 490000, 424000]; if (!hz.includes(Number(f.value))) hz.push(Number(f.value));
+            const hz = [518000, 490000, 486000, 424000]; if (!hz.includes(Number(f.value))) hz.push(Number(f.value));
             for (const v of hz) inp.add(new Option(`${v / 1000} kHz`, String(v)));
             inp.value = String(f.value);
           }
@@ -897,8 +897,18 @@
     const w = inp.value.trim().toLowerCase(); inp.value = "";
     if (w !== "sudo" && w !== "exit") return;
     try { localStorage.setItem("nx-advanced", w === "sudo" ? "1" : "0"); } catch (err) { /* no storage */ }
-    changed = true;
+    changed = true; advTabs();
   });
+  // the Signal and Statistics tabs are shown only in sudo mode; if one of them is open when it goes away, the Monitor tab is shown
+  function advTabs() {
+    const on = window.NX.advOn();
+    for (const t of ["scope", "statistics"]) {
+      const b = document.querySelector(`#tabs button[data-tab=${t}]`);
+      b.hidden = !on;
+      if (!on && b.classList.contains("on")) document.querySelector("#tabs button[data-tab=status]").click();
+    }
+  }
+  advTabs();
   $("adm-close").onclick = () => adm.close();
   adm.addEventListener("mousedown", (e) => { if (e.target === adm) adm.close(); });
   adm.addEventListener("close", () => { if (changed) { changed = false; if (window.NX.reloadOptions) window.NX.reloadOptions(); } });

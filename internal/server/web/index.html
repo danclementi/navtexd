@@ -19,6 +19,7 @@
 <symbol id="i-edit" viewBox="0 0 24 24"><path d="M7 7h-1a2 2 0 0 0 -2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2 -2v-1" /> <path d="M20.385 6.585a2.1 2.1 0 0 0 -2.97 -2.97l-8.415 8.385v3h3l8.385 -8.415" /> <path d="M16 5l3 3" /></symbol>
 <symbol id="i-device-floppy" viewBox="0 0 24 24"><path d="M6 4h10l4 4v10a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2" /> <path d="M10 14a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /> <path d="M14 4l0 4l-6 0l0 -4" /></symbol>
 <symbol id="i-clipboard-copy" viewBox="0 0 24 24"><path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h3m9 -9v-5a2 2 0 0 0 -2 -2h-2" /> <path d="M13 17v-1a1 1 0 0 1 1 -1h1m3 0h1a1 1 0 0 1 1 1v1m0 3v1a1 1 0 0 1 -1 1h-1m-3 0h-1a1 1 0 0 1 -1 -1v-1" /> <path d="M9 5a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2" /></symbol>
+<symbol id="i-restore" viewBox="0 0 24 24"><path d="M3.06 13a9 9 0 1 0 .49 -4.087" /> <path d="M3 4.001v5h5" /> <path d="M11 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /></symbol>
 <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7l16 0" /> <path d="M10 11l0 6" /> <path d="M14 11l0 6" /> <path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12" /> <path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3" /></symbol>
 <symbol id="i-arrow-back-up" viewBox="0 0 24 24"><path d="M9 14l-4 -4l4 -4" /> <path d="M5 10h11a4 4 0 1 1 0 8h-1" /></symbol>
 <symbol id="i-database" viewBox="0 0 24 24"><path d="M4 6a8 3 0 1 0 16 0a8 3 0 1 0 -16 0" /> <path d="M4 6v6a8 3 0 0 0 16 0v-6" /> <path d="M4 12v6a8 3 0 0 0 16 0v-6" /></symbol>
@@ -41,7 +42,7 @@
         </div>
       </div>
       <div class="timerow"><span id="date">&nbsp;</span><span id="clock">--:--:-- UTC</span></div>
-      <div class="sunrow"><span id="sun" class="msun" title="Receive location">Sunrise: --:-- / Sunset: --:--</span><button id="b-clip" title="Save the last minute of input audio (and a few seconds more) of the active channel as a WAV file for later analysis">Save clip</button></div>
+      <div class="sunrow"><span id="sun" class="msun" title="Receive location">Sunrise: --:-- / Sunset: --:--</span><button id="b-clip" title="Save the last minute of input audio (and a few seconds more)&#10;of the active channel as a WAV file for later analysis.">Save clip</button></div>
     </fieldset>
     <fieldset class="grp specgrp" id="grp-spec" data-ch="0">
       <div class="specwrap2"><canvas id="spec-mini"></canvas></div>
@@ -98,7 +99,7 @@
     </div>
   </section>
   <section id="tab-spectrum" hidden>
-    <div class="specwrap"><canvas id="spec" title="Mouse wheel: zoom in or out. Drag: move the view. Double-click: show the whole slice again (administrators: also center it on the channel frequency). Administrators can drag beyond the displayed range, or drag the carrier marker to an edge: the channel then restarts with the spectrum and the receiver centered on the new place."></canvas><div id="spec-scale" class="seg" title="Vertical scale of the spectrum"><button type="button" data-sc="log">LOG</button><button type="button" data-sc="lin">LIN</button></div></div>
+    <div class="specwrap"><canvas id="spec" title="Mouse wheel: zoom in or out.&#10;Drag: move the view.&#10;Double-click: show the whole slice again (administrators: also center it on the channel frequency).&#10;Administrators can drag beyond the displayed range, or drag the carrier marker to an edge: the channel then restarts with the spectrum and the receiver centered on the new place."></canvas><div id="spec-scale" class="seg" title="Vertical scale of the spectrum"><button type="button" data-sc="log">LOG</button><button type="button" data-sc="lin">LIN</button></div></div>
   </section>
   <section id="tab-log" hidden>
     <div class="lognav">
@@ -110,14 +111,14 @@
       <svg class="ic vsep" aria-hidden="true"><use href="#i-minus-vertical"/></svg>
       <label class="gtd" title="Jump to the first record of this day (UTC): type a date or pick one"><span>go to date</span><input id="n-date" class="iso" type="text" placeholder="yyyy-mm-dd"></label>
       <span class="sp"></span>
-      <button id="f-btn" type="button" class="tb" aria-pressed="false" title="Switch the filter on or off; its settings are kept"><svg class="ic" aria-hidden="true"><use href="#i-filter"/></svg><span>filter</span></button>
+      <button id="f-btn" type="button" class="tb" aria-pressed="false" title="Switch the filter on or off.&#10;The filter settings are kept either way."><svg class="ic" aria-hidden="true"><use href="#i-filter"/></svg><span>filter</span></button>
       <button id="f-edit" type="button" class="tb" title="Choose what the list shows"><svg class="ic" aria-hidden="true"><use href="#i-filter-edit"/></svg><span>edit</span></button>
       <span class="sp"></span>
       <button id="n-undo" type="button" class="tb ghost" title="Take back the last deletion or edit of a record" disabled><svg class="ic" aria-hidden="true"><use href="#i-arrow-back-up"/></svg><span>undo</span></button>
       <svg class="ic vsep" aria-hidden="true"><use href="#i-minus-vertical"/></svg>
       <button id="n-open" type="button" class="tb" title="Read the selected record (double-click or Enter)" disabled><svg class="ic" aria-hidden="true"><use href="#i-eye"/></svg><span>review</span></button>
       <button id="n-report" type="button" class="tb" title="Add the selected records to your report (kept in this browser)" disabled><svg class="ic" aria-hidden="true"><use href="#i-report-medical"/></svg><span>to report</span></button>
-      <button id="n-delete" type="button" class="tb" title="Delete the selected records (they are saved first: Undo brings them back)" disabled><svg class="ic" aria-hidden="true"><use href="#i-trash"/></svg><span>delete</span></button>
+      <button id="n-delete" type="button" class="tb" title="Delete the selected records.&#10;They are saved first: the undo button brings them back." disabled><svg class="ic" aria-hidden="true"><use href="#i-trash"/></svg><span>delete</span></button>
       <svg class="ic vsep" aria-hidden="true"><use href="#i-minus-vertical"/></svg>
       <button id="n-db" type="button" class="tb ghost" title="Compact, export or import the log database"><svg class="ic" aria-hidden="true"><use href="#i-database"/></svg><span>database</span></button>
     </div>
@@ -126,7 +127,7 @@
       <span class="fsum" id="f-sum"></span>
       <span id="n-selinfo" class="small selinfo"></span>
     </div>
-    <div id="logscroll" class="logscroll" tabindex="0" title="Up/Down: one line. Page Up/Down: a page. Double-click or Enter: open the record. Ctrl-click: add or remove a record from the selection. Shift-click: select the range from the last clicked record.">
+    <div id="logscroll" class="logscroll" tabindex="0" title="Up/Down: one line. Page Up/Down: a page.&#10;Double-click or Enter: open the record.&#10;Ctrl-click: add or remove a record from the selection.&#10;Shift-click: select the range from the last clicked record.&#10;Ctrl-A: select the whole list.">
       <table id="log-table"><thead><tr><th>UTC received</th><th>Freq</th><th>Q</th><th>B1</th><th>B2</th><th>Msg#</th><th>Area</th><th>Station</th><th class="km">Dist km</th><th>Kind</th></tr></thead><tbody></tbody></table>
     </div>
   </section>
@@ -135,7 +136,7 @@
       <div class="col grow">
         <h3>Station list</h3>
         <div class="row">
-          <label class="field">Frequency <select id="s-freq"><option value="">all</option><option value="518">518</option><option value="490">490</option><option value="424">424</option></select></label>
+          <label class="field">Frequency <select id="s-freq"><option value="">all</option><option value="518">518</option><option value="490">490</option><option value="486">486</option><option value="424">424</option></select></label>
           <label class="field grow">Search <input id="s-text" type="text" placeholder="call sign, name, country"></label>
           <span id="s-count" class="small"></span>
         </div>
@@ -181,7 +182,7 @@
   <section id="tab-report" hidden>
     <p class="note">Records you add from the Log tab ("Add to report", or the button in the record window). Your list is kept in this browser; other users have their own. The NavtexDX report format itself is planned for a later milestone.</p>
     <div class="row">
-      <button id="rp-remove" class="tb" disabled title="Remove the selected records from the report"><svg class="ic" aria-hidden="true"><use href="#i-playlist-x"/></svg><span>remove</span></button><button id="rp-clear" class="tb" disabled title="Empty the report list"><svg class="ic" aria-hidden="true"><use href="#i-file-x"/></svg><span>clear</span></button><span id="rp-count" class="small"></span>
+      <button id="rp-remove" class="tb" disabled title="Remove the selected records from the report.&#10;They stay in the log."><svg class="ic" aria-hidden="true"><use href="#i-playlist-x"/></svg><span>remove</span></button><button id="rp-clear" class="tb" disabled title="Empty the report list.&#10;The records stay in the log."><svg class="ic" aria-hidden="true"><use href="#i-file-x"/></svg><span>clear</span></button><span id="rp-count" class="small"></span>
       <span class="grow"></span>
       <fieldset id="rp-info" class="radios"><legend>Personal info</legend>
         <label class="check"><input type="radio" name="rp-info" value="omit"> Omit</label>
@@ -202,7 +203,7 @@
   <section id="tab-statistics" hidden><p class="note">Reception statistics are planned for the next milestone.</p></section>
   <section id="tab-schedule" hidden>
     <div class="filters">
-      <label class="field">Frequency <select id="sc-freq"><option value="518">518 kHz</option><option value="490">490 kHz</option><option value="424">424 kHz</option></select></label>
+      <label class="field">Frequency <select id="sc-freq"><option value="518">518 kHz</option><option value="490">490 kHz</option><option value="486">486 kHz</option><option value="424">424 kHz</option></select></label>
       <button id="sc-now">On air now</button>
       <span id="sc-utc" class="small"></span>
     </div>
@@ -211,7 +212,7 @@
   </section>
   <section id="tab-ephemeris" hidden>
     <div class="filters">
-      <label class="field">Frequency <select id="ep-freq"><option value="518">518</option><option value="490">490</option><option value="424">424</option></select></label>
+      <label class="field">Frequency <select id="ep-freq"><option value="518">518</option><option value="490">490</option><option value="486">486</option><option value="424">424</option></select></label>
       <label class="field">Station <select id="ep-station"></select></label>
       <label class="field">Date (UTC) <input id="ep-date" type="date"></label>
       <button id="ep-today">Today</button>
@@ -249,15 +250,19 @@
     <span class="grow"></span>
     <button id="re-close" type="button" title="Close without keeping the changes (Esc)" aria-label="Close">&#10005;</button>
   </div>
-  <p class="small redit-note">Changes affect only this report text, never the log records. Accept keeps them for Save Report and Copy to Clipboard until the report list changes.</p>
+  <p class="small redit-note">Changes affect only this report text, never the log records. Accept keeps them for save and copy until the report list changes.</p>
   <textarea id="re-text" spellcheck="false" wrap="off"></textarea>
   <div class="dlgfoot">
-    <button id="re-revert" type="button" title="Replace the text with the report as generated from the list">Revert</button>
-    <button id="re-copy" type="button" title="Copy this text to the clipboard">Copy</button>
-    <button id="re-save" type="button" title="Save this text as a file and keep it as the report text">Save</button>
+    <button id="re-revert" type="button" class="tb" title="Replace the text with the report as it is generated from the list.
+Your edits in this window are lost."><svg class="ic" aria-hidden="true"><use href="#i-restore"/></svg><span>revert</span></button>
+    <button id="re-copy" type="button" class="tb" title="Copy this text to the clipboard.
+The report text is not changed."><svg class="ic" aria-hidden="true"><use href="#i-clipboard-copy"/></svg><span>copy</span></button>
+    <button id="re-save" type="button" class="tb" title="Save this text as a file and keep it as the report text
+(the same as Accept after saving)."><svg class="ic" aria-hidden="true"><use href="#i-device-floppy"/></svg><span>save</span></button>
     <span class="grow"></span><span id="re-msg" class="small"></span>
-    <button id="re-cancel" type="button">Cancel</button>
-    <button id="re-accept" type="button" class="primary" title="Keep the edited text as the report text">Accept</button>
+    <button id="re-cancel" type="button" class="tb" title="Close without keeping the changes (Esc)"><svg class="ic" aria-hidden="true"><use href="#i-cancel"/></svg><span>cancel</span></button>
+    <button id="re-accept" type="button" class="tb" title="Keep the edited text as the report text
+until the report list changes."><svg class="ic" aria-hidden="true"><use href="#i-thumb-up"/></svg><span>accept</span></button>
   </div>
 </dialog>
 <dialog id="db-dlg" aria-label="Log database">
@@ -287,7 +292,7 @@
   <div class="dlghead"><b>Filter the log</b></div>
   <div class="fform">
     <div class="fcol fleft">
-      <label class="field">Frequency <select id="f-freq"><option value="">any</option><option value="518">518</option><option value="490">490</option><option value="424">424</option></select></label>
+      <label class="field">Frequency <select id="f-freq"><option value="">any</option><option value="518">518</option><option value="490">490</option><option value="486">486</option><option value="424">424</option></select></label>
       <label class="field" id="f-rcv-wrap" hidden>Channel <select id="f-rcv"><option value="">any</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></label>
       <label class="field">Kind <select id="f-kind"><option value="">all</option><option value="message">message</option><option value="incomplete">incomplete</option><option value="fragment">fragment</option></select></label>
     </div>
@@ -306,10 +311,10 @@
     </div>
   </div>
   <div class="dlgfoot">
-    <button id="f-clear" type="button" class="tb" title="Empty every field"><svg class="ic" aria-hidden="true"><use href="#i-filter-x"/></svg><span>clear</span></button>
+    <button id="f-clear" type="button" class="tb" title="Empty every field of the filter.&#10;Press apply to use the empty filter."><svg class="ic" aria-hidden="true"><use href="#i-filter-x"/></svg><span>clear</span></button>
     <span class="grow"></span>
-    <button id="f-cancel" type="button" class="tb" title="Close without changing the filter"><svg class="ic" aria-hidden="true"><use href="#i-cancel"/></svg><span>cancel</span></button>
-    <button id="f-apply" type="button" class="tb" title="Apply the filter (Enter in a field does the same)"><svg class="ic" aria-hidden="true"><use href="#i-thumb-up"/></svg><span>apply</span></button>
+    <button id="f-cancel" type="button" class="tb" title="Close without changing the filter (Esc)"><svg class="ic" aria-hidden="true"><use href="#i-cancel"/></svg><span>cancel</span></button>
+    <button id="f-apply" type="button" class="tb" title="Use these settings as the filter.&#10;Enter in a field does the same."><svg class="ic" aria-hidden="true"><use href="#i-thumb-up"/></svg><span>apply</span></button>
   </div>
 </dialog>
 <dialog id="log-dlg" aria-label="Log record">
@@ -317,8 +322,8 @@
     <button id="ld-prev" type="button" title="Earlier record (left arrow key)">&#9664;</button>
     <button id="ld-next" type="button" title="Later record (right arrow key)">&#9654;</button>
     <span class="dlgsep"></span>
-    <button id="ld-undo" type="button" title="Bring back the last deleted record" disabled>UNDO</button>
-    <button id="ld-delete" type="button" title="Delete this record (UNDO brings it back)">DELETE</button>
+    <button id="ld-undo" type="button" title="Take back the last deletion or edit of a record" disabled>UNDO</button>
+    <button id="ld-delete" type="button" title="Delete this record.&#10;It is saved first: the undo button brings it back.">DELETE</button>
     <b id="rec-title"></b>
     <span class="grow"></span>
     <button id="ld-report" type="button" title="Add this record to your report (kept in this browser)" hidden>Add to report</button>
@@ -326,7 +331,7 @@
   </div>
   <div id="rec-info" class="ldinfo"></div>
   <div class="ldtext">
-    <label class="check small" title="Words with unreadable characters, repaired from the maritime vocabulary, are shown in [brackets]; hover for what was received. The raw text is never changed."><input type="checkbox" id="rec-cor" checked> show autocorrections</label>
+    <label class="check small" title="Words with unreadable characters, repaired from the maritime vocabulary,&#10;are shown in [brackets]; hover for what was received.&#10;The raw text is never changed."><input type="checkbox" id="rec-cor" checked> show autocorrections</label>
     <pre id="rec-text"></pre>
     <div id="rev-sug" class="small" hidden></div>
     <div id="rev-list" class="small" hidden></div>

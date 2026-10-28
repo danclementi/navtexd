@@ -5,7 +5,7 @@ navtexd is distributed under the GNU General Public License v3. It includes the 
 ## Tabler Icons
 
 Some of the icons in the web interface (filter, filter-edit, sort-ascending-numbers, sort-descending-numbers, arrow-bar-to-right,
-arrow-back-up, eye, report-medical, trash, database, minus-vertical) are from Tabler Icons 3.49.0, https://tabler.io/icons,
+arrow-back-up, eye, report-medical, trash, database, minus-vertical, filter-x, thumb-up, cancel, playlist-x, file-x, edit, device-floppy, clipboard-copy, restore) are from Tabler Icons 3.49.0, https://tabler.io/icons,
 used under the MIT licence:
 
     MIT License

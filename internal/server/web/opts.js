@@ -14,7 +14,7 @@
       logged = new Set(stations.filter((s) => !off.has(s.id)).map((s) => s.id));
     } catch (e) { return; }
     const grid = el("div", { class: "sellog" });
-    const freq = el("select", {}, new Option("all frequencies", ""), new Option("518", "518"), new Option("490", "490"), new Option("424", "424"));
+    const freq = el("select", {}, new Option("all frequencies", ""), new Option("518", "518"), new Option("490", "490"), new Option("486", "486"), new Option("424", "424"));
     const msg = el("span", { class: "small" });
     const visible = () => stations.filter((s) => !freq.value || String(s.freq) === freq.value);
     const count = () => { msg.textContent = `${stations.length - logged.size} of ${stations.length} stations are not logged`; };

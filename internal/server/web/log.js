@@ -48,8 +48,7 @@
   isoField($("n-date"));
   isoField($("f-from")); isoField($("f-to"));
   for (const id of ["f-from", "f-fromt", "f-to", "f-tot"]) {
-    try { const v = localStorage.getItem(KEEP + id); if (v) $(id).value = v; } catch (e) { /* no storage */ }
-    $(id).addEventListener("change", () => { try { localStorage.setItem(KEEP + id, $(id).value.trim()); } catch (e) { /* no storage */ } });
+    try { localStorage.removeItem(KEEP + id); } catch (e) { /* no storage */ } // earlier versions kept the dates across browser starts; no longer
     if (id.endsWith("t")) { // 24-hour time: impossible digits are refused as they are typed (hh 00-23, mm 00-59), the colon is added
       const el = $(id);
       el.addEventListener("input", () => {
@@ -107,7 +106,7 @@
     $("n-report").disabled = n < 1;
     $("n-report").title = n > 1 ? `Add the ${n} selected records to your report (kept in this browser)` : "Add the selected record to your report (kept in this browser)";
     $("n-delete").disabled = !admin() || n < 1;
-    $("n-delete").title = n > 1 ? `Delete the ${n} selected records (they are saved first: Undo brings them back)` : "Delete the selected record (it is saved first: Undo brings it back)";
+    $("n-delete").title = n > 1 ? `Delete the ${n} selected records.\nThey are saved first: the undo button brings them back.` : "Delete the selected record.\nIt is saved first: the undo button brings it back.";
     const tb = document.querySelector("#log-table tbody");
     const rows = [];
     const spacer = (h) => { const tr = el("tr", { class: "spacer" }); tr.style.height = h + "px"; tr.append(el("td", { colspan: "10" })); return tr; };
