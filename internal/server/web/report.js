@@ -128,7 +128,6 @@
       ta.value = initial = R.edited ? R.edited.text : gen;
       $("re-msg").textContent = "";
       counts(); dlg.showModal(); ta.focus({ preventScroll: true }); ta.setSelectionRange(0, 0); ta.scrollTop = 0;
-      void ta.offsetHeight; ta.style.overflow = "hidden"; void ta.offsetHeight; ta.style.overflow = ""; // (lays the text area out again so its scroll bar shows at once)
     } catch (e) { note("Cannot edit: " + e.message); }
   };
   const close = (force) => {
