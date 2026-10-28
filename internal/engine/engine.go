@@ -100,7 +100,7 @@ type Engine struct {
 
 	front *ddc.DDC
 	rx    *fsk.Receiver
-	dec   *sitor.Decoder
+	dec   sitor.Framer
 	seg   *segment.Segmenter
 
 	inSamples   int64
@@ -157,7 +157,7 @@ func New(fs, centreHz float64, kind iq.Kind, cfg config.Config, h Handlers) (*En
 	rcfg := cfg.Receiver
 	rcfg.Params.Fs = e.front.OutputRate()
 	e.rx = fsk.NewReceiver(rcfg)
-	e.dec = sitor.NewDecoder(cfg.Decoder)
+	e.dec = sitor.New(cfg.Decoder)
 	e.seg = segment.New(cfg.Segment, e.Quality, func(r segment.Record) {
 		if e.h.Record != nil {
 			e.h.Record(r)
@@ -290,6 +290,7 @@ func (e *Engine) Reconfigure(cfg config.Config) {
 	pol, uos := cfg.Decoder.Polarity, cfg.Decoder.UnshiftOnSpace
 	dc := cfg.Decoder
 	dc.Polarity, dc.UnshiftOnSpace = old.Decoder.Polarity, old.Decoder.UnshiftOnSpace
+	dc.Framing = old.Decoder.Framing
 	if dc.ShiftHz = old.Decoder.ShiftHz; dc != old.Decoder {
 		e.handleSitor(e.dec.SetConfig(dc))
 	}

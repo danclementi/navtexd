@@ -57,6 +57,30 @@ func (o *Order) UnmarshalText(b []byte) error {
 	return nil
 }
 
+// Framing selects how the character alignment is found.
+type Framing int
+
+const (
+	FramingHard Framing = iota // hard 4-of-7 word framing (the original)
+	FramingSoft                // soft repetition lock (internal/softlock)
+)
+
+func (f Framing) String() string { return [...]string{"hard", "soft"}[f] }
+
+func (f Framing) MarshalText() ([]byte, error) { return []byte(f.String()), nil }
+
+func (f *Framing) UnmarshalText(b []byte) error {
+	switch strings.ToLower(string(b)) {
+	case "hard":
+		*f = FramingHard
+	case "soft":
+		*f = FramingSoft
+	default:
+		return fmt.Errorf("unknown framing %q (want hard or soft)", b)
+	}
+	return nil
+}
+
 // Unreadable says what to print for a character whose DX and repeat copies were both received invalid.
 type Unreadable int
 

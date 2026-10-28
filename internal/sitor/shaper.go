@@ -11,7 +11,8 @@ type textItem struct {
 // would not start a line, and after the station's BRK marker. Up to three characters (Z, ZC, ZCZ) are held back
 // until it is clear whether they begin ZCZC.
 type shaper struct {
-	d       *Decoder
+	cfg     *Config
+	events  *[]Event
 	held    []textItem
 	lineLen int
 	recent  []rune // last four emitted characters
@@ -22,7 +23,7 @@ func (s *shaper) reset() {
 }
 
 func (s *shaper) put(t string, sym int64) {
-	if s.d.cfg.BreakBeforeZCZC {
+	if s.cfg.BreakBeforeZCZC {
 		if len(s.held) > 0 {
 			cand := s.heldText() + t
 			if strings.HasPrefix("ZCZC", cand) {
@@ -64,14 +65,14 @@ func (s *shaper) flush() {
 
 // raw sends text without touching the line state (used for inserted breaks).
 func (s *shaper) raw(t string, sym int64) {
-	s.d.events = append(s.d.events, Event{Kind: EvText, Text: t, Sym: sym})
+	*s.events = append(*s.events, Event{Kind: EvText, Text: t, Sym: sym})
 	if strings.Contains(t, "\n") {
 		s.lineLen = 0
 	}
 }
 
 func (s *shaper) emit(t string, sym int64) {
-	s.d.events = append(s.d.events, Event{Kind: EvText, Text: t, Sym: sym})
+	*s.events = append(*s.events, Event{Kind: EvText, Text: t, Sym: sym})
 	for _, r := range t {
 		switch r {
 		case '\n':
@@ -85,7 +86,7 @@ func (s *shaper) emit(t string, sym int64) {
 			s.recent = s.recent[1:]
 		}
 	}
-	if s.d.cfg.BreakAfterBRK && len(s.recent) >= 3 {
+	if s.cfg.BreakAfterBRK && len(s.recent) >= 3 {
 		n := len(s.recent)
 		if string(s.recent[n-3:]) == "BRK" && (n == 3 || !isLetter(s.recent[n-4])) {
 			s.raw("\n", sym)

@@ -774,7 +774,7 @@ func IsLive(path string) bool {
 		}
 		return false
 	}
-	if path == "decoder.shift_hz" {
+	if path == "decoder.shift_hz" || path == "decoder.framing" {
 		return false
 	}
 	for _, f := range liveFields {
@@ -841,7 +841,7 @@ func restartNeededSingle(a, b Config) bool {
 		default:
 			in.Device = keep.Device
 		}
-		c.Decoder = sitor.Config{ShiftHz: c.Decoder.ShiftHz}
+		c.Decoder = sitor.Config{ShiftHz: c.Decoder.ShiftHz, Framing: c.Decoder.Framing}
 		r := &c.Receiver
 		blank := r.BlankK > 0
 		r.BlankK, r.SearchHz, r.SearchWinS, r.SearchHopS, r.MinContrast, r.LoseAfterS, r.VerifyS = 0, 0, 0, 0, 0, 0, 0

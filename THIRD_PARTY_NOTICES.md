@@ -2,6 +2,14 @@
 
 navtexd is distributed under the GNU General Public License v3. It includes the following third-party material.
 
+## navtex-rs (soft repetition lock)
+
+`internal/softlock` is a Go port of the weak-signal lock in navtex-rs (`navtex-core/src/{softlock,score,combine,charset}.rs`),
+https://github.com/bgm60/navtex-rs, by bgm60, licensed GPL-3.0-or-later (compatible with this program's GPL v3).
+Its test vectors (`internal/softlock/testdata`, reduced to the soft bit streams, lock traces and decoded text) come from the same
+project, which in turn captured them from the Python reference decoder bgm60/navtex-decode. The algorithm and its parameters are
+theirs; see `docs/soft-lock-design.md` for what we changed or still have to calibrate.
+
 ## Tabler Icons
 
 Some of the icons in the web interface (filter, filter-edit, sort-ascending-numbers, sort-descending-numbers, arrow-bar-to-right,
