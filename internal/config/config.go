@@ -872,7 +872,7 @@ func restartNeededSingle(a, b Config) bool {
 		c.Decoder = sitor.Config{ShiftHz: c.Decoder.ShiftHz, Framing: c.Decoder.Framing}
 		r := &c.Receiver
 		blank := r.BlankK > 0
-		r.BlankK, r.SearchHz, r.SearchWinS, r.SearchHopS, r.MinContrast, r.LoseAfterS, r.VerifyS = 0, 0, 0, 0, 0, 0, 0
+		r.BlankK, r.SearchHz, r.SearchWinS, r.SearchHopS, r.MinContrast, r.LoseAfterS, r.VerifyS, r.VerifyVetoHz = 0, 0, 0, 0, 0, 0, 0, 0
 		r.TrackWindow, r.TrackMinEach, r.TrackMinTotal, r.TrackInterval, r.TrackGain, r.TrackMaxStep, r.TrackMaxExcur = 0, 0, 0, 0, 0, 0, 0
 		r.PresentDB, r.PresentOff, r.Alpha, r.ConfThr, r.MaxLost = 0, 0, 0, 0, 0
 		if blank {

@@ -126,6 +126,12 @@ differ by at least `min_differences` characters, or one channel has no copy of a
 (`clips`; the clip keeps `before_s` seconds before the moment of detection, so make it longer than your longest message plus `wait_s`). The clip's .json file carries `note` (what differed) and
 `detail` (each difference with its position and surrounding text). Replay the clip with different settings to find out which channel was right.
 
+### Bandwidth over the internet
+The page files and the JSON answers of the API are compressed (gzip), and page files carry an ETag so that a reload costs a few bytes. View-only clients (anything arriving through a proxy or
+tunnel) get a compact live feed: the spectrum of every channel as 8-bit values in 1 dB steps, sent as the change from the previous frame (deflated, with a full frame every 10 s), at most
+2 frames a second per channel and without the unfiltered trace, and the meters 4 times a second. One channel costs about 1.3 kB/s instead of about 40 kB/s. Administrators on the local network
+keep the full-resolution feed. Browsers without `DecompressionStream` (before 2022) get the full feed.
+
 ### Running two copies
 
 Each copy needs its own data folder, and a copy refuses to start on a folder that another copy is using. The simplest

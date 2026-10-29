@@ -3,16 +3,16 @@
 A running list. Move finished items to the bottom or delete them.
 
 ## Next
+- **Share the clip buffer between channels on one input:** every channel keeps its own ring of raw input (capped at 256 MB
+  each, `clip.MaxBytes`), so channels that share an input (`shared_from`) store identical copies and hit the memory limit
+  (about 134 s of I/Q at 250 kS/s instead of the 190 s asked for). One ring per input would cut the memory by the number
+  of sharing channels and allow longer clips. Optionally make the cap an option. For now `clips.before_s` is set to 120.
 - **Tests that run everywhere:** the decoder regression tests (block invariance, end to end, receiver, decoder; 17 tests)
   skip when `testdata/` recordings are absent, which is the case in a fresh clone. Write a small Go test helper that
   synthesises SITOR-B / FSK audio (known text, adjustable SNR, carrier offset, drift, impulse noise) so they always run.
 - **Coverage:** `app` (runner) 13 %, `catalog` 30 %, `server` 55 %; add tests with a fake source.
 - **Input watchdog: reopen.** The watchdog now only warns (`input.watchdog_s`). Optionally reopen the input by itself when
   it stalls (needs a way to unblock a read that never returns).
-- **Compress the spectrum data sent to browsers.** Many SDR programs do this. A spectrum frame is about 7 kB of JSON (three
-  arrays of tenths of dB) and 10 frames/s per channel go to each local client, 3.3/s to remote viewers; with two channels this
-  matters over a tunnel. Options: 8-bit or delta-coded values in a binary frame, gzip/zstd of the event stream (check that
-  Cloudflare does not buffer it), fewer bins or frames for remote viewers. Revisit once remote use is common.
 - **Retest** the packet-loss burst reporting and the `swap_iq` note on the other radios when they are available.
 
 ## Next (channels)

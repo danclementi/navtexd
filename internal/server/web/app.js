@@ -454,11 +454,34 @@
   window.addEventListener("resize", scheduleSpec);
 
   // ---- events ----
-  let es, lostTimer = 0, byeShown = false;
+  let es, lostTimer = 0, byeShown = false, specChain = Promise.resolve(), specPrev = [];
+  async function inflateB64(b64) {
+    const bin = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const out = new Response(new Blob([bin]).stream().pipeThrough(new DecompressionStream("deflate-raw")));
+    return new Int8Array(await out.arrayBuffer());
+  }
+  // a compact spectrum frame (see compact.go): rebuild the usual spectrum message from it
+  async function expandSpec(m) {
+    const d = await inflateB64(m.d), i = m.rcv || 0, len = m.n + (m.m || 0);
+    if (d.length !== len) return null;
+    let q = specPrev[i];
+    if (m.k || !q || q.length !== len) {
+      if (!m.k) return null; // the full frame this one builds on was missed: wait for the next one
+      q = specPrev[i] = new Int8Array(d);
+    } else {
+      for (let k = 0; k < len; k++) q[k] = q[k] + d[k]; // an Int8Array wraps like the server's bytes
+    }
+    const s = { start: m.start, step: m.step, carrier: m.carrier, fs: m.fs, rcv: i, filt: Array.from(q.subarray(0, m.n), (v) => v * 10) };
+    if (m.m) s.chan = Array.from(q.subarray(m.n), (v) => (v === -128 ? -3000 : v * 10));
+    return s;
+  }
   function srvMsg(text) { $("srvmsg-text").textContent = text; $("srvmsg").hidden = !text; }
   $("srvmsg-x").onclick = () => srvMsg("");
   function connect() {
-    es = new EventSource("/api/events");
+    // viewers can have the spectrum in a compact form (about a tenth of the data): 8-bit, deflated, changes only
+    const zok = typeof DecompressionStream === "function";
+    es = new EventSource(zok ? "/api/events?z=1" : "/api/events");
+    specChain = Promise.resolve(); specPrev = [];
     es.onopen = () => { $("conn").textContent = "live"; $("conn").className = "pill ok"; };
     es.onerror = () => {
       $("conn").textContent = "reconnecting"; $("conn").className = "pill bad";
@@ -493,7 +516,9 @@
     const rc = (m) => m.rcv || 0;
     on("meters", (m) => { const i = rc(m); state.chans[i].meters = m; showLeds(i); if (i === state.sel) showMeters(m); });
     on("net", showNet);
-    on("spectrum", (s) => { const i = rc(s); state.chans[i].spec = s; if (i === state.sel) state.spec = s; if (enabledCh(i)) scheduleSpec(); });
+    const gotSpec = (s) => { const i = rc(s); state.chans[i].spec = s; if (i === state.sel) state.spec = s; if (enabledCh(i)) scheduleSpec(); };
+    on("spectrum", gotSpec);
+    on("spectrum2", (m) => { specChain = specChain.then(() => expandSpec(m)).then((s) => { if (s) gotSpec(s); }).catch(() => {}); });
     on("text", (c) => { const i = rc(c); if (i === state.sel) addText(c.x); else addTextTo(state.chans[i], c.x); });
     on("line", (l) => { const i = rc(l); if (i === state.sel) addLine(l); else addLineTo(state.chans[i], l); });
     on("controls", (c) => {

@@ -18,7 +18,13 @@ type client struct {
 	role     Role
 	specGap  time.Duration              // minimum time between spectrum frames of one channel for this client
 	lastSpec [config.Channels]time.Time // when the last spectrum frame of each decoding channel was sent
+	compact  bool                       // gets the spectrum as compact frames and fewer meter updates
+	spec     [config.Channels]specState
+	lastMet  [config.Channels]time.Time
 }
+
+// MeterGapCompact is the least time between meter updates of one channel for a client with compact frames.
+const MeterGapCompact = 250 * time.Millisecond
 
 // Hub fans events out to the connected clients. A client that cannot keep up loses live meter frames; if it also misses
 // a data event it is disconnected (it reconnects and gets the current state again).
@@ -80,8 +86,10 @@ func NewHub() *Hub { return &Hub{clients: map[*client]struct{}{}} }
 // Clients returns the number of connected clients.
 func (h *Hub) Clients() int { h.mu.Lock(); defer h.mu.Unlock(); return len(h.clients) }
 
-func (h *Hub) add(role Role, specGap time.Duration) *client {
-	c := &client{ch: make(chan event, 256), role: role, specGap: specGap}
+func (h *Hub) add(role Role, specGap time.Duration) *client { return h.addOpts(role, specGap, false) }
+
+func (h *Hub) addOpts(role Role, specGap time.Duration, compact bool) *client {
+	c := &client{ch: make(chan event, 256), role: role, specGap: specGap, compact: compact}
 	h.mu.Lock()
 	h.clients[c] = struct{}{}
 	h.mu.Unlock()
@@ -130,16 +138,34 @@ func (h *Hub) Publish(name string, v any, lossy, adminOnly bool) {
 		if adminOnly && c.role != Admin {
 			continue
 		}
+		send := ev
+		rcv := -1
 		if sm, ok := v.(spectrumMsg); ok && sm.Rcv >= 0 && sm.Rcv < len(c.lastSpec) {
 			// the limit applies to each channel separately, otherwise two channels would share (and halve) the rate
 			if now.Sub(c.lastSpec[sm.Rcv]) < c.specGap {
 				continue
 			}
 			c.lastSpec[sm.Rcv] = now
+			if c.compact {
+				e2, ok := c.spec[sm.Rcv].encode(sm)
+				if !ok {
+					continue
+				}
+				send, rcv = e2, sm.Rcv
+			}
+		}
+		if mm, ok := v.(*meterMsg); ok && c.compact && mm.Rcv >= 0 && mm.Rcv < len(c.lastMet) {
+			if now.Sub(c.lastMet[mm.Rcv]) < MeterGapCompact {
+				continue
+			}
+			c.lastMet[mm.Rcv] = now
 		}
 		select {
-		case c.ch <- ev:
+		case c.ch <- send:
 		default:
+			if rcv >= 0 {
+				c.spec[rcv] = specState{} // the browser missed a frame: the next one is a full frame
+			}
 			if !lossy {
 				close(c.ch)
 				delete(h.clients, c)

@@ -13,6 +13,7 @@ type ReceiverConfig struct {
 	SearchWinS    float64 `json:"search_window_s" unit:"s" doc:"Length of signal analysed by each carrier search"`
 	SearchHopS    float64 `json:"search_interval_s" unit:"s" doc:"How often to search while no carrier is known"`
 	VerifyS       float64 `json:"search_verify_s" unit:"s" doc:"While locked, repeat the carrier search this often and retune if a clearly better position is found (0 = off)"`
+	VerifyVetoHz  float64 `json:"search_verify_veto_hz" unit:"Hz" doc:"Do not retune on the repeated search while the carrier tracker reports a healthy signal: the mark and space symbols well separated and centred within this many Hz of the current position (0 = never veto)"`
 	MinContrast   float64 `json:"search_min_contrast" doc:"Comb-peak to median ratio needed to accept a carrier (noise ~1.2, signals >= 3)"`
 	LoseAfterS    float64 `json:"lose_carrier_after_s" unit:"s" doc:"Seconds without timing lock before the carrier is forgotten and searched again"`
 	TrackWindow   int     `json:"track_window_symbols" doc:"Locked symbols used by the carrier-frequency tracker"`
@@ -27,7 +28,7 @@ type ReceiverConfig struct {
 func DefaultReceiverConfig(fs float64) ReceiverConfig {
 	return ReceiverConfig{Params: DefaultParams(fs), BlankK: 6.0, SearchHz: 400, SearchWinS: 4, SearchHopS: 1,
 		VerifyS: 8, MinContrast: 2.5, LoseAfterS: 10, TrackWindow: 300, TrackMinEach: 60, TrackMinTotal: 200, TrackInterval: 100,
-		TrackGain: 0.7, TrackMaxStep: 20, TrackMaxExcur: 30}
+		TrackGain: 0.7, TrackMaxStep: 20, TrackMaxExcur: 30, VerifyVetoHz: 30}
 }
 
 // F0Change records a carrier offset update, for diagnostics.
@@ -58,6 +59,7 @@ type Receiver struct {
 	nextVerify int64
 	manual     bool    // autotuning off: the carrier offset is fixed until SetCarrier
 	f0Acq      float64 // offset where the last search placed the carrier; the tracker stays near it
+	healthyAt  int64   // symbol index of the latest tracker update that found well separated mark and space symbols centred on f0
 
 	Changes []F0Change
 }
@@ -125,6 +127,7 @@ func (r *Receiver) Reacquire() {
 func (r *Receiver) setF0(f0 float64, search bool) {
 	r.demod.SetF0(f0)
 	if search {
+		r.healthyAt = 0 // a new search result has not been checked against the symbols yet
 		r.f0Acq = f0
 	}
 	r.Changes = append(r.Changes, F0Change{Sample: r.nIn, F0: f0, Search: search})
@@ -232,6 +235,10 @@ func (r *Receiver) track() {
 	sort.Float64s(neg)
 	corr := 0.5 * (pos[len(pos)/2] + neg[len(neg)/2])
 	r.newLocked = 0
+	// the tones are well separated and the middle between them is near f0: the demodulator sits on the signal
+	if half := 0.5 * r.cfg.ShiftHz; math.Min(pos[len(pos)/2], -neg[len(neg)/2]) >= 0.4*half && math.Abs(corr) <= r.cfg.VerifyVetoHz {
+		r.healthyAt = r.symIdx
+	}
 	if corr > -0.5 && corr < 0.5 {
 		return
 	}
@@ -253,6 +260,11 @@ func (r *Receiver) verify() {
 	cur := r.demod.F0()
 	f0, contrast, curScore, best := r.search.EstimateRef(r.win, cur)
 	if contrast < r.cfg.MinContrast || math.Abs(f0-cur) < 25 || best < 1.5*curScore {
+		return
+	}
+	// The comb search is coarse (it can sit 20 Hz from the true carrier on a signal whose tones differ in strength),
+	// the tracker measures the symbols themselves: while that finds the signal healthy, leave the carrier alone.
+	if r.cfg.VerifyVetoHz > 0 && r.healthyAt > 0 && r.symIdx-r.healthyAt <= int64(6*r.cfg.Baud) {
 		return
 	}
 	r.setF0(f0, true)

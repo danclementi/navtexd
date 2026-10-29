@@ -400,11 +400,8 @@ func (s *Server) handler(tunnel bool) http.Handler {
 	if d := os.Getenv("NAVTEX_WEB_DIR"); d != "" { // development: serve the client files from disk
 		sub = os.DirFS(d)
 	}
-	files := http.FileServer(http.FS(sub))
-	mux.Handle("GET /", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "no-cache")
-		files.ServeHTTP(w, r)
-	}))
+	files := staticHandler(sub, os.Getenv("NAVTEX_WEB_DIR") == "")
+	mux.Handle("GET /", files)
 	mux.HandleFunc("GET /api/state", s.viewer(tunnel, func(w http.ResponseWriter, r *http.Request, id Identity) { writeJSON(w, 200, s.hello(id)) }))
 	mux.HandleFunc("GET /api/events", s.events(tunnel))
 	s.recordRoutes(mux, tunnel)
@@ -422,7 +419,7 @@ func (s *Server) handler(tunnel bool) http.Handler {
 	mux.HandleFunc("GET /api/syslog", s.admin(tunnel, s.syslog))
 	mux.HandleFunc("POST /api/login", s.login(tunnel))
 	s.netOnce.Do(func() { go s.netLoop() })
-	return s.secure(mux)
+	return s.secure(gzipAPI(mux))
 }
 
 // countWriter counts the bytes sent to clients (all responses, including the event streams).
@@ -516,9 +513,9 @@ func (s *Server) events(tunnel bool) http.HandlerFunc {
 		rc := http.NewResponseController(w)
 		gap := time.Duration(0)
 		if id.Role != Admin {
-			gap = 300 * time.Millisecond // viewers (often over the internet) get fewer spectrum frames
+			gap = 500 * time.Millisecond // viewers (often over the internet) get fewer spectrum frames, in compact form
 		}
-		c := s.hub.add(id.Role, gap)
+		c := s.hub.addOpts(id.Role, gap, id.Role != Admin && r.URL.Query().Get("z") == "1")
 		end := s.noteConn(r, id, tunnel) // prints "connected" and later "disconnected"
 		defer end()
 		defer s.hub.remove(c)
