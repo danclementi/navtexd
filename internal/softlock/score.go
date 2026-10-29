@@ -28,10 +28,9 @@ func binsAvailable(n int) int {
 	return (n-lastNeeded)/binsPerStep + 1
 }
 
-// comparisonScore scores one pair of groups (x, and y five slots later); high means "two copies of one character".
-// It adds two measures, each shifted and scaled by its typical value on pure noise: the cosine of the angle between x
-// and y, and the best match of x+y against any of the 32 traffic codes.
-func comparisonScore(x, y *[7]float64, p *Params) float64 {
+// components returns the two measures that make up a comparison score for the pair (x, y five slots later): the cosine
+// of the angle between x and y, and the best match of x+y against any of the 32 traffic codes.
+func components(x, y *[7]float64) (cosine, correlation float64) {
 	var xy, xx, yy float64
 	var both [7]float64
 	for k := 0; k < 7; k++ {
@@ -40,7 +39,7 @@ func comparisonScore(x, y *[7]float64, p *Params) float64 {
 		yy += y[k] * y[k]
 		both[k] = x[k] + y[k]
 	}
-	cosine := xy / (math.Sqrt(xx*yy) + eps)
+	cosine = xy / (math.Sqrt(xx*yy) + eps)
 	var bothEnergy float64
 	for _, v := range both {
 		bothEnergy += v * v
@@ -59,7 +58,14 @@ func comparisonScore(x, y *[7]float64, p *Params) float64 {
 			best = agreement
 		}
 	}
-	correlation := best / (math.Sqrt(7)*math.Sqrt(bothEnergy) + eps)
+	correlation = best / (math.Sqrt(7)*math.Sqrt(bothEnergy) + eps)
+	return cosine, correlation
+}
+
+// comparisonScore scores one pair of groups (x, and y five slots later); high means "two copies of one character".
+// It adds the two measures of components, each shifted and scaled by its typical value on pure noise.
+func comparisonScore(x, y *[7]float64, p *Params) float64 {
+	cosine, correlation := components(x, y)
 	return (cosine-p.CosineNull[0])/p.CosineNull[1] + (correlation-p.CorrelationNull[0])/p.CorrelationNull[1]
 }
 

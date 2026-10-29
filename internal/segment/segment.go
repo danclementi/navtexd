@@ -138,7 +138,7 @@ func (s *Segmenter) Feed(text string, t float64) {
 		switch {
 		case n >= 4 && string(s.buf[n-4:]) == "ZCZC":
 			s.startMessage(t)
-		case n >= 4 && string(s.buf[n-4:]) == "NNNN":
+		case n >= 4 && (string(s.buf[n-4:]) == "NNNN" || s.cur.Kind == Message && damagedEnd(s.buf[n-4:])):
 			nT := s.bufT[n-4]
 			s.buf, s.bufT = s.buf[:n-4], s.bufT[:n-4]
 			if len(s.buf) > 0 {
@@ -150,6 +150,22 @@ func (s *Segmenter) Feed(text string, t float64) {
 			s.endLine(t)
 		}
 	}
+}
+
+// damagedEnd reports whether four characters are NNNN with exactly one of them unreadable ("NN~N"). It is only used
+// inside a message, where a lone damaged character in the closing group is far likelier than anything else.
+func damagedEnd(t []rune) bool {
+	marks := 0
+	for _, r := range t {
+		switch r {
+		case 'N':
+		case '~', '*':
+			marks++
+		default:
+			return false
+		}
+	}
+	return marks == 1
 }
 
 // Tick closes a record that has been silent for too long; t is the current stream time.

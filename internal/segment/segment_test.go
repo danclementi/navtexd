@@ -104,3 +104,15 @@ func TestDamagedStarts(t *testing.T) {
 		}
 	}
 }
+
+func TestDamagedEnd(t *testing.T) {
+	for _, end := range []string{"NN~N", "~NNN", "NNN*"} {
+		recs := run(t, DefaultConfig(), "\nZCZC EA78\n", "BODY LINE\n", end+"\n", "\nZCZC FE80\n", "NEXT\n", "NNNN")
+		if len(recs) != 2 || recs[0].Kind != Message || recs[0].Lines[len(recs[0].Lines)-1].Text != "NNNN" {
+			t.Errorf("%q: got %d records, first kind %v", end, len(recs), recs[0].Kind)
+		}
+	}
+	if damagedEnd([]rune("NNNN")) || damagedEnd([]rune("N~~N")) || damagedEnd([]rune("NAN~")) {
+		t.Error("damagedEnd accepts too much")
+	}
+}
