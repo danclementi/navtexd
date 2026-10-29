@@ -38,6 +38,7 @@ type Config struct {
 	Autocorrect Autocorrect         `json:"autocorrect"`
 	Server      Server              `json:"server"`
 	Clips       Clips               `json:"clips"`
+	Compare     Compare             `json:"compare"`
 	Output      Output              `json:"output"`
 	Extra       [Channels - 1]Extra `json:"extra"`
 }
@@ -119,6 +120,17 @@ type Clips struct {
 	BeforeS float64 `json:"before_s" unit:"s" doc:"Input kept in memory and saved when the clip button is pressed: this many seconds before the press (0 = clip function off)"`
 	AfterS  float64 `json:"after_s" unit:"s" doc:"The clip continues this many seconds after the press, so that the end of an event is included"`
 	Dir     string  `json:"dir" doc:"Folder for saved clips (WAV plus a .json file with the settings in force); relative to the data folder"`
+}
+
+// Compare controls the automatic comparison of two channels that receive the same signal (for example to compare
+// two framing methods): their messages are paired by identification and time, and when the texts differ an audio clip is saved.
+type Compare struct {
+	Enabled  bool    `json:"enabled" doc:"Compare the messages of two channels and save an audio clip (see clips) whenever they differ or one channel missed a message"`
+	ChannelA int     `json:"channel_a" doc:"First channel to compare (1 = Channel 1)"`
+	ChannelB int     `json:"channel_b" doc:"Second channel to compare"`
+	MinDiffs int     `json:"min_differences" doc:"Report a message only when its texts differ by at least this many characters (unreadable marks count)"`
+	WaitS    float64 `json:"wait_s" unit:"s" doc:"How long to wait for the other channel's copy of a message before calling it missing"`
+	PairS    float64 `json:"pair_s" unit:"s" doc:"Two messages with the same identification count as the same one when they started this close together"`
 }
 
 // Meters controls the live displays fed by the engine.
@@ -391,6 +403,7 @@ func defaultConfig() Config {
 			QualityNoiseCF: 5.0, QualityGoodCF: 2.83, QualityTauS: 1, QualityEyeWeight: 0.8, QualityEyeLowDB: 3, QualityEyeHighDB: 15},
 		Logging: Logging{LineQuality: true},
 		Clips:   Clips{BeforeS: 60, AfterS: 10, Dir: "clips"},
+		Compare: Compare{ChannelA: 1, ChannelB: 2, MinDiffs: 1, WaitS: 30, PairS: 60},
 		Server:  Server{Listen: "127.0.0.1:8080", OpenBrowser: true},
 		Output:  Output{Format: "text", IncompleteMessages: true},
 	}
@@ -403,6 +416,20 @@ func (c Config) Validate() error { return c.validate(true) }
 func (c Config) validate(top bool) error {
 	var errs []error
 	bad := func(format string, a ...any) { errs = append(errs, fmt.Errorf(format, a...)) }
+	if cp := c.Compare; top && cp.Enabled {
+		if cp.ChannelA < 1 || cp.ChannelA > Channels || cp.ChannelB < 1 || cp.ChannelB > Channels || cp.ChannelA == cp.ChannelB {
+			bad("compare.channel_a and compare.channel_b must be two different channels from 1 to %d", Channels)
+		}
+		if cp.MinDiffs < 1 {
+			bad("compare.min_differences must be at least 1")
+		}
+		if cp.WaitS < 5 || cp.WaitS > 600 {
+			bad("compare.wait_s must be between 5 and 600")
+		}
+		if cp.PairS < 1 || cp.PairS > 3600 {
+			bad("compare.pair_s must be between 1 and 3600")
+		}
+	}
 	if c.Channel.FrequencyHz <= 0 {
 		bad("channel.frequency_hz must be positive")
 	}
@@ -757,7 +784,7 @@ const HPSDRCarrierHz = 3000.0
 // liveFields lists the options (paths, or prefixes ending in ".") that can be applied to a running channel; see
 // RestartNeeded. The tests check that this list and RestartNeeded agree for every option.
 var liveFields = []string{
-	"operator.", "logging.", "autocorrect.", "meters.", "segment.", "channel.name", "channel.comment", "decoder.", "input.device.autotune", "input.device.manual_carrier_hz", "input.hpsdr.autotune",
+	"operator.", "logging.", "compare.", "autocorrect.", "meters.", "segment.", "channel.name", "channel.comment", "decoder.", "input.device.autotune", "input.device.manual_carrier_hz", "input.hpsdr.autotune",
 	"input.hpsdr.manual_carrier_hz", "input.sdrconnect.autotune", "input.sdrconnect.manual_carrier_hz", "input.spyserver.autotune", "input.spyserver.manual_carrier_hz", "channel.view_offset_hz", "input.stdin.autotune", "input.stdin.manual_carrier_hz", "input.file.autotune", "input.file.manual_carrier_hz",
 	"receiver.demod.presence_db", "receiver.demod.presence_offset_hz", "receiver.demod.timing_gain",
 	"receiver.demod.timing_confidence", "receiver.demod.timing_lost_blocks",
@@ -818,6 +845,7 @@ func RestartNeededFor(a, b Config, ch int) bool {
 func restartNeededSingle(a, b Config) bool {
 	neutral := func(c *Config) {
 		c.Operator, c.Server, c.Meters, c.Logging, c.Segment = Operator{}, Server{}, Meters{}, Logging{}, segment.Config{}
+		c.Compare = Compare{}
 		c.Channel.Name, c.Channel.Comment, c.Channel.ViewOffset = "", "", 0
 		c.Autocorrect = Autocorrect{}
 		// only the selected source's options matter, and of those the carrier options are live

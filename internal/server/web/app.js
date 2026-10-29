@@ -621,7 +621,7 @@
     }
     note.hidden = true; $("opt-bar").hidden = false; $("opt-hint").hidden = false;
     try { const sj = await api("GET", "/api/settings"); fields = sj.fields; optHist = sj.history || []; } catch (e) { note.hidden = false; note.textContent = e.message; return; }
-    const title = { operator: "Operator and position", input: "Input source", "input.device": "Audio input (sound card or virtual audio cable)", "input.hpsdr": "Radio (OpenHPSDR / Metis)", "input.sdrconnect": "SDRplay RSP (through SDRconnect)", "input.spyserver": "Airspy HF+ (through SpyServer)", "input.stdin": "Raw stream (standard input)", "input.file": "WAV file", channel: "Channel", ddc: "Down-converter", decoder: "Decoder", receiver: "Receiver (FSK demodulator)", segment: "Message segmentation", logging: "Logging", autocorrect: "Word autocorrection", meters: "Meters and spectrum", server: "Network server", output: "Output (command line)" };
+    const title = { operator: "Operator and position", input: "Input source", "input.device": "Audio input (sound card or virtual audio cable)", "input.hpsdr": "Radio (OpenHPSDR / Metis)", "input.sdrconnect": "SDRplay RSP (through SDRconnect)", "input.spyserver": "Airspy HF+ (through SpyServer)", "input.stdin": "Raw stream (standard input)", "input.file": "WAV file", channel: "Channel", ddc: "Down-converter", decoder: "Decoder", receiver: "Receiver (FSK demodulator)", segment: "Message segmentation", logging: "Logging", autocorrect: "Word autocorrection", meters: "Meters and spectrum", server: "Network server", output: "Output (command line)", clips: "Audio clips", compare: "Compare two channels (saves a clip when their messages differ)" };
     const nameOf = (p, d) => { const f = fields.find((x) => x.path === p); return (f && String(f.value).trim()) || d; };
     const pages = [
       ["station", "Station", ["operator"]],
@@ -629,6 +629,7 @@
       ...[0, 1, 2].map((k) => { const p = `extra.${k}.`; return ["channel" + (k + 2), nameOf(p + "channel.name", "Channel " + (k + 2)), ["extra." + k, ...["channel", "input", "input.device", "input.hpsdr", "input.sdrconnect", "input.spyserver", "input.stdin", "input.file", "receiver", "decoder", "segment", "ddc"].map((x) => p + x)]]; }),
       ["logging", "Logging", ["logging", "autocorrect"]],
       ["display", "Display", ["meters"]],
+      ["clips", "Clips and comparison", ["clips", "compare"]],
       ["network", "Network", ["server"]],
       ["cli", "Command line", ["output"]],
     ];
@@ -705,6 +706,11 @@
             inp.value = String(f.value);
           }
           else if (/(^|\.)channel\.name$/.test(f.path)) { inp = document.createElement("input"); inp.type = "text"; inp.value = f.value; inp.readOnly = true; inp.classList.add("ro"); }
+          else if (/^compare\.channel_[ab]$/.test(f.path)) { // which channels to compare
+            inp = document.createElement("select");
+            for (let n = 1; n <= N; n++) inp.add(new Option(nameOf(n === 1 ? "channel.name" : `extra.${n - 2}.channel.name`, "Channel " + n), String(n)));
+            inp.value = String(f.value);
+          }
           else if (/(^|\.)input\.shared_from$/.test(f.path)) { // which channel's input this channel uses
             const mx = /^extra\.(\d+)\./.exec(f.path), me = mx ? Number(mx[1]) + 2 : 1;
             inp = document.createElement("select"); inp.add(new Option("own input (set below)", "0"));

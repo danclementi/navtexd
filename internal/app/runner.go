@@ -18,6 +18,7 @@ import (
 
 	"navtex/internal/autocorr"
 	"navtex/internal/clip"
+	"navtex/internal/compare"
 	"navtex/internal/config"
 	"navtex/internal/engine"
 	"navtex/internal/hpsdr"
@@ -95,6 +96,10 @@ type Runner struct {
 	Keep func(store.Record) bool
 
 	corr *autocorr.Corrector
+
+	cmpMu  sync.Mutex
+	cmp    *compare.Comparer
+	cmpCfg config.Compare
 
 	mu     sync.Mutex
 	cfg    config.Config
@@ -193,6 +198,7 @@ func (r *Runner) setState(ch int, s State) {
 // Failures (no such file, no such audio device) are reported in the state and the system log, not returned, so that
 // the server can still be used to fix the settings.
 func (r *Runner) Start() {
+	go r.compareLoop()
 	for i := range r.chains {
 		if r.Config().ChannelEnabled(i) {
 			r.startChain(i)
@@ -733,6 +739,7 @@ func (r *Runner) storeRecord(ch int, sr segment.Record, wallAt func(float64) tim
 	if r.h.Record != nil {
 		r.h.Record(saved)
 	}
+	r.compareAdd(ch, saved)
 	return true
 }
 
@@ -795,7 +802,7 @@ func (r *Runner) finishClip(c *chain, ring *clip.Ring, src *source.Opened) {
 	// the settings that matter for decoding; the network and personal options stay out
 	var all map[string]json.RawMessage
 	if json.Unmarshal(cfg.JSON(), &all) == nil {
-		for _, k := range []string{"server", "operator", "logging", "output", "meters", "clips", "extra"} {
+		for _, k := range []string{"server", "operator", "logging", "output", "meters", "clips", "compare", "extra"} {
 			delete(all, k)
 		}
 		m.Settings, _ = json.Marshal(all)

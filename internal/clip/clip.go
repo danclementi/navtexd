@@ -31,6 +31,8 @@ type Meta struct {
 	Frames     int             `json:"frames"`
 	Software   string          `json:"software,omitempty"`
 	Settings   json.RawMessage `json:"settings,omitempty"` // the receiver-related options in force
+	Note       string          `json:"note,omitempty"`     // why the clip was saved, when it was not by the operator (channel comparison)
+	Detail     string          `json:"detail,omitempty"`   // the differences found, one per line
 }
 
 // TimeFormat is the layout of Meta.StartUTC.
@@ -50,6 +52,8 @@ type Ring struct {
 	stopAt    int64 // frame count at which the pending request completes
 	pressed   time.Time
 	pre, post float64
+	note      string
+	detail    string
 }
 
 // MaxBytes limits the memory used by the ring.
@@ -91,7 +95,10 @@ func (r *Ring) Write(s []complex64, now time.Time) (done bool) {
 }
 
 // Request asks for a clip that ends post seconds from now. It fails when one is already waiting.
-func (r *Ring) Request() (wait float64, err error) {
+func (r *Ring) Request() (wait float64, err error) { return r.RequestNote("", "") }
+
+// RequestNote is Request with a note (and details) stored in the clip's .json file.
+func (r *Ring) RequestNote(note, detail string) (wait float64, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.pending {
@@ -100,6 +107,7 @@ func (r *Ring) Request() (wait float64, err error) {
 	if r.total == 0 {
 		return 0, fmt.Errorf("no input yet")
 	}
+	r.note, r.detail = note, detail
 	r.pending, r.pressed = true, r.last // the time line of the input (a replayed file has its own)
 	r.stopAt = r.total + int64(r.post*r.rate)
 	if r.post*r.rate > float64(r.capFr) {
@@ -123,7 +131,7 @@ func (r *Ring) Take() (frames []float32, m Meta) {
 	if k < len(frames) {
 		copy(frames[k:], r.buf)
 	}
-	m = Meta{SampleRate: r.rate, Kind: "real", Frames: n, Seconds: float64(n) / r.rate, PreS: r.pre, PostS: r.post}
+	m = Meta{SampleRate: r.rate, Kind: "real", Frames: n, Seconds: float64(n) / r.rate, PreS: r.pre, PostS: r.post, Note: r.note, Detail: r.detail}
 	if r.ch == 2 {
 		m.Kind = "iq"
 	}

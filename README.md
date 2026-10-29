@@ -118,6 +118,14 @@ differ). The soft lock needs a few seconds of evidence before it locks (the text
 `unshift_on_space`, `lock_words`, `unlock_bad_words`, the parity and re-lock options. Changing the option restarts the channel. To compare the two on the same signal, give two channels the same input (`shared_from`) and set one to `hard` and the other to `soft`.
 The soft lock is a port of the one in [navtex-rs](https://github.com/bgm60/navtex-rs); see `docs/soft-lock-design.md`.
 
+### Comparing two channels automatically
+To see where two channels differ (two framing methods, two settings, two receivers on the same signal) without watching, switch on `compare.enabled` (Options, Clips and comparison) and choose
+`compare.channel_a` and `compare.channel_b`. Each finished message is paired with the other channel's copy by its frequency and ZCZC group (for example `EA78`) and a start time within
+`pair_s`, so small timing differences do not matter. The texts are lined up character by character (white space and case are ignored; `~` and `*` count as the same unreadable mark). When they
+differ by at least `min_differences` characters, or one channel has no copy of a message after `wait_s`, the System Log gets a `COMPARE` line and an audio clip is saved with the clip function
+(`clips`; the clip keeps `before_s` seconds before the moment of detection, so make it longer than your longest message plus `wait_s`). The clip's .json file carries `note` (what differed) and
+`detail` (each difference with its position and surrounding text). Replay the clip with different settings to find out which channel was right.
+
 ### Running two copies
 
 Each copy needs its own data folder, and a copy refuses to start on a folder that another copy is using. The simplest
