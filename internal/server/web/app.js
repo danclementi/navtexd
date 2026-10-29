@@ -261,6 +261,13 @@
   // each channel has its own LOG/LIN choice (kept in this browser); the Spectrum tab sets it and the header spectrum of the channel follows
   const PREF = []; for (let i = 0; i < N; i++) { PREF.push(specPref(i ? "navtex.spec.scale." + i : "navtex.spec.scale")); state.chans[i].scale = PREF[i].get(); }
   state.drag = null; state.specGeom = null;
+  // axis label of the linear scale (fractions of a full-scale tone): small values in milli / micro units, with just enough decimals for the step between labels
+  const linLabel = (v, step) => {
+    if (v === 0) return "0";
+    const [u, k] = step >= 0.1 ? ["", 1] : step >= 1e-4 ? ["m", 1e3] : ["\u00b5", 1e6];
+    const x = v * k, st = step * k, dec = st >= 1 ? 0 : st >= 0.1 ? 1 : 2;
+    return x.toFixed(dec) + u;
+  };
   const niceTop = (v) => { const e = Math.pow(10, Math.floor(Math.log10(v))); const m = v / e; return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * e; };
   function drawSpectrum() { drawSpec($("spec"), false, state.sel); for (const i of activeList()) drawSpec($(miniId(i)), true, i); }
   function drawSpec(cv, mini, ch) {
@@ -292,11 +299,14 @@
     for (let i = 0; i < n; i++) { const v = lin ? lv(s.filt, i) : dbv(s.filt, i); if (v > mx) mx = v; }
     let top, range, Y, labels;
     if (lin) {
-      const want = niceTop(Math.max(mx * 1.15, 1e-4));
-      V.yTopLin = V.yTopLin ? V.yTopLin + (want - V.yTopLin) * 0.15 : want;
+      // the strongest part of the trace comes out at about 2/3 of the height; the bottom is always zero. The top rises at
+      // once when the signal grows (nothing is cut off) and falls back slowly; the grid lines stay on round numbers.
+      const want = Math.max(mx, 1e-7) * 1.5;
+      if (!V.yTopLin || mx * 1.1 > V.yTopLin) V.yTopLin = want; else V.yTopLin += (want - V.yTopLin) * 0.1;
       top = V.yTopLin; range = top;
       Y = (v) => T + (top - v) / range * ph;
-      labels = []; for (let k = 0; k <= 5; k++) labels.push(top * k / 5);
+      const raw = top / 5, e10 = Math.pow(10, Math.floor(Math.log10(raw))), m10 = raw / e10, stp = (m10 <= 1 ? 1 : m10 <= 2 ? 2 : m10 <= 5 ? 5 : 10) * e10;
+      labels = []; for (let k = 0; k * stp <= top * 1.0001; k++) labels.push(k * stp);
     } else {
       V.yTop += ((Math.ceil((mx + 6) / 10) * 10) - V.yTop) * 0.1;
       top = V.yTop; range = 80;
@@ -309,7 +319,7 @@
     if (mini) labels = labels.filter((_, i) => i % 2 === 0);
     for (const d of labels) {
       const y = Math.round(Y(d)) + .5; g.beginPath(); g.moveTo(L, y); g.lineTo(L + pw, y); g.stroke();
-      g.fillText(lin ? (d >= 0.1 ? d.toFixed(2) : d.toPrecision(2)) : String(d), L - 4, y);
+      g.fillText(lin ? linLabel(d, labels[1] || 1) : String(d), L - 4, y);
     }
     g.textAlign = "center"; g.textBaseline = "top";
     const gs = d1 - d0 > 1500 ? 200 : d1 - d0 > 600 ? 100 : d1 - d0 > 250 ? 50 : 20;
