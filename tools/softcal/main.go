@@ -21,13 +21,18 @@ func main() {
 	secs := flag.Float64("seconds", 3600, "seconds of noise")
 	fs := flag.Float64("fs", 4000, "receiver input sample rate (Hz)")
 	seed := flag.Int64("seed", 1, "random seed")
+	conf := flag.Float64("conf", 0, "timing confidence threshold for the gated run (0 = the default)")
+	only := flag.Bool("gated-only", false, "skip the ungated run")
 	flag.Parse()
 	for _, gated := range []bool{false, true} {
-		run(*secs, *fs, *seed, gated)
+		if *only && !gated {
+			continue
+		}
+		run(*secs, *fs, *seed, gated, *conf)
 	}
 }
 
-func run(secs, fs float64, seed int64, gated bool) {
+func run(secs, fs float64, seed int64, gated bool, conf float64) {
 	cfg := fsk.DefaultReceiverConfig(fs)
 	name := "default (gated)"
 	if !gated {
@@ -35,6 +40,10 @@ func run(secs, fs float64, seed int64, gated bool) {
 		cfg.PresentDB = -100
 		cfg.ConfThr = 0
 		cfg.MaxLost = 1 << 30
+	}
+	if gated && conf > 0 {
+		cfg.ConfThr = conf
+		name = fmt.Sprintf("default (gated), timing_confidence %.3f", conf)
 	}
 	r := fsk.NewReceiver(cfg)
 	r.SetAutotune(false)

@@ -23,7 +23,7 @@ type Params struct {
 
 func DefaultParams(fs float64) Params {
 	return Params{Fs: fs, Baud: 100, ShiftHz: 170, NarrowCutoff: 170, PresentDB: 1.5, PresentOff: 350,
-		BlkSyms: 100, Alpha: 0.4, ConfThr: 0.03, MaxLost: 3}
+		BlkSyms: 100, Alpha: 0.4, ConfThr: 0.02, MaxLost: 3}
 }
 
 // Symbol is one integrate-and-dump result. Soft is in Hz (+ = higher tone), 0 when not Locked.
