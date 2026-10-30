@@ -68,3 +68,21 @@ func TestRingWrapAndFile(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+func TestRequestWithGroupAndSuffix(t *testing.T) {
+	r, _ := New(1000, iq.Real, 4, 1)
+	t0 := time.Date(2026, 10, 3, 5, 0, 0, 0, time.UTC)
+	r.Write(make([]complex64, 6000), t0)
+	if _, err := r.RequestWith(Meta{Note: "n", Group: "g1", Channel: 2, Served: []int{2, 4}}); err != nil {
+		t.Fatal(err)
+	}
+	r.Write(make([]complex64, 1000), t0.Add(time.Second))
+	_, m := r.Take()
+	if m.Group != "g1" || m.Channel != 2 || len(m.Served) != 2 || m.Note != "n" {
+		t.Fatalf("meta %+v", m)
+	}
+	m.Suffix = "_ch2"
+	if n := Name(m); n[len(n)-len("_ch2.wav"):] != "_ch2.wav" && n[len(n)-len("_ch2"):] != "_ch2" {
+		t.Errorf("name %s", n)
+	}
+}

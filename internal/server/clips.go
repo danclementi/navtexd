@@ -13,7 +13,7 @@ import (
 	"navtex/internal/clip"
 )
 
-var clipName = regexp.MustCompile(`^clip_[0-9]{8}T[0-9]{6}Z_[0-9]+Hz\.(wav|json)$`)
+var clipName = regexp.MustCompile(`^clip_[0-9]{8}T[0-9]{6}Z_[0-9]+Hz(_ch[0-9]+)?\.(wav|json)$`)
 
 func (s *Server) clipRoutes(mux *http.ServeMux, tunnel bool) {
 	mux.HandleFunc("POST /api/clips", s.admin(tunnel, s.clipSave))
@@ -43,6 +43,8 @@ type clipInfo struct {
 	Seconds float64 `json:"s"`
 	Kind    string  `json:"kind"`
 	Channel float64 `json:"ch"`
+	Input   int     `json:"input,omitempty"`
+	Group   string  `json:"group,omitempty"`
 }
 
 func (s *Server) clipList(w http.ResponseWriter, r *http.Request, id Identity) {
@@ -64,6 +66,7 @@ func (s *Server) clipList(w http.ResponseWriter, r *http.Request, id Identity) {
 				ci.StartMs = t.UnixMilli()
 			}
 			ci.Seconds, ci.Kind, ci.Channel = m.Seconds, m.Kind, m.ChannelHz
+			ci.Input, ci.Group = m.Channel, m.Group
 		}
 		out = append(out, ci)
 	}

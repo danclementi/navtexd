@@ -3,10 +3,6 @@
 A running list. Move finished items to the bottom or delete them.
 
 ## Next
-- **Share the clip buffer between channels on one input:** every channel keeps its own ring of raw input (capped at 256 MB
-  each, `clip.MaxBytes`), so channels that share an input (`shared_from`) store identical copies and hit the memory limit
-  (about 134 s of I/Q at 250 kS/s instead of the 190 s asked for). One ring per input would cut the memory by the number
-  of sharing channels and allow longer clips. Optionally make the cap an option. For now `clips.before_s` is set to 120.
 - **Tests that run everywhere:** the decoder regression tests (block invariance, end to end, receiver, decoder; 17 tests)
   skip when `testdata/` recordings are absent, which is the case in a fresh clone. Write a small Go test helper that
   synthesises SITOR-B / FSK audio (known text, adjustable SNR, carrier offset, drift, impulse noise) so they always run.
@@ -20,9 +16,7 @@ Four channels exist (`extra.*`, SERVER_DESIGN section 33); still to do:
 - **UI left:** channel badge and filter in Report, Database and Statistics (the Log tab and Status recent records have them);
   Statistics follows channel 0 only (Report and Database are meant to stay channel-agnostic).
 - **Spectrum tab:** show several channels at once (2x2 grid); the header shows the last two channels selected.
-- **Synchronized clips:** one click saves all channels' audio clips for the same time span (the two inputs have their
-  own clocks and buffers, so start times must be aligned and recorded in each clip's .json).
-- **Quality history** per channel (Statistics shows channel 0 only), clips named per channel, per-channel log file option.
+- **Quality history** per channel (Statistics shows channel 0 only), per-channel log file option.
 - **Same frequency on both channels:** records show up twice in the shared tabs until a combiner exists (see the combining
   experiment: only separate receivers or antennas have independent errors worth combining).
 

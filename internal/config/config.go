@@ -117,9 +117,10 @@ func (c Config) Label(ch int) string {
 
 // Clips controls the "Save audio clip" function: the last seconds of input are kept in memory.
 type Clips struct {
-	BeforeS float64 `json:"before_s" unit:"s" doc:"Input kept in memory and saved when the clip button is pressed: this many seconds before the press (0 = clip function off)"`
-	AfterS  float64 `json:"after_s" unit:"s" doc:"The clip continues this many seconds after the press, so that the end of an event is included"`
-	Dir     string  `json:"dir" doc:"Folder for saved clips (WAV plus a .json file with the settings in force); relative to the data folder"`
+	BeforeS     float64 `json:"before_s" unit:"s" doc:"Input kept in memory and saved when the clip button is pressed: this many seconds before the press (0 = clip function off)"`
+	AfterS      float64 `json:"after_s" unit:"s" doc:"The clip continues this many seconds after the press, so that the end of an event is included"`
+	Dir         string  `json:"dir" doc:"Folder for saved clips (WAV plus a .json file with the settings in force); relative to the data folder"`
+	AllChannels bool    `json:"all_channels" doc:"A clip (the button, or a difference found by compare) also saves the audio of every other active channel, one WAV per distinct input (channels that share an input share a file), all with the same group in their .json file. Off: only the audio of the channel you pressed it on (the settings of all channels are stored either way)"`
 }
 
 // Compare controls the automatic comparison of two channels that receive the same signal (for example to compare
@@ -784,7 +785,7 @@ const HPSDRCarrierHz = 3000.0
 // liveFields lists the options (paths, or prefixes ending in ".") that can be applied to a running channel; see
 // RestartNeeded. The tests check that this list and RestartNeeded agree for every option.
 var liveFields = []string{
-	"operator.", "logging.", "compare.", "autocorrect.", "meters.", "segment.", "channel.name", "channel.comment", "decoder.", "input.device.autotune", "input.device.manual_carrier_hz", "input.hpsdr.autotune",
+	"operator.", "logging.", "compare.", "clips.all_channels", "autocorrect.", "meters.", "segment.", "channel.name", "channel.comment", "decoder.", "input.device.autotune", "input.device.manual_carrier_hz", "input.hpsdr.autotune",
 	"input.hpsdr.manual_carrier_hz", "input.sdrconnect.autotune", "input.sdrconnect.manual_carrier_hz", "input.spyserver.autotune", "input.spyserver.manual_carrier_hz", "channel.view_offset_hz", "input.stdin.autotune", "input.stdin.manual_carrier_hz", "input.file.autotune", "input.file.manual_carrier_hz",
 	"receiver.demod.presence_db", "receiver.demod.presence_offset_hz", "receiver.demod.timing_gain",
 	"receiver.demod.timing_confidence", "receiver.demod.timing_lost_blocks",
@@ -846,6 +847,7 @@ func restartNeededSingle(a, b Config) bool {
 	neutral := func(c *Config) {
 		c.Operator, c.Server, c.Meters, c.Logging, c.Segment = Operator{}, Server{}, Meters{}, Logging{}, segment.Config{}
 		c.Compare = Compare{}
+		c.Clips.AllChannels = false
 		c.Channel.Name, c.Channel.Comment, c.Channel.ViewOffset = "", "", 0
 		c.Autocorrect = Autocorrect{}
 		// only the selected source's options matter, and of those the carrier options are live

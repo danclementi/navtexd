@@ -19,7 +19,7 @@
         try { await api("DELETE", "/api/clips/" + encodeURIComponent(c.name)); } catch (e) { $("clip-msg").textContent = e.message; }
         load();
       };
-      const a = el("a", { href: "/api/clips/" + encodeURIComponent(c.name), download: c.name, text: c.start ? NX.stamp(c.start).slice(0, 19) : c.name, title: c.name });
+      const a = el("a", { href: "/api/clips/" + encodeURIComponent(c.name), download: c.name, text: (c.start ? NX.stamp(c.start).slice(0, 19) : c.name) + (c.input ? "  (ch " + c.input + ")" : ""), title: c.name });
       tb.append(el("tr", {}, [el("td", {}, [a]), el("td", { text: c.s ? Math.round(c.s) + " s" : "" }), el("td", { text: size(c.bytes) }), el("td", {}, [del])]));
     });
     $("clip-msg").textContent = j.clips.length ? "Folder: " + j.dir : "No clips yet. Folder: " + j.dir;

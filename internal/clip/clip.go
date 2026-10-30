@@ -30,9 +30,14 @@ type Meta struct {
 	Seconds    float64         `json:"seconds"`
 	Frames     int             `json:"frames"`
 	Software   string          `json:"software,omitempty"`
-	Settings   json.RawMessage `json:"settings,omitempty"` // the receiver-related options in force
-	Note       string          `json:"note,omitempty"`     // why the clip was saved, when it was not by the operator (channel comparison)
-	Detail     string          `json:"detail,omitempty"`   // the differences found, one per line
+	Settings   json.RawMessage `json:"settings,omitempty"`        // the receiver-related options in force
+	Note       string          `json:"note,omitempty"`            // why the clip was saved, when it was not by the operator (channel comparison)
+	Detail     string          `json:"detail,omitempty"`          // the differences found, one per line
+	Group      string          `json:"group,omitempty"`           // clips saved by one request (one per distinct input) share this
+	Channel    int             `json:"channel,omitempty"`         // the channel (1 = first) that owns the input this file holds
+	Served     []int           `json:"served_channels,omitempty"` // all channels that decode this input (the owner and the ones sharing it)
+	Channels   json.RawMessage `json:"all_channels,omitempty"`    // name, input and receiver/decoder settings of every active channel when the clip was saved
+	Suffix     string          `json:"-"`                         // file name suffix, "_ch2" when several inputs were saved together
 }
 
 // TimeFormat is the layout of Meta.StartUTC.
@@ -52,8 +57,7 @@ type Ring struct {
 	stopAt    int64 // frame count at which the pending request completes
 	pressed   time.Time
 	pre, post float64
-	note      string
-	detail    string
+	tmpl      Meta // what the request wants stored in the clip's .json (note, detail, group, channel)
 }
 
 // MaxBytes limits the memory used by the ring.
@@ -99,6 +103,11 @@ func (r *Ring) Request() (wait float64, err error) { return r.RequestNote("", ""
 
 // RequestNote is Request with a note (and details) stored in the clip's .json file.
 func (r *Ring) RequestNote(note, detail string) (wait float64, err error) {
+	return r.RequestWith(Meta{Note: note, Detail: detail})
+}
+
+// RequestWith is Request with the note, detail, group, channel and served channels of t stored in the clip's .json file.
+func (r *Ring) RequestWith(t Meta) (wait float64, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.pending {
@@ -107,7 +116,7 @@ func (r *Ring) RequestNote(note, detail string) (wait float64, err error) {
 	if r.total == 0 {
 		return 0, fmt.Errorf("no input yet")
 	}
-	r.note, r.detail = note, detail
+	r.tmpl = Meta{Note: t.Note, Detail: t.Detail, Group: t.Group, Channel: t.Channel, Served: t.Served}
 	r.pending, r.pressed = true, r.last // the time line of the input (a replayed file has its own)
 	r.stopAt = r.total + int64(r.post*r.rate)
 	if r.post*r.rate > float64(r.capFr) {
@@ -131,7 +140,7 @@ func (r *Ring) Take() (frames []float32, m Meta) {
 	if k < len(frames) {
 		copy(frames[k:], r.buf)
 	}
-	m = Meta{SampleRate: r.rate, Kind: "real", Frames: n, Seconds: float64(n) / r.rate, PreS: r.pre, PostS: r.post, Note: r.note, Detail: r.detail}
+	m = Meta{SampleRate: r.rate, Kind: "real", Frames: n, Seconds: float64(n) / r.rate, PreS: r.pre, PostS: r.post, Note: r.tmpl.Note, Detail: r.tmpl.Detail, Group: r.tmpl.Group, Channel: r.tmpl.Channel, Served: r.tmpl.Served}
 	if r.ch == 2 {
 		m.Kind = "iq"
 	}
@@ -144,7 +153,7 @@ func (r *Ring) Take() (frames []float32, m Meta) {
 // Name returns the base file name (without extension) for a clip.
 func Name(m Meta) string {
 	t, _ := time.Parse(TimeFormat, m.StartUTC)
-	return fmt.Sprintf("clip_%s_%.0fHz", t.UTC().Format("20060102T150405Z"), m.CentreHz)
+	return fmt.Sprintf("clip_%s_%.0fHz%s", t.UTC().Format("20060102T150405Z"), m.CentreHz, m.Suffix)
 }
 
 // Write stores the clip as <dir>/<name>.wav (32-bit float, mono for real audio, stereo I/Q) and <name>.json.

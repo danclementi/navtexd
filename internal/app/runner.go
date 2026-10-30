@@ -11,6 +11,7 @@ import (
 	"math"
 	"path/filepath"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -584,7 +585,7 @@ func (r *Runner) run(ctx context.Context, c *chain, cfg config.Config, cmds chan
 	}
 	buf := make([]complex64, block)
 	var ring *clip.Ring
-	if cl := cfg.Clips; cl.BeforeS+cl.AfterS > 0 {
+	if cl := cfg.Clips; cl.BeforeS+cl.AfterS > 0 && cfg.Input.SharedFrom == 0 { // a channel that shares an input uses the owner's buffer
 		var got float64
 		ring, got = clip.New(src.SampleRate(), src.Kind(), cl.BeforeS, cl.AfterS)
 		if got < cl.BeforeS+cl.AfterS {
@@ -767,18 +768,83 @@ func toStore(r segment.Record, cfg config.Config, wallAt func(float64) time.Time
 // Log writes a line to the system log (and the hooks).
 func (r *Runner) Log(level, text string) { r.log(level, text) }
 
-// SaveClip asks for the last seconds of input (plus the configured time after now) to be saved as a WAV file. It
-// returns the number of seconds until the clip is complete.
-func (r *Runner) SaveClip(ch int) (float64, error) {
-	ring := r.chains[ch].ring.Load()
-	if ring == nil {
-		return 0, fmt.Errorf("the clip function is off or nothing is running (options: clips)")
+// ringOwner returns the channel that owns the input channel ch decodes (ch itself unless it shares another's input).
+func (r *Runner) ringOwner(cfg config.Config, ch int) int {
+	if o := cfg.ForChannel(ch).Input.SharedFrom; o > 0 {
+		return o - 1
 	}
-	wait, err := ring.Request()
-	if err != nil {
+	return ch
+}
+
+// clipOwners lists the channels whose input buffers a clip request covers: the owners of the inputs of the given
+// channels, or of every active channel when the option clips.all_channels is on. Each input appears once.
+func (r *Runner) clipOwners(cfg config.Config, chans ...int) []int {
+	if cfg.Clips.AllChannels {
+		chans = chans[:0]
+		for i := 0; i < config.Channels; i++ {
+			if cfg.ChannelEnabled(i) {
+				chans = append(chans, i)
+			}
+		}
+	}
+	var out []int
+	for _, ch := range chans {
+		o := r.ringOwner(cfg, ch)
+		if !slices.Contains(out, o) {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
+// served lists the channels (1 = first) that decode the input of owner channel o.
+func served(cfg config.Config, o int) []int {
+	out := []int{o + 1}
+	for _, d := range cfg.SharedWith(o) {
+		out = append(out, d+1)
+	}
+	return out
+}
+
+// requestClips asks the input buffers of the owners for a clip each, all with the same group, note and detail. It
+// returns the seconds until they are complete and how many requests were accepted.
+func (r *Runner) requestClips(owners []int, note, detail string) (wait float64, n int, err error) {
+	cfg := r.Config()
+	group := time.Now().UTC().Format("20060102T150405Z")
+	for _, o := range owners {
+		ring := r.chains[o].ring.Load()
+		if ring == nil {
+			err = fmt.Errorf("the clip function is off or nothing is running (options: clips)")
+			continue
+		}
+		w, e := ring.RequestWith(clip.Meta{Note: note, Detail: detail, Group: group, Channel: o + 1, Served: served(cfg, o)})
+		if e != nil {
+			err = e
+			continue
+		}
+		wait = max(wait, w)
+		n++
+	}
+	return wait, n, err
+}
+
+// SaveClip asks for the last seconds of input (plus the configured time after now) to be saved as a WAV file, for
+// the input of channel ch, or of every active channel when clips.all_channels is on. It returns the number of
+// seconds until the clip is complete.
+func (r *Runner) SaveClip(ch int) (float64, error) {
+	cfg := r.Config()
+	wait, n, err := r.requestClips(r.clipOwners(cfg, ch), "", "")
+	if n == 0 {
+		if err == nil {
+			err = fmt.Errorf("the clip function is off or nothing is running (options: clips)")
+		}
 		return 0, err
 	}
-	r.logc(ch, "info", fmt.Sprintf("audio clip requested: the last %.0f s are kept, saving in %.0f s", r.Config().Clips.BeforeS, wait))
+	what := "the input of this channel"
+	if cfg.Clips.AllChannels {
+		what = fmt.Sprintf("%d input(s) of all channels", n)
+	}
+	r.logc(ch, "info", fmt.Sprintf("audio clip requested: %s, the last %.0f s are kept, saving in %.0f s", what, cfg.Clips.BeforeS, wait))
 	return wait, nil
 }
 
@@ -794,6 +860,37 @@ func (r *Runner) ClipDir() string {
 	return d
 }
 
+// allChannelSettings describes every active channel for a clip's .json: name, frequency, input and the settings that
+// matter for decoding (the same selection as the clip's own "settings").
+func (r *Runner) allChannelSettings() json.RawMessage {
+	type entry struct {
+		Channel   int             `json:"channel"`
+		Name      string          `json:"name"`
+		Frequency float64         `json:"frequency_hz"`
+		SharedOf  int             `json:"shared_from,omitempty"`
+		Settings  json.RawMessage `json:"settings"`
+	}
+	full := r.Config()
+	var out []entry
+	for i := 0; i < config.Channels; i++ {
+		if !full.ChannelEnabled(i) {
+			continue
+		}
+		cfg := full.ForChannel(i)
+		var all map[string]json.RawMessage
+		var st json.RawMessage
+		if json.Unmarshal(cfg.JSON(), &all) == nil {
+			for _, k := range []string{"server", "operator", "logging", "output", "meters", "clips", "compare", "extra"} {
+				delete(all, k)
+			}
+			st, _ = json.Marshal(all)
+		}
+		out = append(out, entry{i + 1, full.Label(i), cfg.Channel.FrequencyHz, cfg.Input.SharedFrom, st})
+	}
+	b, _ := json.Marshal(out)
+	return b
+}
+
 func (r *Runner) finishClip(c *chain, ring *clip.Ring, src *source.Opened) {
 	frames, m := ring.Take()
 	cfg := r.ChanConfig(c.idx)
@@ -806,6 +903,10 @@ func (r *Runner) finishClip(c *chain, ring *clip.Ring, src *source.Opened) {
 			delete(all, k)
 		}
 		m.Settings, _ = json.Marshal(all)
+	}
+	m.Channels = r.allChannelSettings()
+	if m.Group != "" && r.Config().Clips.AllChannels {
+		m.Suffix = fmt.Sprintf("_ch%d", m.Channel)
 	}
 	dir := r.ClipDir()
 	go func() {

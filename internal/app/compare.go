@@ -89,33 +89,24 @@ func (r *Runner) compareReport(cp config.Compare, res compare.Result) {
 		r.log("info", fmt.Sprintf("COMPARE: the message began %.0f s ago, the clip keeps %.0f s: the start is not in it (options: clips)", span, cl.BeforeS))
 	}
 	note := fmt.Sprintf("%s vs %s: %s; message from %s to %s UTC", na, nb, res.Summary, res.Start.UTC().Format("15:04:05"), res.End.UTC().Format("15:04:05"))
-	r.requestClip([]int{cp.ChannelA - 1, cp.ChannelB - 1}, note, res.Detail, 0)
+	// the audio of the two channels (one file when they share an input); every channel's with clips.all_channels
+	r.requestClipsRetry(r.clipOwners(cfg, cp.ChannelA-1, cp.ChannelB-1), note, res.Detail, 0)
 }
 
-// requestClip asks the first of the channels that has a clip buffer for a clip. A clip already being recorded delays
-// the request until it is done (a few tries).
-func (r *Runner) requestClip(chans []int, note, detail string, try int) {
-	var lastErr error
-	for _, ch := range chans {
-		ring := r.chains[ch].ring.Load()
-		if ring == nil {
-			continue
-		}
-		wait, err := ring.RequestNote(note, detail)
-		if err == nil {
-			r.logc(ch, "info", fmt.Sprintf("COMPARE: audio clip requested, saving in %.0f s", wait))
-			return
-		}
-		lastErr = err
-	}
-	if lastErr != nil && try < 4 {
-		time.AfterFunc(secs(r.Config().Clips.AfterS+2), func() { r.requestClip(chans, note, detail, try+1) })
+// requestClipsRetry requests the clips; one already being recorded delays the request until it is done (a few tries).
+func (r *Runner) requestClipsRetry(owners []int, note, detail string, try int) {
+	_, n, err := r.requestClips(owners, note, detail)
+	if n > 0 {
+		r.log("info", fmt.Sprintf("COMPARE: audio clip requested for %d input(s)", n))
 		return
 	}
-	r.log("warn", "COMPARE: no clip saved: "+func() string {
-		if lastErr != nil {
-			return lastErr.Error()
-		}
-		return "neither channel is running"
-	}())
+	if err != nil && try < 4 {
+		time.AfterFunc(secs(r.Config().Clips.AfterS+2), func() { r.requestClipsRetry(owners, note, detail, try+1) })
+		return
+	}
+	msg := "neither channel is running"
+	if err != nil {
+		msg = err.Error()
+	}
+	r.log("warn", "COMPARE: no clip saved: "+msg)
 }

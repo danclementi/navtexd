@@ -124,6 +124,7 @@ To see where two channels differ (two framing methods, two settings, two receive
 `pair_s`, so small timing differences do not matter. The texts are lined up character by character (white space and case are ignored; `~` and `*` count as the same unreadable mark). When they
 differ by at least `min_differences` characters, or one channel has no copy of a message after `wait_s`, the System Log gets a `COMPARE` line and an audio clip is saved with the clip function
 (`clips`; the clip keeps `before_s` seconds before the moment of detection, so make it longer than your longest message plus `wait_s`). The clip's .json file carries `note` (what differed) and
+The Compare clip holds the audio of both channels (one file if they share an input). With `clips.all_channels` on, every manual and automatic clip holds the audio of every active input, one WAV per input (`..._ch1.wav`, `..._ch2.wav`, same `group` in the .json), which helps when channels listen to different signals. Whatever the option, each .json lists the settings of all active channels under `all_channels`.
 `detail` (each difference with its position and surrounding text). Replay the clip with different settings to find out which channel was right.
 
 ### Bandwidth over the internet
