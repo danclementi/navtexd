@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>navtexd: how the demodulator works</title>
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+<main>
+<p class="back"><a href="./">&larr; Help index</a></p>
+<h1>How the navtexd demodulator works</h1>
+<p class="sub">From audio or I/Q input to NAVTEX messages, one stage at a time. Option names (<code>like.this</code>) are the names in Options and in the configuration file; the defaults shown are those of build new89.</p>
+
+<div class="flow">
+<span>1 Input and DDC</span><i>→</i><span>2 Carrier</span><i>→</i><span>3 Filter and discriminator</span><i>→</i><span>4 Presence, timing, integrate-and-dump</span><i>→</i><span>5 Bits, framing, the repeat</span><i>→</i><span>6 Messages</span>
+</div>
+
+<nav class="toc"><strong>Contents</strong>
+<ol class="x">
+<li><a href="#s1">1. Input and down-conversion (DDC)</a>
+<ol><li><a href="#s1-1">1.1 The DDC filter is a cascade</a></li></ol>
+</li>
+<li><a href="#s2">2. Finding and tracking the carrier</a>
+<ol><li><a href="#s2-1">2.1 Initial search (comb search)</a></li><li><a href="#s2-2">2.2 When the search runs</a></li><li><a href="#s2-3">2.3 Fine tracking, and what a cluster is</a></li></ol>
+</li>
+<li><a href="#s3">3. Narrow filter and frequency discriminator</a>
+<ol><li><a href="#s3-1">3.1 The filter itself</a></li><li><a href="#s3-2">3.2 Filter bandwidth</a></li></ol>
+</li>
+<li><a href="#s4">4. Presence, timing recovery and integrate-and-dump</a>
+<ol><li><a href="#s4-1">4.1 Presence check</a></li><li><a href="#s4-2">4.2 Timing measurement</a></li><li><a href="#s4-3">4.3 Lock and tracking</a></li><li><a href="#s4-4">4.4 Integrate-and-dump</a></li></ol>
+</li>
+<li><a href="#s5">5. Bits, characters and the repeat (SITOR-B / CCIR 476)</a>
+<ol><li><a href="#s5-1">5.1 From soft value to bit</a></li><li><a href="#s5-2">5.2 The code</a></li><li><a href="#s5-3">5.3 Finding the word boundaries (framing), <code class="opt">decoder.framing</code> = hard</a></li><li><a href="#s5-4">5.4 The repeat (time diversity)</a></li><li><a href="#s5-5">5.5 Combining the two copies</a></li><li><a href="#s5-6">5.6 Code to text</a></li><li><a href="#s5-7">5.7 Soft framing, <code class="opt">decoder.framing</code> = soft</a></li></ol>
+</li>
+<li><a href="#s6">6. From text to messages</a>
+<ol><li><a href="#s6-1">6.1 Message structure</a></li><li><a href="#s6-2">6.2 Segmentation (<code class="opt">segment.*</code>)</a></li><li><a href="#s6-3">6.3 Dropping noise fragments</a></li><li><a href="#s6-4">6.4 Autocorrect (<code class="opt">autocorrect.*</code>)</a></li><li><a href="#s6-5">6.5 Output</a></li></ol>
+</li>
+<li><a href="#sum">Summary and known weak spots</a></li>
+</ol></nav>
+
+<h2 id="s1">1. Input and down-conversion (DDC)</h2>
+<p><strong>What comes in:</strong> one of two kinds of signal.</p>
+<ul>
+<li><strong>Complex I/Q</strong> from an SDR (SDRconnect, SpyServer, HPSDR) or a stereo WAV. It carries a wide slice of spectrum, for example 250 kS/s around 500 kHz.</li>
+<li><strong>Real audio</strong> from a receiver's audio output, a mono WAV or a virtual audio cable. The receiver's LO sits a known distance below the NAVTEX frequency (<code class="opt">input.device.lo_below_hz</code> and the equivalent for the other sources), so the signal appears as an audio tone pair at about that offset.</li>
+</ul>
+<p><strong>What the DDC does:</strong> it turns either kind into a narrow, low-rate complex signal centred on the channel (<code class="opt">channel.frequency_hz</code>).</p>
+<ol>
+<li><strong>Mix.</strong> Multiply by a complex oscillator so the target frequency (518 kHz, say) moves to 0 Hz. For real audio, first convert it to a complex (analytic) signal, then mix the offset away.</li>
+<li><strong>Low-pass.</strong> A FIR filter removes everything outside about &plusmn;2 kHz. Without it, decimating would fold other stations and noise on top of the signal (aliasing).</li>
+<li><strong>Decimate</strong> to about <code class="opt">ddc.target_rate_hz</code> = 4000 Hz, about 40 samples per 100-baud symbol.</li>
+</ol>
+<p><strong>Why:</strong> everything after this works on a tiny, cheap stream. The 250 kS/s input shrinks about 60-fold, and nothing outside &plusmn;2 kHz of the channel can disturb the later stages.</p>
+
+<h3 id="s1-1">1.1 The DDC filter is a cascade</h3>
+<p>There is no single &plusmn;2 kHz filter. The decimation is a cascade of FIR stages, each a Kaiser design with 60 dB stop-band attenuation. Each stage passes up to 40% of its output rate and starts rejecting at 60%. The decimation factor is the integer nearest to input rate &divide; <code class="opt">ddc.target_rate_hz</code> whose prime factors are all 13 or smaller, so the rate after the DDC is not always exactly 4000 Hz.</p>
+<table>
+<tr><th>Input rate</th><th>Stages (decimation @ input rate of the stage)</th><th class="n">Taps</th><th class="n">Output rate</th></tr>
+<tr><td>250 kS/s (SDRconnect)</td><td>&divide;7 @ 250k, &divide;9 @ 35.7k</td><td class="n">129 + 165</td><td class="n">3968 Hz</td></tr>
+<tr><td>48 kS/s (audio)</td><td>&divide;6 @ 48k, &divide;2 @ 8k</td><td class="n">111 + 39</td><td class="n">4000 Hz</td></tr>
+<tr><td>192 kS/s</td><td>&divide;6 @ 192k, &divide;8 @ 32k</td><td class="n">111 + 147</td><td class="n">4000 Hz</td></tr>
+<tr><td>2 MS/s</td><td>&divide;5, &divide;5, &divide;10, &divide;2</td><td class="n">93 + 93 + 183 + 39</td><td class="n">4000 Hz</td></tr>
+</table>
+<p><strong>What comes out:</strong> a complex stream in which the NAVTEX FSK appears as two tones (mark and space) 170 Hz apart (<code class="opt">receiver.demod.shift_hz</code>), centred near 0 Hz but offset by whatever the transmitter and receiver clocks disagree by, typically tens of Hz. Finding that offset is step 2.</p>
+<details class="opts" open><summary>Options for this stage</summary>
+<table>
+<tr><th>Option</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code class="opt">ddc.target_rate_hz</code></td><td>4000</td><td>Approximate sample rate after down-conversion (about 40 samples per symbol)</td></tr>
+<tr><td><code class="opt">channel.frequency_hz</code></td><td>per channel</td><td>The NAVTEX frequency the channel decodes</td></tr>
+<tr><td><code class="opt">input.device.lo_below_hz</code></td><td>per source</td><td>Real audio: how far the receiver LO is below the signal</td></tr>
+</table></details>
+
+<h2 id="s2">2. Finding and tracking the carrier</h2>
+<p>After the DDC the signal is two tones 170 Hz apart. Their midpoint, the carrier, is not at 0 Hz: the transmitter's frequency error, the receiver's clock error and the tuning step all move it by some tens of Hz. If the demodulator assumed 0 Hz, the frequency measurements of step 3 would be biased towards one tone. Two mechanisms work on different time scales.</p>
+
+<h3 id="s2-1">2.1 Initial search (comb search)</h3>
+<p>The receiver takes the last <code class="opt">receiver.search_window_s</code> (4 s) of signal and computes its spectrum. It slides a template with two peaks 170 Hz apart across &plusmn;<code class="opt">receiver.search_range_hz</code> (400 Hz) and picks the offset where the two peaks add up strongest. Only the pair spacing is used, so noise and other stations rarely fool it. A result is accepted only if the comb peak stands <code class="opt">receiver.search_min_contrast</code> (2.5) above the median (noise is about 1.2, signals 3 or more). The search is coarse: a few Hz of error is normal, and on some signals it sits about 20 Hz from where the tracker settles.</p>
+
+<h3 id="s2-2">2.2 When the search runs</h3>
+<p>It does not run continuously.</p>
+<ul>
+<li><strong>No carrier known:</strong> every <code class="opt">receiver.search_interval_s</code> (1 s).</li>
+<li><strong>Carrier known (locked):</strong> only every <code class="opt">receiver.search_verify_s</code> (8 s), as a check. It retunes only if the new position is 25 Hz or more away, its score is at least 1.5 times that of the current position, and the contrast is accepted. The search itself always runs; the veto below only suppresses the retune that would follow it.</li>
+<li><strong>Veto:</strong> <code class="opt">receiver.search_verify_veto_hz</code> (30 Hz). If the tracker has reported healthy symbols within the last 6 s, the check may not retune. This fixed false retunes seen on good signals (0 = never veto).</li>
+<li><strong>Carrier forgotten:</strong> after <code class="opt">receiver.lose_carrier_after_s</code> (10 s) without timing lock, the search resumes every second.</li>
+</ul>
+
+<h3 id="s2-3">2.3 Fine tracking, and what a cluster is</h3>
+<p>Each symbol the demodulator delivers is a single number: the average frequency over that 10 ms, in Hz relative to the assumed carrier (the soft value, step 4). A mark symbol ideally gives about +85 Hz and a space symbol about &minus;85 Hz. Plot a few hundred of them on a number line and they pile up in two groups, one around +85 and one around &minus;85. In noise each group spreads out, but the two stay distinct on a reasonably strong signal. These two groups are the <strong>clusters</strong>.</p>
+<p>If the assumed carrier is wrong by +20 Hz, both clusters shift together: one sits near +65 and the other near &minus;105. The midpoint between them is the carrier error. The tracker measures it like this:</p>
+<ol>
+<li>It takes the last <code class="opt">receiver.track_window_symbols</code> (300) locked soft values and splits them by sign.</li>
+<li>It takes the median of each group, the middle value when sorted. The median is used rather than the mean so that a few outliers, such as FM clicks (step 3), do not drag the estimate.</li>
+<li>The correction is half the sum of the two medians. In the example, (+65 + &minus;105) / 2 = &minus;20 Hz. It applies <code class="opt">receiver.track_gain</code> (0.7) of that, limited to <code class="opt">receiver.track_max_step_hz</code> (20 Hz) per update.</li>
+</ol>
+<p>Safeguards: an update needs <code class="opt">receiver.track_min_each_sign</code> (60) symbols of each sign and <code class="opt">receiver.track_min_symbols</code> (200) in all; updates come every <code class="opt">receiver.track_interval_symbols</code> (100) new locked symbols; and the carrier never strays more than <code class="opt">receiver.track_max_excursion_hz</code> (30 Hz) from where the search placed it, because a tracker fed by noise can walk away until it sits on one tone. The tracker only learns from timing-locked symbols, so timing lock (step 4) comes first.</p>
+<p><strong>Health check.</strong> The same two medians give the "healthy" test used by the veto: both clusters at least 0.4 &times; 85 Hz (about 34 Hz) from zero, meaning the tones are clearly separated, and the midpoint within <code class="opt">receiver.search_verify_veto_hz</code> of the current carrier.</p>
+<p><strong>Where it breaks down.</strong> In noise alone there are no real clusters: the values scatter around zero and the medians mean nothing. A long run of one tone (idle or phasing signal) fills one group much more than the other; the medians are still computed correctly, but the estimate rests on the smaller group and can be less accurate.</p>
+<p>A carrier estimate wrong by 20 Hz costs some sensitivity, since the tones then sit off-centre in the narrow filter, but does not stop decoding. A large error does, which is what the 8 s check exists to fix.</p>
+<details class="opts" open><summary>Options for this stage</summary>
+<table>
+<tr><th>Option</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code class="opt">receiver.search_range_hz</code></td><td>400</td><td>Carrier search range around the channel frequency</td></tr>
+<tr><td><code class="opt">receiver.search_window_s</code></td><td>4</td><td>Length of signal analysed by each search</td></tr>
+<tr><td><code class="opt">receiver.search_interval_s</code></td><td>1</td><td>How often to search while no carrier is known</td></tr>
+<tr><td><code class="opt">receiver.search_verify_s</code></td><td>8</td><td>While locked, repeat the search this often and retune if a clearly better position is found (0 = off)</td></tr>
+<tr><td><code class="opt">receiver.search_verify_veto_hz</code></td><td>30</td><td>No retune while the tracker reports a healthy signal within this many Hz</td></tr>
+<tr><td><code class="opt">receiver.search_min_contrast</code></td><td>2.5</td><td>Comb-peak to median ratio needed to accept a carrier</td></tr>
+<tr><td><code class="opt">receiver.lose_carrier_after_s</code></td><td>10</td><td>Seconds without timing lock before the carrier is forgotten</td></tr>
+<tr><td><code class="opt">receiver.track_window_symbols</code></td><td>300</td><td>Locked symbols used by the tracker</td></tr>
+<tr><td><code class="opt">receiver.track_min_each_sign</code></td><td>60</td><td>Minimum mark and space symbols for an update</td></tr>
+<tr><td><code class="opt">receiver.track_min_symbols</code></td><td>200</td><td>Minimum symbols in the window for an update</td></tr>
+<tr><td><code class="opt">receiver.track_interval_symbols</code></td><td>100</td><td>New locked symbols between updates</td></tr>
+<tr><td><code class="opt">receiver.track_gain</code></td><td>0.7</td><td>Fraction of the measured error corrected per update</td></tr>
+<tr><td><code class="opt">receiver.track_max_step_hz</code></td><td>20</td><td>Largest single correction</td></tr>
+<tr><td><code class="opt">receiver.track_max_excursion_hz</code></td><td>30</td><td>Furthest the tracker may move from the search result (0 = unlimited)</td></tr>
+</table></details>
+
+<h2 id="s3">3. Narrow filter and frequency discriminator</h2>
+<p>The demodulator does not run a mark filter and a space filter and compare their energies. It measures the instantaneous frequency of the signal directly: an FM discriminator.</p>
+<ol>
+<li><strong>Move the carrier to 0 Hz.</strong> The 4 kS/s complex signal is multiplied by a rotating phasor at the current carrier estimate. Mark and space now sit at about &plusmn;85 Hz, half of <code class="opt">receiver.demod.shift_hz</code> (170).</li>
+<li><strong>Narrow low-pass filter</strong>, cutoff <code class="opt">receiver.demod.channel_cutoff_hz</code> (170 Hz). It keeps both tones and removes noise, neighbouring stations and DDC leftovers beyond about 220 Hz. It matters more than it sounds, because the next stage is very sensitive to noise: this filter sets how much noise gets through.</li>
+<li><strong>Discriminator.</strong> Multiply each sample by the complex conjugate of the previous sample. The angle of the product is how far the phase advanced in one sample; multiplied by fs/2&pi;, it is the instantaneous frequency in Hz. A clean mark gives about +85 Hz, a clean space about &minus;85 Hz (which is which is the polarity, <code class="opt">decoder.polarity</code>). In noise the value scatters around &plusmn;85 Hz with occasional large spikes (FM "clicks"), so it is clipped to &plusmn;1.5 times half the shift (&plusmn;127 Hz) to keep a click from dominating.</li>
+</ol>
+<p>The same filter taps also run on two extra copies of the signal, shifted to &plusmn;<code class="opt">receiver.demod.presence_offset_hz</code> (350 Hz) from the carrier. They are not decoded; their power is compared with the carrier band in step 4 to decide whether a signal is present at all.</p>
+<p><strong>What comes out:</strong> a frequency estimate for every sample, 4000 per second. A symbol lasts 10 ms, about 40 samples, so each symbol is represented by about 40 noisy values.</p>
+
+<h3 id="s3-1">3.1 The filter itself</h3>
+<p>A linear-phase FIR designed by the window method: a sinc low-pass with a Kaiser window, normalised to unity gain at DC. It follows <code>scipy.signal.firwin(n, cutoff, window=("kaiser", beta))</code> and the reference <code>narrow_filter</code> of the navtex-rs/bgm60 code. It is not a Remez design. The taps are not tuned by hand; only the cutoff is an option.</p>
+<ul>
+<li>The cutoff is the &minus;6 dB point, as with any window-method sinc. At 170 Hz the &plusmn;85 Hz tones are almost untouched.</li>
+<li>The design asks for a <strong>100 Hz transition width</strong> and <strong>60 dB</strong> stop-band attenuation, both fixed in the code. These give Kaiser &beta; = 0.1102 (60 &minus; 8.7) &asymp; 5.65 and a length N = &lceil;(A &minus; 7.95) / (2.285 &middot; &Delta;&omega;)&rceil; + 1, rounded up to an odd number, with &Delta;&omega; = 2&pi; &middot; 100 Hz / fs.</li>
+<li>At 4000 Hz this is <strong>147 taps</strong> (about 37 ms), with a whole-sample group delay of (N&minus;1)/2. At 3968 Hz it is essentially the same.</li>
+<li>The length depends on the sample rate, the transition width and the stop-band attenuation, not on the cutoff. Because the transition width and attenuation are fixed, changing <code class="opt">receiver.demod.channel_cutoff_hz</code> only moves where the transition band sits; it does not change the filter's sharpness or its time response. A wider transition (150 to 200 Hz) would need roughly 75 to 100 taps and ring less; a narrower one the opposite.</li>
+</ul>
+
+<h3 id="s3-2">3.2 Filter bandwidth</h3>
+<p>A cutoff of 170 Hz was found to be a good compromise on test data. Much narrower filters smear the symbols into each other and weaken the timing measurement of step 4; wider ones let more noise through.</p>
+<details class="opts" open><summary>Options for this stage</summary>
+<table>
+<tr><th>Option</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code class="opt">receiver.demod.shift_hz</code></td><td>170</td><td>Mark/space frequency spacing (tones at carrier &plusmn; half of this)</td></tr>
+<tr><td><code class="opt">receiver.demod.channel_cutoff_hz</code></td><td>170</td><td>Low-pass cutoff of the narrow channel filter after the carrier is moved to 0 Hz</td></tr>
+<tr><td><code class="opt">receiver.demod.baud</code></td><td>100</td><td>Symbol rate</td></tr>
+<tr><td><code class="opt">receiver.demod.presence_offset_hz</code></td><td>350</td><td>Distance of the two comparison bands from the carrier</td></tr>
+<tr><td><code class="opt">decoder.polarity</code></td><td>auto</td><td>Which tone is the mark: normal (USB), inverted (LSB) or auto</td></tr>
+</table></details>
+
+<h2 id="s4">4. Presence, timing recovery and integrate-and-dump</h2>
+<p>Step 3 produced a frequency estimate for every sample. Now the demodulator decides whether a signal is there, where each 10 ms symbol starts and ends, and what single value represents each symbol. It works in blocks of <code class="opt">receiver.demod.timing_block_symbols</code> (100 symbols, 1 s).</p>
+
+<h3 id="s4-1">4.1 Presence check</h3>
+<p>For each block it compares the power in the carrier band with the average power in the two comparison bands at &plusmn;<code class="opt">receiver.demod.presence_offset_hz</code> (350 Hz). If the carrier band exceeds them by at least <code class="opt">receiver.demod.presence_db</code> (1.5 dB), a signal is present. This stops the timing recovery from locking onto pure noise, which also has some baud-rate content by chance.</p>
+
+<h3 id="s4-2">4.2 Timing measurement</h3>
+<p>The transmitter's symbol clock and ours are unrelated, so the symbol boundaries must be measured.</p>
+<ul>
+<li>For each sample it forms a weight that is large when the instantaneous frequency is near one of the two tones and dips towards zero when the frequency passes near the centre during a mark/space transition (signal amplitude times the square of the frequency normalised to half the shift).</li>
+<li>Over a block that weight forms a ripple at the symbol rate, with dips at symbol edges where the tone changes. The demodulator correlates it with a 100 Hz rotating phasor. The phase of the result is where in the 40-sample symbol the edges fall: the timing offset.</li>
+<li>The magnitude of the result divided by the total weight is the <strong>timing confidence</strong>: how strongly the baud-rate ripple stands out. A block is good if the confidence is at least <code class="opt">receiver.demod.timing_confidence</code> (0.015) <em>and</em> the presence check passed.</li>
+<li>The measure only sees symbol edges where the tone changes. A signal with few transitions, or a filter so narrow that it smears them, gives low confidence.</li>
+</ul>
+
+<h3 id="s4-3">4.3 Lock and tracking</h3>
+<ul>
+<li>The first good block locks the timing at its measured offset.</li>
+<li>Each later good block corrects it with a first-order loop: new offset = old + <code class="opt">receiver.demod.timing_gain</code> (0.4) &times; error. This follows the small clock difference between transmitter and receiver.</li>
+<li>After <code class="opt">receiver.demod.timing_lost_blocks</code> (3) consecutive bad blocks, timing lock is dropped.</li>
+<li>While unlocked, symbols are output as zero with "not locked", and the carrier tracker of step 2 ignores them.</li>
+</ul>
+
+<h3 id="s4-4">4.4 Integrate-and-dump</h3>
+<p>With the timing known, each symbol window is exactly one symbol long, centred on the measured position. The demodulator adds up all the discriminator products (the complex numbers, before taking the angle) inside the window and takes the angle of the sum. That angle, converted to Hz, is the symbol's <strong>soft value</strong>, clipped to &plusmn;1.5 times half the shift.</p>
+<ul>
+<li>Adding the complex products before taking the angle weights strong samples more than weak ones, so it is more robust against a single noisy sample than averaging the frequencies.</li>
+<li>Window edges fall between samples, so partial samples are weighted. This also handles the 250 kS/s case where the rate after the DDC is 3968 Hz, so a symbol is 39.68 samples.</li>
+<li>Symbols are released only after the whole block has been analysed and the samples of the window have arrived, so the output lags the input by about 1 to 2 s.</li>
+</ul>
+<p><strong>What comes out:</strong> one soft value per symbol, in Hz, with a "locked" flag. Positive means the higher tone; zero means no lock.</p>
+<details class="opts" open><summary>Options for this stage</summary>
+<table>
+<tr><th>Option</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code class="opt">receiver.demod.presence_db</code></td><td>1.5</td><td>Signal counts as present when the tone band exceeds the neighbouring bands by this much</td></tr>
+<tr><td><code class="opt">receiver.demod.presence_offset_hz</code></td><td>350</td><td>Distance of the two comparison bands from the carrier</td></tr>
+<tr><td><code class="opt">receiver.demod.timing_block_symbols</code></td><td>100</td><td>Symbols per timing-estimation block (100 = 1 s)</td></tr>
+<tr><td><code class="opt">receiver.demod.timing_gain</code></td><td>0.4</td><td>Gain of the first-order symbol-timing tracker (0..1)</td></tr>
+<tr><td><code class="opt">receiver.demod.timing_confidence</code></td><td>0.015</td><td>Timing confidence needed to lock and stay locked</td></tr>
+<tr><td><code class="opt">receiver.demod.timing_lost_blocks</code></td><td>3</td><td>Consecutive bad blocks before timing lock is dropped</td></tr>
+</table></details>
+
+<h2 id="s5">5. Bits, characters and the repeat (SITOR-B / CCIR 476)</h2>
+<p>The input is a stream of soft values, one per 10 ms, in Hz (0 when unlocked). The output is characters.</p>
+
+<h3 id="s5-1">5.1 From soft value to bit</h3>
+<p>The sign of the soft value is the bit: the higher tone is mark, which is 1. Which tone is mark depends on whether the receiver is in USB or LSB, so <code class="opt">decoder.polarity</code> (auto) tries both readings in parallel. Each soft value is also normalised by half of <code class="opt">decoder.shift_hz</code> and clipped to &plusmn;1.5, which keeps the confidence information for the combining step.</p>
+
+<h3 id="s5-2">5.2 The code</h3>
+<p>Every character is 7 bits and exactly four of them are 1: 35 valid codewords out of 128 patterns. A word with any other number of 1s is certainly damaged. Random noise produces a valid word only 27% of the time (35/128), so a run of valid words is strong evidence of real data.</p>
+
+<h3 id="s5-3">5.3 Finding the word boundaries (framing), <code class="opt">decoder.framing</code> = hard</h3>
+<p>The bit stream has no markers, so there are seven possible alignments.</p>
+<ul>
+<li>For every alignment and both polarities the decoder counts consecutive valid words. Ten in a row (<code class="opt">decoder.lock_words</code>) gives a lock; by chance that is very unlikely (0.27 to the power 10).</li>
+<li>The lock ends after <code class="opt">decoder.unlock_bad_words</code> (8) invalid words in a row.</li>
+<li>After a fade it re-locks on only <code class="opt">decoder.relock_words</code> (4) valid words, but only at the same alignment and polarity and only within <code class="opt">decoder.relock_window_s</code> (120 s). The bit clock runs on through a fade, so the old alignment is still right.</li>
+</ul>
+
+<h3 id="s5-4">5.4 The repeat (time diversity)</h3>
+<p>Each character is sent twice. The stream interleaves new characters (the DX copy) and repeats of earlier ones (the RX copy). The repeat comes five character-times later, 350 ms, so a noise burst would have to be longer than that to damage both copies. The receiver must also find out which slots carry the first copy and which the repeat. It compares word pairs and waits until <code class="opt">decoder.parity_votes</code> (10) pairs agree, with <code class="opt">decoder.parity_factor</code> (3) times more votes than the other parity. After a re-lock at the same alignment within <code class="opt">decoder.keep_parity_symbols</code> (3000 symbols) it reuses the earlier answer.</p>
+
+<h3 id="s5-5">5.5 Combining the two copies</h3>
+<p>The decoder adds the soft values of the two copies bit by bit and picks the valid codeword that fits best (maximum likelihood over the 35 codewords). A bit that was weak in one copy is decided by the other, instead of discarding either copy. Special cases:</p>
+<ul>
+<li><strong>Both copies valid but different:</strong> two separate signals, not a repeat. This is what the phasing signal looks like. The first copy is kept.</li>
+<li><strong>Neither copy valid:</strong> the character is unreadable. <code class="opt">decoder.unreadable</code> decides what is printed: <code>~</code> (as YaND does), <code>*</code>, or the nearest valid character.</li>
+</ul>
+
+<h3 id="s5-6">5.6 Code to text</h3>
+<p>The code has letters and figures shifts, and the decoder tracks the current shift. <code class="opt">decoder.unshift_on_space</code> (off) makes a space return to letters, which helps when a shift character was missed. The bit order within the 7 bits is <code class="opt">decoder.bit_order</code>; in auto mode it shows LSB first until it finds ZCZC, which only decodes correctly in the right order, and then commits.</p>
+
+<h3 id="s5-7">5.7 Soft framing, <code class="opt">decoder.framing</code> = soft</h3>
+<p>Soft framing replaces the framing step. It does not wait for ten clean words. For all alignments it continuously scores how well the soft values 35 bits apart (the repeat) match each other, and locks when the evidence accumulated over the recent window reaches a statistical threshold. That is why it works in more noise, follows bit slips and station changes, and locks later. It also shows <code>!</code> where the two copies each looked valid but different. It takes the bit order as LSB, ignores <code class="opt">decoder.unshift_on_space</code>, and does not use <code class="opt">decoder.lock_words</code>, <code class="opt">decoder.unlock_bad_words</code>, <code class="opt">decoder.parity_votes</code>, <code class="opt">decoder.parity_factor</code>, <code class="opt">decoder.keep_parity_symbols</code> or <code class="opt">decoder.relock_words</code>. Changing the framing restarts the channel.</p>
+<p><strong>What comes out:</strong> a plain text stream, with <code>~</code> where nothing could be recovered.</p>
+<details class="opts" open><summary>Options for this stage</summary>
+<table>
+<tr><th>Option</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code class="opt">decoder.framing</code></td><td>hard</td><td>How the character alignment is found: hard (ten valid words) or soft (accumulated evidence from the repeat)</td></tr>
+<tr><td><code class="opt">decoder.polarity</code></td><td>auto</td><td>Which tone is the mark</td></tr>
+<tr><td><code class="opt">decoder.bit_order</code></td><td>auto</td><td>Which bit of each 7-bit code is sent first</td></tr>
+<tr><td><code class="opt">decoder.shift_hz</code></td><td>170</td><td>Mark/space spacing; soft values are normalised by half of this</td></tr>
+<tr><td><code class="opt">decoder.lock_words</code></td><td>10</td><td>Consecutive valid words needed to lock word framing (hard)</td></tr>
+<tr><td><code class="opt">decoder.unlock_bad_words</code></td><td>8</td><td>Consecutive invalid words that end a framing lock (hard)</td></tr>
+<tr><td><code class="opt">decoder.relock_words</code></td><td>4</td><td>Valid words needed to re-lock after a fade (0 = lock_words only) (hard)</td></tr>
+<tr><td><code class="opt">decoder.relock_window_s</code></td><td>120</td><td>How long after a lock ended the quick re-lock applies, and the parity is reused</td></tr>
+<tr><td><code class="opt">decoder.parity_votes</code></td><td>10</td><td>Agreeing DX/RX pairs needed to decide which slots carry the first copy (hard)</td></tr>
+<tr><td><code class="opt">decoder.parity_factor</code></td><td>3</td><td>...and this many times more than the other parity (hard)</td></tr>
+<tr><td><code class="opt">decoder.keep_parity_symbols</code></td><td>3000</td><td>A re-lock at the same alignment within this many symbols reuses the parity (hard)</td></tr>
+<tr><td><code class="opt">decoder.unshift_on_space</code></td><td>false</td><td>A space returns to the letters shift (hard)</td></tr>
+<tr><td><code class="opt">decoder.unreadable</code></td><td>tilde</td><td>What to print when both copies are unreadable: nearest, star or tilde</td></tr>
+</table></details>
+
+<h2 id="s6">6. From text to messages</h2>
+<p>Up to now there is only a character stream. The last stage cuts it into NAVTEX messages, drops junk and repairs words.</p>
+
+<h3 id="s6-1">6.1 Message structure</h3>
+<ul>
+<li><strong>ZCZC</strong> starts a message.</li>
+<li>The identification group follows: <strong>B1</strong> the transmitting station letter, <strong>B2</strong> the subject (navigational warning, weather forecast, and so on), <strong>B3B4</strong> a serial number 01 to 99 (00 = urgent).</li>
+<li>Then the text, and <strong>NNNN</strong> ends it. The station sends BRK before a new ZCZC, so BRK is stripped from an interrupted message.</li>
+</ul>
+
+<h3 id="s6-2">6.2 Segmentation (<code class="opt">segment.*</code>)</h3>
+<p>The segmenter turns the stream into records of three kinds: a <strong>message</strong> (ZCZC to NNNN), an <strong>incomplete message</strong> (cut short by the next ZCZC, by silence or by the end of the stream; <code class="opt">output.incomplete_messages</code>, on, decides whether these are reported) and a <strong>fragment</strong> (text outside any message, mostly noise on a weak channel).</p>
+<ul>
+<li><strong>Damaged markers:</strong> a ZCZC with up to two unreadable characters, or one missing ("ZCZ~", "CZC"), still starts a message, provided an identification group (two letters, two figures) follows. An NNNN with one unreadable character ("NN~N") also counts, but only inside a message, where it is far more likely than anything else.</li>
+<li><strong>Silence:</strong> a record with no new character for <code class="opt">segment.idle_close_s</code> (60 s) is closed.</li>
+<li><strong>Long lines:</strong> a line break is forced after <code class="opt">segment.max_line_chars</code> (200) characters without one. <code class="opt">decoder.break_before_zczc</code> and <code class="opt">decoder.break_after_brk</code> insert breaks around ZCZC and BRK so the layout looks like YaND's.</li>
+<li>Each line keeps the time it was sent and the signal quality at that moment.</li>
+</ul>
+
+<h3 id="s6-3">6.3 Dropping noise fragments</h3>
+<p>A fragment is kept only if it passes these tests. Complete messages are never dropped by them.</p>
+<ul>
+<li>At least <code class="opt">segment.min_fragment_chars</code> (16) visible characters.</li>
+<li>Optionally (<code class="opt">segment.min_fragment_words</code>, 0 = off): at least that many real words of <code class="opt">segment.min_fragment_word_letters</code> (4) letters or more. <code class="opt">segment.fragment_words_vocabulary</code> (auto) decides whether "real" means found in the maritime vocabulary (on at 518 kHz; off at 490 and 424 kHz, where the vocabulary does not fit the language) or merely a run of letters. The vocabulary holds words of 5 letters or more, so with it on, shorter words do not count. <code class="opt">segment.fragment_words_after_autocorrect</code> (on) counts words after the repair below.</li>
+</ul>
+
+<h3 id="s6-4">6.4 Autocorrect (<code class="opt">autocorrect.*</code>)</h3>
+<p>A word containing unreadable characters ("WARN~NG") is looked up in the maritime vocabulary. It is a candidate only if it has <code class="opt">autocorrect.min_word_letters</code> (5) to <code class="opt">autocorrect.max_word_letters</code> (16) letters and at most <code class="opt">autocorrect.max_unreadable_percent</code> (50%) of its characters are unreadable. If one vocabulary word fits, it is used. If up to <code class="opt">autocorrect.max_candidates</code> (4) fit, the output shows them as [A|B|C]. If more fit, the word is left alone. The raw text is never changed: the corrected text is stored beside it. <code class="opt">autocorrect.extra_words_file</code> (vocabulary.txt) adds your own words and is re-read when it changes. The whole stage can be switched off with <code class="opt">autocorrect.enabled</code>.</p>
+
+<h3 id="s6-5">6.5 Output</h3>
+<p><code class="opt">output.format</code> selects time-stamped text, parsed messages or one JSON object per message.</p>
+<details class="opts" open><summary>Options for this stage</summary>
+<table>
+<tr><th>Option</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code class="opt">segment.min_fragment_chars</code></td><td>16</td><td>Fragments with fewer visible characters are dropped (0 = keep all)</td></tr>
+<tr><td><code class="opt">segment.min_fragment_words</code></td><td>0</td><td>Keep a fragment only if it contains this many words (0 = no word test)</td></tr>
+<tr><td><code class="opt">segment.min_fragment_word_letters</code></td><td>4</td><td>Shortest run of letters that counts as a word</td></tr>
+<tr><td><code class="opt">segment.fragment_words_vocabulary</code></td><td>auto</td><td>Count only vocabulary words (on), any run of letters (off), or decide by channel (auto)</td></tr>
+<tr><td><code class="opt">segment.fragment_words_after_autocorrect</code></td><td>true</td><td>Count the words after autocorrection</td></tr>
+<tr><td><code class="opt">segment.idle_close_s</code></td><td>60</td><td>A record with no new character for this long is closed</td></tr>
+<tr><td><code class="opt">segment.max_line_chars</code></td><td>200</td><td>Force a line break after this many characters without one</td></tr>
+<tr><td><code class="opt">decoder.break_before_zczc</code></td><td>true</td><td>Always start ZCZC at the beginning of a line</td></tr>
+<tr><td><code class="opt">decoder.break_after_brk</code></td><td>true</td><td>Insert a line break after the station's BRK marker</td></tr>
+<tr><td><code class="opt">autocorrect.enabled</code></td><td>true</td><td>Correct words with unreadable characters from the maritime vocabulary</td></tr>
+<tr><td><code class="opt">autocorrect.min_word_letters</code></td><td>5</td><td>Shortest word that is looked up</td></tr>
+<tr><td><code class="opt">autocorrect.max_word_letters</code></td><td>16</td><td>Longest word that is looked up</td></tr>
+<tr><td><code class="opt">autocorrect.max_unreadable_percent</code></td><td>50</td><td>Words with a larger share of unreadable characters are left alone</td></tr>
+<tr><td><code class="opt">autocorrect.max_candidates</code></td><td>4</td><td>Show up to this many possible words as [A|B|C]</td></tr>
+<tr><td><code class="opt">autocorrect.extra_words_file</code></td><td>vocabulary.txt</td><td>More words for the vocabulary, one per line</td></tr>
+<tr><td><code class="opt">output.format</code></td><td>text</td><td>text, messages or json</td></tr>
+<tr><td><code class="opt">output.incomplete_messages</code></td><td>true</td><td>Also report messages cut short (no NNNN)</td></tr>
+</table></details>
+
+<h2 id="sum">Summary and known weak spots</h2>
+<p><strong>The whole chain:</strong> audio or I/Q &rarr; DDC to about 4 kS/s &rarr; carrier search and tracking &rarr; narrow filter and FM discriminator &rarr; presence and timing, integrate-and-dump into soft symbols &rarr; bits, framing, the repeat combined &rarr; characters &rarr; ZCZC&hellip;NNNN messages, cleaned up and repaired.</p>
+<p>Places where the clips and the sweep showed real weaknesses:</p>
+<ul>
+<li><strong>Timing lock on balanced signals (step 4):</strong> the timing metric is weak on centred, balanced signals and gets worse with a narrower channel filter. The default <code class="opt">receiver.demod.timing_confidence</code> was lowered to 0.015 because of this.</li>
+<li><strong>Carrier search bias (step 2):</strong> the comb search tends to give about &minus;3.5 Hz while the tracker settles at +15 to +20 Hz on the same signal. This is why the retune check can be vetoed by the tracker.</li>
+<li><strong>Soft lock in noise (step 5):</strong> the soft framing can emit random valid-looking characters in noise. Weak-character gating has been left out on purpose, to keep the logic close to the original.</li>
+</ul>
+</main>
+</body>
+</html>

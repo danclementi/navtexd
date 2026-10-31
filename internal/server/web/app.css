@@ -540,3 +540,6 @@ input.tm.bad { border-color: var(--bad); }
 
 .mainrow { gap: 10px; }
 #b-clip { flex: none; }
+
+nav #helplink { margin-left: auto; display: flex; align-items: center; border: 2px solid var(--tabline); border-bottom: none; border-radius: 7px 7px 0 0; padding: 5px 14px 4px; background: color-mix(in srgb, var(--line) 45%, var(--bg)); color: var(--dim); text-decoration: none; font-size: inherit; }
+nav #helplink:hover { color: var(--ink); }
