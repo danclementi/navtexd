@@ -374,11 +374,13 @@ func s24(b []byte) float32 {
 
 // Options describes the receiver to open.
 type Options struct {
-	Addr     string  // radio address; empty = discover
-	Port     int     // UDP port; 0 = DefaultPort
-	RateHz   int     // 48000, 96000, 192000 or 384000
-	FreqHz   float64 // receiver frequency (the centre of the I/Q stream)
-	SwapIQ   bool
+	Addr   string  // radio address; empty = discover
+	Port   int     // UDP port; 0 = DefaultPort
+	RateHz int     // 48000, 96000, 192000 or 384000
+	FreqHz float64 // receiver frequency (the centre of the I/Q stream)
+	// MirrorIQ undoes the exchange of I and Q that the program applies by default: every OpenHPSDR radio tried so far (Pavel
+	// Demin's images on the Red Pitaya and QMtech, Hermes, Hermes Lite) needs I and Q exchanged to give the right spectrum.
+	MirrorIQ bool
 	Timeout  time.Duration    // discovery wait; 0 = 1.5 s
 	Notices  chan<- string    // optional: lost-packet and similar notices (never blocks)
 	Known    []string         // addresses used successfully before, most recent first: preferred when a search finds several radios

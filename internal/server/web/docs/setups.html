@@ -113,7 +113,7 @@
 <tr><td><code class="opt">input.hpsdr.address</code></td><td>e.g. 192.168.1.50</td><td>Empty = search the local network. The radios that worked last are offered in a list.</td></tr>
 <tr><td><code class="opt">input.hpsdr.sample_rate_hz</code></td><td>48000</td><td>48000, 96000, 192000 or 384000. 48 kS/s is enough for one channel.</td></tr>
 <tr><td><code class="opt">input.hpsdr.lo_below_hz</code></td><td>3000</td><td>The radio is tuned 3 kHz below the channel, so the carrier sits 3 kHz from the radio's DC spur</td></tr>
-<tr><td><code class="opt">input.hpsdr.swap_iq</code></td><td>false</td><td>See below</td></tr>
+<tr><td><code class="opt">input.hpsdr.mirror_iq</code></td><td>false</td><td>Leave off; see below</td></tr>
 <tr><td><code class="opt">input.hpsdr.autotune</code></td><td>true</td><td></td></tr>
 </table>
 <ul>
@@ -121,8 +121,8 @@
 <li>Each receiver delivers its own I/Q stream, so 48 kS/s is enough for every channel.</li>
 <li>Watch the System Log for lost packets on a busy network.</li>
 </ul>
-<h3>If no carrier is found: swap_iq</h3>
-<p>Some radios (the QMtech image, for example) deliver the I/Q pair in the other order, which mirrors the spectrum. The two tones then swap places, and the polarity detection handles that. But the carrier also appears on the other side of the centre, at &minus;<code class="opt">input.hpsdr.lo_below_hz</code> instead of +, which is outside the place where the search looks. The symptom is a clean signal in the spectrum but no LOCK, with the signal on the wrong side of the centre. Switch <code class="opt">input.hpsdr.swap_iq</code> on, and the channel restarts. The same option exists for every I/Q input (<code class="opt">input.device.swap_iq</code>, <code class="opt">input.sdrconnect.swap_iq</code>, <code class="opt">input.spyserver.swap_iq</code>).</p>
+<h3>If no carrier is found: mirror_iq</h3>
+<p>The program already exchanges I and Q for OpenHPSDR radios, because every radio tried so far (Red Pitaya and QMtech with Pavel Demin's images, Hermes, Hermes Lite) needs it to give the right spectrum. If a radio of yours still comes out mirrored, the two tones swap places, which the polarity detection handles, but the carrier also appears on the other side of the centre, at &minus;<code class="opt">input.hpsdr.lo_below_hz</code> instead of +, outside the place where the search looks. The symptom is a clean signal in the spectrum, on the wrong side of the centre, but no LOCK. Switch <code class="opt">input.hpsdr.mirror_iq</code> on, and the channel restarts. The other I/Q inputs have the usual <code class="opt">swap_iq</code> option (<code class="opt">input.device.swap_iq</code>, <code class="opt">input.sdrconnect.swap_iq</code>, <code class="opt">input.spyserver.swap_iq</code>).</p>
 </main>
 </body>
 </html>

@@ -178,7 +178,7 @@ func readN(t *testing.T, s *Source, n int) []complex64 {
 
 func TestStreamTuningAndReceiveOnly(t *testing.T) {
 	f := newFake(t)
-	s, err := Open(context.Background(), Options{Addr: "127.0.0.1", Port: f.port(), RateHz: 96000, FreqHz: 515000, SendGap: 10 * time.Millisecond})
+	s, err := Open(context.Background(), Options{Addr: "127.0.0.1", Port: f.port(), RateHz: 96000, FreqHz: 515000, MirrorIQ: true, SendGap: 10 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -408,7 +408,7 @@ func TestSharedRadio(t *testing.T) {
 	f := newFake(t)
 	f.toneHz = 1000
 	ctx := context.Background()
-	o := Options{Addr: "127.0.0.1", Port: f.port(), RateHz: 48000, SendGap: 10 * time.Millisecond, Timeout: 200 * time.Millisecond}
+	o := Options{Addr: "127.0.0.1", Port: f.port(), RateHz: 48000, MirrorIQ: true, SendGap: 10 * time.Millisecond, Timeout: 200 * time.Millisecond}
 	o1, o2, o3 := o, o, o
 	o1.FreqHz, o2.FreqHz, o3.FreqHz = 515000, 487000, 421000
 	a, err := Open(ctx, o1)
@@ -477,5 +477,30 @@ func TestCommandPacketDuplexBit(t *testing.T) {
 	}
 	if got := p[8+7]; got&0x04 == 0 || got>>3&7 != 0 {
 		t.Errorf("C4 = %#x: duplex bit missing or receiver count wrong", got)
+	}
+}
+
+// By default I and Q are exchanged (every radio tried so far needs it); MirrorIQ leaves them as the radio sent them.
+func TestDefaultExchangesIQ(t *testing.T) {
+	tone := func(mirror bool) float64 {
+		f := newFake(t)
+		s, err := Open(context.Background(), Options{Addr: "127.0.0.1", Port: f.port(), RateHz: 96000, FreqHz: 515000, SendGap: 10 * time.Millisecond, MirrorIQ: mirror})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer s.Close()
+		x := readN(t, s, 20000)
+		var sum complex128
+		for i := 1; i < len(x); i++ {
+			a, b := complex128(x[i-1]), complex128(x[i])
+			sum += b * complex(real(a), -imag(a))
+		}
+		return math.Atan2(imag(sum), real(sum)) / (2 * math.Pi) * 96000
+	}
+	if hz := tone(false); math.Abs(hz+1500) > 5 {
+		t.Errorf("default: tone at %.1f Hz, want -1500", hz)
+	}
+	if hz := tone(true); math.Abs(hz-1500) > 5 {
+		t.Errorf("mirror_iq: tone at %.1f Hz, want 1500", hz)
 	}
 }

@@ -434,7 +434,7 @@ func (s *session) receive() {
 				m.push(make([]complex64, fill), s)
 			}
 			blk := dst[k]
-			if m.opt.SwapIQ {
+			if !m.opt.MirrorIQ { // the exchange every radio tried so far needs (see Options.MirrorIQ)
 				for i, v := range blk {
 					blk[i] = complex(imag(v), real(v))
 				}

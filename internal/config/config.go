@@ -220,7 +220,8 @@ type DeviceInput struct {
 type HPSDRInput struct {
 	Address         string  `json:"address" doc:"Address of the radio (e.g. 192.168.1.50), or empty to search the local network. The last radios that worked are offered in a list"`
 	SampleRateHz    float64 `json:"sample_rate_hz" unit:"Hz" doc:"I/Q sample rate of the radio" choices:"48000,96000,192000,384000"`
-	SwapIQ          bool    `json:"swap_iq" doc:"Exchange I and Q (mirror the spectrum)"`
+	SwapIQ          bool    `json:"swap_iq" hidden:"true"` // obsolete and ignored: replaced by mirror_iq, whose default is the setting every radio needs
+	MirrorIQ        bool    `json:"mirror_iq" doc:"Exchange I and Q, for a radio whose spectrum comes out mirrored. Off is right for every OpenHPSDR radio tried so far (Red Pitaya, QMtech, Hermes, Hermes Lite): the program already applies the exchange they need. An old swap_iq setting is ignored"`
 	LoBelowHz       float64 `json:"lo_below_hz" unit:"Hz" doc:"How far below the channel frequency the radio is tuned (its LO), i.e. where the carrier is expected in the baseband. A few kHz keeps the carrier away from the radio's DC spur. A negative value puts the LO above the channel. The LO follows the channel frequency"`
 	Autotune        bool    `json:"autotune" doc:"Find and follow the carrier automatically. Off: the carrier stays at manual_carrier_hz"`
 	ManualCarrierHz float64 `json:"manual_carrier_hz" unit:"Hz" doc:"Frequency of the carrier in the radio's baseband (channel frequency minus LO), used when autotune is off (the carrier marker in the spectrum can be dragged to set it)"`

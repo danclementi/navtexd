@@ -9,7 +9,7 @@ A running list. Move finished items to the bottom or delete them.
 - **Coverage:** `app` (runner) 13 %, `catalog` 30 %, `server` 55 %; add tests with a fake source.
 - **Input watchdog: reopen.** The watchdog now only warns (`input.watchdog_s`). Optionally reopen the input by itself when
   it stalls (needs a way to unblock a read that never returns).
-- **Retest** the packet-loss burst reporting and the `swap_iq` note on the other radios when they are available.
+- **Retest** the packet-loss burst reporting on the other radios.
 
 ## Next (channels)
 Four channels exist (`extra.*`, SERVER_DESIGN section 33); still to do:
@@ -26,10 +26,13 @@ Four channels exist (`extra.*`, SERVER_DESIGN section 33); still to do:
 
 ## Next (radio input)
 
-- **HPSDR / Metis input:** the QMtech image works over the air (needs `input.hpsdr.swap_iq` on; Thetis compensates by itself).
-  Still to try: Red Pitaya (does it need `swap_iq` too? if so, note it in the log or default it for Pavel's images, which
-  report the name "R_PITAYA") and the Hermes board. Watch packet loss on the LAN. Automatic I/Q detection was postponed:
-  with 490 and 518 kHz decoded together the two carriers may lie on opposite sides of the centre.
+- **HPSDR / Metis input:** works over the air on the QMtech and Red Pitaya (Pavel Demin's images), on a Hermes (firmware 15) and on
+  an UberSDR (reports itself as a Hermes Lite, firmware 62). All four needed I and Q exchanged, so the program now always exchanges
+  them and `input.hpsdr.mirror_iq` (default off) undoes it for a radio that still comes out mirrored; the old `swap_iq` setting is
+  ignored. None of Thetis, SparkSDR or PowerSDR has such an option, which means they use the radios' order as it is and our
+  convention was the reverse. The Hermes needs the duplex bit set, or it tunes receiver 1 to the transmit frequency, and answers a
+  discovery request only when it is broadcast (a typed address now also broadcasts it). Watch packet loss on the LAN.
+  Automatic I/Q detection was postponed: with 490 and 518 kHz decoded together the two carriers may lie on opposite sides of the centre.
 - **Hermes controls:** attenuator, preamp, dither, random; ADC-overload indicator in the header; read the Hermes gateware
   (see `docs/HPSDR_DESIGN.md`, section 5, open questions).
 - Protocol 2 radios (Orion, Saturn).

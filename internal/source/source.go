@@ -98,7 +98,7 @@ func Open(ctx context.Context, cfg config.Config, opts ...Option) (*Opened, erro
 			}
 		}()
 		h, err := hpsdr.Open(ctx, hpsdr.Options{Addr: cfg.Input.HPSDR.Address, RateHz: int(cfg.Input.HPSDR.SampleRateHz), FreqHz: centre,
-			SwapIQ: cfg.Input.HPSDR.SwapIQ, Notices: warn, Known: e.radios.Addrs(),
+			MirrorIQ: cfg.Input.HPSDR.MirrorIQ, Notices: warn, Known: e.radios.Addrs(),
 			OnData: func(r hpsdr.Radio) {
 				if err := e.radios.Touch(r.Addr.IP.String(), r.Name); err != nil {
 					say("warn", "could not save the radio list: "+err.Error())

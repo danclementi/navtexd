@@ -560,3 +560,18 @@ func TestViewOffsetResetOnce(t *testing.T) {
 		t.Fatalf("new file: %v %+v", err, c.Channel)
 	}
 }
+
+// A settings file written before mirror_iq existed (it has the old swap_iq) still loads; the old value is ignored.
+func TestOldHPSDRSwapIQIsIgnored(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "navtex.json")
+	if err := os.WriteFile(p, []byte(`{"input":{"hpsdr":{"swap_iq":true,"lo_below_hz":3000}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Input.HPSDR.MirrorIQ {
+		t.Error("mirror_iq is on after loading a file with only the old swap_iq")
+	}
+}
