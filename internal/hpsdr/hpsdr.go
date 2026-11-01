@@ -110,19 +110,27 @@ func discover(ctx context.Context, addr string, port int, timeout time.Duration)
 	}
 	defer conn.Close()
 	var targets []*net.UDPAddr
+	var only net.IP // with an address, only that host's replies count
 	if addr != "" {
 		t, err := resolve(addr, port)
 		if err != nil {
 			return nil, "", err
 		}
-		targets = []*net.UDPAddr{t}
+		only = t.IP
+		// Some gateware (old Hermes, firmware 15, for one) answers a discovery request only when it is broadcast, so the
+		// request also goes out as a broadcast; only the reply of the wanted host is used.
+		targets = append([]*net.UDPAddr{t}, broadcastTargets(port)...)
 	} else {
 		targets = broadcastTargets(port)
 	}
 	pkt := discoveryPacket()
-	for _, t := range targets {
-		conn.WriteToUDP(pkt, t) // an interface that cannot send is simply skipped
+	send := func() {
+		for _, t := range targets {
+			conn.WriteToUDP(pkt, t) // an interface that cannot send is simply skipped
+		}
 	}
+	send()
+	sends, resend := 1, time.Now().Add(600*time.Millisecond)
 	seen := map[string]bool{}
 	var other, errs int
 	var first string
@@ -130,10 +138,20 @@ func discover(ctx context.Context, addr string, port int, timeout time.Duration)
 	deadline := time.Now().Add(timeout)
 	buf := make([]byte, 2048)
 	for time.Now().Before(deadline) && ctx.Err() == nil {
-		conn.SetReadDeadline(deadline)
+		rd := deadline
+		if sends < 4 && resend.Before(rd) {
+			rd = resend
+		}
+		conn.SetReadDeadline(rd)
 		n, from, err := conn.ReadFromUDP(buf)
 		if err != nil {
 			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				if time.Now().Before(deadline) { // a lost request is asked again a few times
+					send()
+					sends++
+					resend = time.Now().Add(600 * time.Millisecond)
+					continue
+				}
 				break
 			}
 			// e.g. Windows reports "connection forcibly closed" when the host answers that nothing listens on the port
@@ -141,6 +159,9 @@ func discover(ctx context.Context, addr string, port int, timeout time.Duration)
 			if errs++; errs > 10 {
 				break
 			}
+			continue
+		}
+		if only != nil && !from.IP.Equal(only) {
 			continue
 		}
 		if r, ok := ParseDiscoveryReply(buf[:n], from); ok {

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>navtexd overview</title>
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+<main>
+<p class="back"><a href="./">&larr; Help index</a></p>
+<h1>navtexd overview</h1>
+<p class="sub">What the program does, in one page.</p>
+
+<nav class="toc"><strong>Contents</strong>
+<ol>
+<li><a href="#o1">What navtexd is</a></li>
+<li><a href="#o2">Client and server</a></li>
+<li><a href="#o3">Inputs</a></li>
+<li><a href="#o4">Decoding</a></li>
+<li><a href="#o5">Monitoring</a></li>
+<li><a href="#o6">The message log</a></li>
+<li><a href="#o7">Station identification</a></li>
+<li><a href="#o8">Reporting</a></li>
+<li><a href="#o9">Where to read more</a></li>
+</ol></nav>
+
+<h2 id="o1">1. What navtexd is</h2>
+<p>navtexd receives NAVTEX maritime safety broadcasts from an audio or I/Q stream. It decodes them, identifies the transmitting station, tags and logs every message, and presents everything via a web interface. It is a single self-contained program and was inspired by the Windows program YaND ("Yet another NAVTEX Decoder", by the late Dirk Claessens). It aims to provide useful enhancements to YaND wherever appropriate while maintaining ease-of-use.</p>
+<div class="note"><strong>Not for navigation.</strong> NAVTEX reception here is experimental and error-prone. Never rely on this software for navigation, weather routing, collision avoidance or any other safety-of-life decision. Use certified equipment and official sources.</div>
+
+<h2 id="o2">2. Client and server</h2>
+<ul>
+<li><strong>Client-server design.</strong> The "navtexd" program itself does all the decoding and keeps the log. It runs in a terminal window.  It does not have a user interface of its own, but instead includes a server that you access from a web browser for viewing and control purposes.  The browser can be on the same computer that navtexd is running, or from anywhere that can reach that computer.</li>
+<li><strong>Multiple clients simultaneously.</strong> The purpose of supporting multiple clients is to allow an instance of navtex to be viewed by others who may find the information useful; perhaps for log review, perhaps to examine real-time propagationconditions.</li>
+<li><strong>Two roles are provided.</strong> <em>Administrators</em> (direct connections from the local machine or a private network) have full access (i.e. including change of all program options, editing and deletion of log entries, database management, and so on). <em>Viewers</em> (anyone arriving through a proxy or tunnel, such as a Cloudflare tunnel) are limited but can still view real-time decoding and live channel spectra, select andread log entries, and even generate reports.</li>
+<li><strong>Light on the network.</strong> Remote viewers get a lively feed with very low WAN data usage because pages and data are losslessly compressed.</li>
+<li>These Help files themselves are served by the program and are viewable by everyone, viewers included.</li>
+</ul>
+
+<h2 id="o3">3. Inputs</h2>
+<ul>
+<li><strong>Up to FOUR channels at once.</strong> One program decodes, tags and logs messages from up to four channels simultaneously. Each channel can have its own frequency, input source, and decoder settings.</li>
+<li><strong>Real or complex audio.</strong> A channel accepts real-valued audio (a receiver's audio output, a sound card or virtual audio cable, a WAV file, raw samples on standard input) or complex I/Q from SDR hardware.</li>
+<li><strong>Several channels from one I/Q stream.</strong> Channels can share one input if desired. A single 48 kHz wideband I/Q stream can, for example, feed a 490 kHz and a 518 kHz decoder at the same time.</li>
+<li><strong>I/Q over the network.</strong> The program can accept I/Q streams over Ethernet from Hermes-type receivers (using OpenHPSDR protocol 1: Hermes, Hermes Lite, ANAN and similar), from an Airspy HF+ through the SpyServer program, and from an SDRplay receiver through the headless SDRconnect server.</li>
+<li><strong>No calibration required.</strong> The carrier and the symbol timing are tracked continuously, so the sound card or SDR sample rate does not need to be calibrated.</li>
+<li><strong>Automatic polarity.</strong> The decoder detects and adapts, whether the audio signal is received in USB or LSB, selecting mark and space correctly.</li>
+</ul>
+
+<h2 id="o4">4. Decoding</h2>
+<ul>
+<li>A streaming decoder: carrier search and tracking, symbol timing, SITOR-B framing, and combining of the two transmitted copies of every character.</li>
+<li>Two framing methods can run side by side on different channels for comparison: <em>hard</em> (fast, needs a clean signal) and <em>soft</em> (locks later but works in more noise).</li>
+<li>Unreadable characters are shown as <code>~</code>. Optional spelling correction repairs them from a maritime vocabulary; the raw received text is always kept unchanged.</li>
+<li>A message whose ZCZC was damaged is still recognised by its position and the identification group that follows.</li>
+<li><strong>Fragment dropping.</strong> Text received outside any message (mostly noise) is dropped unless it passes a vocabulary word test. The test and the vocabulary can be tuned, and you can add your own words.</li>
+<li>Technical detail on how the decoder works, stage by stage, is in this section: <a href="demodulator.html">How the demodulator works</a>.</li>
+</ul>
+
+<h2 id="o5">5. Monitoring</h2>
+<ul>
+<li><strong>Thumbnail spectra are always visible</strong> at the top of every tab, so you can monitor activity while reviewing the log, generating reports, etc.</li>
+<li>The <strong>Spectrum</strong> tab shows a large spectrum that can be zoomed and moved, with one trace for incoming spectrum and a second trace for the signal after the receiver's channel filter (which is what the demodulator actually sees).</li>
+<li>Meters for input level, signal quality and CPU load, lock/sync/data indicators for each channel, and a ticker-tape display of the selected channel's live decode.</li>
+<li>A System Log records what the program is doing, including a watchdog that reports an input that has stopped delivering samples.</li>
+</ul>
+
+<h2 id="o6">6. The message log</h2>
+<ul>
+<li>Every message is stored with its time, channel, station, subject and serial number, in a log with filters (station, subject, text, distance) and de-duplication.</li>
+<li><strong>Multi-selection:</strong> Ctrl-click selects individual rows (i.e. log entries) and Shift-click selects a range. The selection can be reviewed, added to a report, or deleted.</li>
+<li><strong>Undo:</strong> deletions and edits can be undone, repeatedly, one step at a time. The undo history is kept on disk, so it survives a restart of the program (undo information is retained for 30 days).</li>
+<li><strong>Backups:</strong> before the log database is compacted, a backup copy is made automatically (the three newest are kept). Backups are also made before an import is made that would add to or replace the current log.</li>
+<li>Messages are stored as plain JSON lines in the data folder; all times are UTC.</li>
+</ul>
+
+<h2 id="o7">7. Station identification</h2>
+<ul>
+<li>The B1 letter and the frequency do not name a station by themselves, so every message is scored against a station table (in YaND format). For each candidate station, the score combines unique keywords (the station's own name or call sign), geographical keywords (places named in its warnings, weighted by how few stations share them), the time slot, the distance from your position, and how often you have received that station before.</li>
+<li>A station is named only when the evidence is clear. Otherwise the record stays unidentified and the ranked candidates with their scores are kept, so you can decide.</li>
+<li><strong>Review pane:</strong> in the reader pop-up you can assign a station ID to a record yourself, chosen from the stations scheduled at that time or any station which broadcasts on that frequency. Such an identification is marked as forced when the message text does not support it.</li>
+</ul>
+
+<h2 id="o8">8. Reporting</h2>
+<ul>
+<li>Multiple log entries are easily selected and, with a single click, transferred for report generation.  The complete report can be reviewed in a pop-up pane and the text can be edited as needed in place there.</li>
+<li>Once reviewed, the report can be copied to the clipboard or saved as a file.</li>
+<li>Currently, only YaND format is supported for report generation.</li>
+</ul>
+
+<h2 id="o9">9. Where to read more</h2>
+<ul>
+<li><a href="setups.html">Typical setups</a>: the options for each kind of input.</li>
+<li><a href="demodulator.html">How the demodulator works</a>: from input to messages, with the option that controls each stage.</li>
+<li>The README in the program's folder covers installation, the command line and the options in more detail.</li>
+</ul>
+</main>
+</body>
+</html>
