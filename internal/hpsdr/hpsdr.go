@@ -278,8 +278,11 @@ func commandPacketN(seq uint32, rate, nrx, rx int, freqHz float64) ([]byte, erro
 	}
 	g := p[8:] // frame 1: C0 = 0 general settings
 	g[3] = 0x00
-	g[4] = rc               // C1: sample rate
-	g[7] = byte(nrx-1) << 3 // C4: bits 5:3 = receivers - 1
+	g[4] = rc // C1: sample rate
+	// C4: bit 2 = duplex, bits 5:3 = receivers - 1. Without duplex, Hermes-class gateware tunes receiver 1 to the transmit
+	// frequency (C0 = 2) and ignores the receiver frequency; Pavel Demin's images ignore the bit. The program only
+	// receives and never sets MOX, so the transmit frequency is left alone.
+	g[7] = 0x04 | byte(nrx-1)<<3
 	f := p[8+frameLen:]
 	f[3] = byte(4 + 2*rx) // C0: receiver frequency (never the transmit frequency, C0 = 2)
 	binary.BigEndian.PutUint32(f[4:], uint32(freqHz+0.5))

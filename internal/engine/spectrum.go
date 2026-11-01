@@ -64,7 +64,10 @@ func newSpec(fs float64, kind iq.Kind, shift float64, m config.Meters) *specStat
 	} else {
 		half := math.Min(maxHz/2, fs/2-1)
 		s.k0 = int(math.Round((shift - half) / s.step))
-		s.bins = int(2*half/s.step) + 1
+		s.bins = min(int(2*half/s.step)+1, n)
+		// the slice stays inside the received span (-fs/2 .. +fs/2): beyond it the spectrum wraps round and would show
+		// the other side of the band again (a narrow I/Q stream with its carrier far from the centre)
+		s.k0 = max(-n/2, min(s.k0, n/2-s.bins))
 	}
 	s.smooth = make([]float64, s.bins)
 	return s

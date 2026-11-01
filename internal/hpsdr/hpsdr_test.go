@@ -469,3 +469,13 @@ func TestSharedRadio(t *testing.T) {
 	readN(t, d, 480)
 	d.Close()
 }
+
+func TestCommandPacketDuplexBit(t *testing.T) {
+	p, err := commandPacketN(0, 48000, 1, 0, 518000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := p[8+7]; got&0x04 == 0 || got>>3&7 != 0 {
+		t.Errorf("C4 = %#x: duplex bit missing or receiver count wrong", got)
+	}
+}
