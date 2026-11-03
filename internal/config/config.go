@@ -210,7 +210,7 @@ type DeviceInput struct {
 	Name            string  `json:"name" doc:"Audio input: part of its name (see -list-devices). Empty = the system default input"`
 	SampleRateHz    float64 `json:"sample_rate_hz" unit:"Hz" doc:"Sample rate to capture at"`
 	Channels        int     `json:"channels" doc:"1 = real audio (a receiver's SSB audio), 2 = I/Q"`
-	SwapIQ          bool    `json:"swap_iq" doc:"Two-channel input: left channel is Q and right is I"`
+	MirrorIQ        bool    `json:"mirror_iq" doc:"Two-channel input: exchange I and Q (left channel is Q and right is I). Switch on only if the spectrum is mirrored (no carrier is found)"`
 	LoBelowHz       float64 `json:"lo_below_hz" unit:"Hz" doc:"How far below the channel frequency the receiver's dial (LO) frequency (real audio) or the centre frequency (I/Q) is, i.e. where the carrier is expected in the audio. A negative value puts the LO above the channel. The LO follows the channel frequency"`
 	Autotune        bool    `json:"autotune" doc:"Find and follow the carrier automatically. Off: the carrier stays at manual_carrier_hz"`
 	ManualCarrierHz float64 `json:"manual_carrier_hz" unit:"Hz" doc:"Frequency of the carrier (centre between mark and space) in this input's audio / baseband, used when autotune is off (the carrier marker in the spectrum can be dragged to set it)"`
@@ -221,7 +221,7 @@ type HPSDRInput struct {
 	Address         string  `json:"address" doc:"Address of the radio (e.g. 192.168.1.50), or empty to search the local network. The last radios that worked are offered in a list"`
 	SampleRateHz    float64 `json:"sample_rate_hz" unit:"Hz" doc:"I/Q sample rate of the radio" choices:"48000,96000,192000,384000"`
 	SwapIQ          bool    `json:"swap_iq" hidden:"true"` // obsolete and ignored: replaced by mirror_iq, whose default is the setting every radio needs
-	MirrorIQ        bool    `json:"mirror_iq" doc:"Exchange I and Q, for a radio whose spectrum comes out mirrored. Off is right for every OpenHPSDR radio tried so far (Red Pitaya, QMtech, Hermes, Hermes Lite): the program already applies the exchange they need. An old swap_iq setting is ignored"`
+	MirrorIQ        bool    `json:"mirror_iq" doc:"Exchange I and Q, for a radio whose spectrum comes out mirrored. Off is right for every OpenHPSDR radio tried so far (Red Pitaya, QMtech, Hermes, Hermes Lite): the program already applies the exchange they need."`
 	LoBelowHz       float64 `json:"lo_below_hz" unit:"Hz" doc:"How far below the channel frequency the radio is tuned (its LO), i.e. where the carrier is expected in the baseband. A few kHz keeps the carrier away from the radio's DC spur. A negative value puts the LO above the channel. The LO follows the channel frequency"`
 	Autotune        bool    `json:"autotune" doc:"Find and follow the carrier automatically. Off: the carrier stays at manual_carrier_hz"`
 	ManualCarrierHz float64 `json:"manual_carrier_hz" unit:"Hz" doc:"Frequency of the carrier in the radio's baseband (channel frequency minus LO), used when autotune is off (the carrier marker in the spectrum can be dragged to set it)"`
@@ -234,7 +234,7 @@ type SDRconnectInput struct {
 	SampleRateHz    float64 `json:"sample_rate_hz" hidden:"true"` // no longer a setting (always 250000, see SDRconnectRateHz); old files may still have it
 	Antenna         string  `json:"antenna" doc:"Antenna or input of the receiver as SDRconnect names it (e.g. HiZ Port, Tuner 1 50 ohm; a unique part of the name is enough). Empty = leave as it is"`
 	LNAState        int     `json:"lna_state" doc:"LNA state (gain reduction step) of the receiver. -1 = leave as it is"`
-	SwapIQ          bool    `json:"swap_iq" doc:"Exchange I and Q (mirror the spectrum)"`
+	MirrorIQ        bool    `json:"mirror_iq" doc:"Exchange I and Q (mirror the spectrum). Switch on only if the spectrum comes out mirrored (no carrier is found)"`
 	LoBelowHz       float64 `json:"lo_below_hz" unit:"Hz" doc:"How far below the channel frequency the receiver is tuned (its LO), i.e. where the carrier is expected in the baseband. A few kHz keeps the carrier away from the receiver's DC spur. A negative value puts the LO above the channel. The LO follows the channel frequency"`
 	Autotune        bool    `json:"autotune" doc:"Find and follow the carrier automatically. Off: the carrier stays at manual_carrier_hz"`
 	ManualCarrierHz float64 `json:"manual_carrier_hz" unit:"Hz" doc:"Frequency of the carrier in the receiver's baseband (channel frequency minus LO), used when autotune is off (the carrier marker in the spectrum can be dragged to set it)"`
@@ -245,7 +245,7 @@ type SDRconnectInput struct {
 type SpyServerInput struct {
 	Address         string  `json:"address" doc:"host:port of the SpyServer. Empty = 127.0.0.1:5555, i.e. SpyServer on this computer"`
 	Gain            int     `json:"gain" doc:"Gain index of the receiver as SpyServer offers it (0 up to its maximum). -1 = leave as the server has it"`
-	SwapIQ          bool    `json:"swap_iq" doc:"Exchange I and Q (mirror the spectrum)"`
+	MirrorIQ        bool    `json:"mirror_iq" doc:"Exchange I and Q (mirror the spectrum). Switch on only if the spectrum comes out mirrored (no carrier is found)"`
 	LoBelowHz       float64 `json:"lo_below_hz" unit:"Hz" doc:"How far below the channel frequency the I/Q stream is centred, i.e. where the carrier is expected in the baseband. A few kHz keeps the carrier away from the receiver's DC spur. A negative value puts the centre above the channel. The centre follows the channel frequency"`
 	Autotune        bool    `json:"autotune" doc:"Find and follow the carrier automatically. Off: the carrier stays at manual_carrier_hz"`
 	ManualCarrierHz float64 `json:"manual_carrier_hz" unit:"Hz" doc:"Frequency of the carrier in the receiver's baseband (channel frequency minus centre), used when autotune is off (the carrier marker in the spectrum can be dragged to set it)"`
@@ -256,7 +256,7 @@ type StdinInput struct {
 	SampleRateHz    float64 `json:"sample_rate_hz" unit:"Hz" doc:"Sample rate of the stream"`
 	Channels        int     `json:"channels" doc:"1 = real audio, 2 = I/Q"`
 	PCMFormat       string  `json:"pcm_format" doc:"Sample encoding of the stream" choices:"s16le,f32le"`
-	SwapIQ          bool    `json:"swap_iq" doc:"Two-channel input: left channel is Q and right is I"`
+	MirrorIQ        bool    `json:"mirror_iq" doc:"Two-channel input: exchange I and Q (left channel is Q and right is I). Switch on only if the spectrum is mirrored (no carrier is found)"`
 	LoBelowHz       float64 `json:"lo_below_hz" unit:"Hz" doc:"How far below the channel frequency the dial (LO) frequency (real audio) or the centre frequency (I/Q) of the stream is, i.e. where the carrier is expected. A negative value puts the LO above the channel. The LO follows the channel frequency"`
 	StartUTC        string  `json:"start_utc" doc:"Time of the first sample, UTC, yyyy-mm-dd hh:mm:ss. Empty = use the system clock"`
 	Autotune        bool    `json:"autotune" doc:"Find and follow the carrier automatically. Off: the carrier stays at manual_carrier_hz"`
@@ -267,7 +267,7 @@ type StdinInput struct {
 type FileInput struct {
 	Path            string  `json:"path" doc:"WAV recording to decode (mono = real audio, stereo = I/Q); its sample rate is read from the file"`
 	Realtime        bool    `json:"realtime" doc:"Play the recording back at its real speed instead of as fast as possible (for testing displays)"`
-	SwapIQ          bool    `json:"swap_iq" doc:"Stereo recording: left channel is Q and right is I"`
+	MirrorIQ        bool    `json:"mirror_iq" doc:"Stereo recording: exchange I and Q (left channel is Q and right is I). Switch on only if the spectrum is mirrored"`
 	CentreHz        float64 `json:"centre_hz" unit:"Hz" doc:"Absolute centre frequency of an I/Q recording, or the dial frequency of a real-audio one (a fact about the recording, not relative to the channel). 0 = from the file name or the clip's own record"`
 	StartUTC        string  `json:"start_utc" doc:"Time of the first sample, UTC, yyyy-mm-dd hh:mm:ss. Empty = infer from the file name (taken as this computer's local time) or the file's modification time"`
 	Autotune        bool    `json:"autotune" doc:"Find and follow the carrier automatically. Off: the carrier stays at manual_carrier_hz"`
@@ -347,9 +347,22 @@ func (c Config) SampleRate() float64 {
 	return 0
 }
 
+// NavtexChannelsHz are the carrier frequencies a channel can be set to (kHz: 518, 490, 486, 424 and 4209.5).
+var NavtexChannelsHz = []float64{518000, 490000, 486000, 424000, 4209500}
+
+// ValidChannelHz says whether hz is one of the NAVTEX carrier frequencies.
+func ValidChannelHz(hz float64) bool {
+	for _, f := range NavtexChannelsHz {
+		if hz == f {
+			return true
+		}
+	}
+	return false
+}
+
 // Channel selects the NAVTEX frequency to decode.
 type Channel struct {
-	FrequencyHz float64 `json:"frequency_hz" unit:"Hz" doc:"nominal carrier frequency of the NAVTEX channel (in kHz)"`
+	FrequencyHz float64 `json:"frequency_hz" unit:"Hz" doc:"nominal carrier frequency of the NAVTEX channel in Hz: 518000, 490000, 486000, 424000 or 4209500"`
 	Name        string  `json:"name" doc:"Channel name (fixed: Channel 1 to 4); other features refer to the channels by these numbers"`
 	Comment     string  `json:"comment" doc:"A note about this channel (receiver, antenna, location ...); it is stored with every record received on it"`
 	ViewOffset  float64 `json:"view_offset_hz" unit:"Hz" doc:"adjust spectrum x-axis left-or-right; typically set by dragging the graph area in the Spectrum tab"`
@@ -432,8 +445,8 @@ func (c Config) validate(top bool) error {
 			bad("compare.pair_s must be between 1 and 3600")
 		}
 	}
-	if c.Channel.FrequencyHz <= 0 {
-		bad("channel.frequency_hz must be positive")
+	if !ValidChannelHz(c.Channel.FrequencyHz) {
+		bad("channel.frequency_hz %g: want 518000, 490000, 486000, 424000 or 4209500", c.Channel.FrequencyHz)
 	}
 	if c.DDC.TargetRateHz < 1000 {
 		bad("ddc.target_rate_hz must be at least 1000")
@@ -600,6 +613,7 @@ func Load(path string) (Config, error) {
 	}
 	b = migrateSecond(b)
 	b = migrateLO(b)
+	b = migrateMirror(b)
 	for ch := 0; ch < Channels; ch++ { // the marker must come from the file (the defaults have it set)
 		c.EditChannel(ch, func(d *Config) { d.Channel.ViewV2 = false })
 	}
@@ -954,8 +968,11 @@ func migrateInput(b []byte) ([]byte, error) {
 	put(st, "pcm_format", pcm, havePCM)
 	for _, m := range []map[string]any{d, h, st, f} {
 		put(m, "centre_hz", centre, haveCentre)
-		put(m, "swap_iq", swap, haveSwap)
 	}
+	for _, m := range []map[string]any{d, st, f} {
+		put(m, "mirror_iq", swap, haveSwap) // (the old name of the option; the radio's own old setting is ignored)
+	}
+	put(h, "swap_iq", swap, haveSwap)
 	put(h, "address", radio, haveRadio)
 	put(st, "start_utc", start, haveStart)
 	put(f, "start_utc", start, haveStart)
@@ -1057,4 +1074,44 @@ func (c *Config) ResetChannel(ch int) {
 		d.Input, d.Channel, d.DDC, d.Receiver, d.Decoder, d.Segment = def.Input, def.Channel, def.DDC, def.Receiver, def.Decoder, def.Segment
 		d.Channel.Name, d.Channel.Comment = name, comment
 	})
+}
+
+// migrateMirror gives the I/Q exchange option of the file, device, stdin, SDRconnect and SpyServer inputs its one name,
+// mirror_iq (it was swap_iq); the value keeps its meaning. (The OpenHPSDR input has no such migration: there the old option meant
+// something else and is ignored.) Settings files that do not have the old name are returned unchanged.
+func migrateMirror(b []byte) []byte {
+	var top map[string]any
+	if json.Unmarshal(b, &top) != nil {
+		return b
+	}
+	changed := false
+	fix := func(m map[string]any) {
+		in, _ := m["input"].(map[string]any)
+		for _, g := range []string{"file", "device", "stdin", "sdrconnect", "spyserver"} {
+			grp, _ := in[g].(map[string]any)
+			if v, ok := grp["swap_iq"]; ok {
+				if _, have := grp["mirror_iq"]; !have {
+					grp["mirror_iq"] = v
+				}
+				delete(grp, "swap_iq")
+				changed = true
+			}
+		}
+	}
+	fix(top)
+	if ex, ok := top["extra"].([]any); ok {
+		for _, e := range ex {
+			if m, ok := e.(map[string]any); ok {
+				fix(m)
+			}
+		}
+	}
+	if !changed {
+		return b
+	}
+	out, err := json.Marshal(top)
+	if err != nil {
+		return b
+	}
+	return out
 }

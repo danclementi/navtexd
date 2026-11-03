@@ -10,7 +10,7 @@
 <main>
 <p class="back"><a href="./">&larr; Help index</a></p>
 <h1>Typical channel setups</h1>
-<p class="sub">The settings that matter for the most common ways of feeding navtexd. Everything is set under the <strong>Options</strong> tab in the <strong>Channel</strong> sub-tabs. Option names <code class="opt">{like_this}</code> are the variable names shown there, along with the default values of this version in parentheses.</p>
+<p class="sub">The settings that matter for the most common ways of feeding navtexd. Everything is set under the <strong>Options</strong> tab in the <strong>Channel</strong> sub-tabs. Option names <code class="opt">{input.source}</code> are the variable names shown there, along with the default values of this version in parentheses.</p>
 
 <nav class="toc"><strong>Contents</strong>
 <ol>
@@ -24,9 +24,9 @@
 
 <h2 id="t0">Before you start</h2>
 <ul>
-<li>Each channel has its own frequency selector <code class="opt">{frequency_hz}</code> and it's own source controls. The first control <code class="opt">{shared_from}</code>sets whether the channel will share the source of another channel or will have its own. The second control <code class="opt">{source}</code> selects the type of source (if it has its own).</li>
-<li>The decoder needs an approximate point to look for the NAVTEX carrier.  It gets this hint from the parameter<code class="opt">{lo_below_hz}</code>. This represents how far below the carrier the receiver's dial is (in the case of real audio), or how far below the carrier the center frequency of the I/Q stream (I/Q) is. The automatic search limit <code class="opt">{search_range_hz}</code>sets the maximum range of the searchfrom the expected carrier frequency. Leave <code class="opt">input.*.autotune</code> on: the carrier is then found and followed automatically.</li>
-<li>You need not choose USB or LSB: the polarity can be detected automatically (<code class="opt">decoder.polarity</code> = auto), and no sample-rate calibration is needed.</li>
+<li>Each channel has its own frequency selector <code class="opt">{channel.frequency_hz}</code> and its own source controls. The first control <code class="opt">{input.shared_from}</code> sets whether the channel will share the source of another channel or will have its own. The second control <code class="opt">{input.source}</code> selects the type of source (if it has its own).</li>
+<li>The decoder needs an approximate point to look for the NAVTEX carrier.  It gets this hint from the parameter <code class="opt">{input.*.lo_below_hz}</code>. This represents how far below the carrier the receiver's dial is (in the case of real audio), or how far below the carrier the center frequency of the I/Q stream (I/Q) is. The automatic search limit <code class="opt">{receiver.search_range_hz}</code> sets the maximum range of the search from the expected carrier frequency. Leave <code class="opt">{input.*.autotune}</code> on: the carrier is then found and followed automatically.</li>
+<li>You need not choose USB or LSB: the polarity can be detected automatically (<code class="opt">{decoder.polarity}</code> = auto), and no sample-rate calibration is needed.</li>
 <li><strong>How to see that it works.</strong> When a signal is available in a channel, click on its spectrum "thumbnail" at the top of the display; this selects that channel for viewing.  You may then open the Spectrum tab for a detailed view. The carrier marker sits between two peaks 170 Hz apart; the orange trace (the signal after the channel filter) follows the signal; and the LOCK, SYNC and DATA indicators of the channel come on.</li>
 </ul>
 
@@ -34,49 +34,49 @@
 <p>A conventional receiver in USB mode, with its audio going to a sound card or a virtual audio cable. The signal appears as a pair of tones in the audio.</p>
 <table>
 <tr><th>Option</th><th>Typical value</th><th>Notes</th></tr>
-<tr><td><code class="opt">input.source</code></td><td>device</td><td>Sound card or virtual audio cable</td></tr>
-<tr><td><code class="opt">input.device.name</code></td><td>part of the device name</td><td>Empty = the system default input. The program's <code>-list-devices</code> command lists the names.</td></tr>
-<tr><td><code class="opt">input.device.channels</code></td><td>1</td><td>1 = real audio, 2 = I/Q</td></tr>
-<tr><td><code class="opt">input.device.sample_rate_hz</code></td><td>48000</td><td>Sound-card rates of 8 to 48 kHz are possible; 48000 is typical</td></tr>
-<tr><td><code class="opt">input.device.lo_below_hz</code></td><td>1000</td><td>The receiver's dial is 1 kHz below the channel</td></tr>
-<tr><td><code class="opt">channel.frequency_hz</code></td><td>518000</td><td>The NAVTEX channel</td></tr>
+<tr><td><code class="opt">{input.source}</code></td><td>device</td><td>Sound card or virtual audio cable</td></tr>
+<tr><td><code class="opt">{input.device.name}</code></td><td>part of the device name</td><td>Empty = the system default input. The program's <code>-list-devices</code> command lists the names.</td></tr>
+<tr><td><code class="opt">{input.device.channels}</code></td><td>1</td><td>1 = real audio, 2 = I/Q</td></tr>
+<tr><td><code class="opt">{input.device.sample_rate_hz}</code></td><td>48000</td><td>Sound-card rates of 8 to 48 kHz are possible; 48000 is typical</td></tr>
+<tr><td><code class="opt">{input.device.lo_below_hz}</code></td><td>1000</td><td>The receiver's dial is 1 kHz below the channel</td></tr>
+<tr><td><code class="opt">{channel.frequency_hz}</code></td><td>518000</td><td>The NAVTEX channel: 518000, 490000, 486000, 424000 or 4209500</td></tr>
 </table>
 <ul>
-<li><strong>Dial the receiver</strong> to the channel minus <code class="opt">input.device.lo_below_hz</code> in USB: 517.000 kHz for 518 kHz, 489.000 kHz for 490 kHz. The carrier then lies at 1000 Hz in the audio. Keep it between about 0.5 and 2.5 kHz, away from 0 Hz and the top of the band.</li>
-<li><strong>LSB:</strong> if the receiver is in LSB, the dial is above the channel: give <code class="opt">input.device.lo_below_hz</code> a negative value (&minus;1000, dial 519.000 kHz). The two tones are then swapped, which the polarity detection handles.</li>
-<li><strong>One channel per audio stream.</strong> A narrow audio channel cannot hold both 518 and 490 kHz. For two channels use two audio inputs (two receivers, or two virtual cables), each channel with its own <code class="opt">input.device.name</code>.</li>
+<li><strong>Dial the receiver</strong> to the channel minus <code class="opt">{input.device.lo_below_hz}</code> in USB: 517.000 kHz for 518 kHz, 489.000 kHz for 490 kHz. The carrier then lies at 1000 Hz in the audio. Keep it between about 0.5 and 2.5 kHz, away from 0 Hz and the top of the band.</li>
+<li><strong>LSB:</strong> if the receiver is in LSB, the dial is above the channel: give <code class="opt">{input.device.lo_below_hz}</code> a negative value (&minus;1000, dial 519.000 kHz). The two tones are then swapped, which the polarity detection handles.</li>
+<li><strong>One channel per audio stream.</strong> A narrow audio channel cannot hold both 518 and 490 kHz. For two channels use two audio inputs (two receivers, or two virtual cables), each channel with its own <code class="opt">{input.device.name}</code>.</li>
 <li><strong>Receiver filter:</strong> a USB passband of about 3 kHz is plenty for a carrier at 1000 Hz.</li>
-<li>A stereo I/Q signal from a sound card (for example an SDR program's I/Q output over a virtual cable) uses the same options with <code class="opt">input.device.channels</code> = 2 and a higher sample rate; if left and right are exchanged, use <code class="opt">input.device.swap_iq</code>.</li>
+<li>A stereo I/Q signal from a sound card (for example an SDR program's I/Q output over a virtual cable) uses the same options with <code class="opt">{input.device.channels}</code> = 2 and a higher sample rate; if left and right are exchanged, use <code class="opt">{input.device.mirror_iq}</code>.</li>
 </ul>
 
 <h2 id="t2">2. Two channels (518 and 490 kHz) from one I/Q stream</h2>
 <p>A wideband I/Q stream holds both NAVTEX frequencies. One program opens it once, and both channels decode from the same samples, each with its own down-converter, carrier and settings.</p>
 <table>
 <tr><th>Channel</th><th>Option</th><th>Value</th></tr>
-<tr><td>Channel 1</td><td><code class="opt">channel.frequency_hz</code></td><td>518000</td></tr>
-<tr><td>Channel 1</td><td><code class="opt">input.shared_from</code></td><td>0 (own input: it opens the stream)</td></tr>
-<tr><td>Channel 1</td><td><code class="opt">input.source</code></td><td>spyserver or sdrconnect (see sections 3 and 4)</td></tr>
-<tr><td>Channel 2</td><td><code class="opt">channel.frequency_hz</code></td><td>490000</td></tr>
-<tr><td>Channel 2</td><td><code class="opt">input.shared_from</code></td><td>1 (&ldquo;same input as Channel 1&rdquo;)</td></tr>
+<tr><td>Channel 1</td><td><code class="opt">{channel.frequency_hz}</code></td><td>518000</td></tr>
+<tr><td>Channel 1</td><td><code class="opt">{input.shared_from}</code></td><td>0 (own input: it opens the stream)</td></tr>
+<tr><td>Channel 1</td><td><code class="opt">{input.source}</code></td><td>spyserver or sdrconnect (see sections 3 and 4)</td></tr>
+<tr><td>Channel 2</td><td><code class="opt">{channel.frequency_hz}</code></td><td>490000</td></tr>
+<tr><td>Channel 2</td><td><code class="opt">{input.shared_from}</code></td><td>1 (&ldquo;same input as Channel 1&rdquo;)</td></tr>
 </table>
 <ul>
-<li>The stream's centre is set by Channel 1: channel 1's frequency minus its <code class="opt">lo_below_hz</code>. With the default of 1000 Hz and 518 kHz, the centre is 517 kHz and the 490 kHz carrier is 27 kHz below it.</li>
+<li>The stream's centre is set by Channel 1: channel 1's frequency minus its <code class="opt">{input.*.lo_below_hz}</code>. With the default of 1000 Hz and 518 kHz, the centre is 517 kHz and the 490 kHz carrier is 27 kHz below it.</li>
 <li><strong>The span of the stream must hold both carriers</strong> with a margin of several kHz at each side. The 250 kS/s of SDRconnect and the 228 kS/s of SpyServer (&plusmn;125 and &plusmn;114 kHz) hold 518 and 490 kHz easily; 424 kHz would be at the very edge.</li>
 <li>The owner (channel 1) must be on and have an input of its own; a sharing channel cannot itself be shared. Restarting the owner restarts the channels that share it.</li>
-<li>Channel 2 has no input options of its own. Its other settings (framing, filter, receiver options) are independent, so the two channels can also decode the <em>same</em> frequency with different settings: give both the same <code class="opt">channel.frequency_hz</code> and compare them (see the Compare options).</li>
-<li><strong>OpenHPSDR radios work differently:</strong> there each channel gets a receiver of its own inside the radio (section 5), so you do not use <code class="opt">input.shared_from</code>.</li>
+<li>Channel 2 has no input options of its own. Its other settings (framing, filter, receiver options) are independent, so the two channels can also decode the <em>same</em> frequency with different settings: give both the same <code class="opt">{channel.frequency_hz}</code> and compare them (see the Compare options).</li>
+<li><strong>OpenHPSDR radios work differently:</strong> there each channel gets a receiver of its own inside the radio (section 5), so you do not use <code class="opt">{input.shared_from}</code>.</li>
 </ul>
 
 <h2 id="t3">3. Airspy through SpyServer</h2>
 <p>Airspy's SpyServer program owns the Airspy (HF+ Discovery, Airspy One, RTL-SDR) and streams I/Q over TCP. It can run on the same computer, or on another computer or a Raspberry Pi on your network.</p>
 <table>
 <tr><th>Option</th><th>Typical value</th><th>Notes</th></tr>
-<tr><td><code class="opt">input.source</code></td><td>spyserver</td><td></td></tr>
-<tr><td><code class="opt">input.spyserver.address</code></td><td>host:port</td><td>Empty = 127.0.0.1:5555, SpyServer on this computer</td></tr>
-<tr><td><code class="opt">input.spyserver.gain</code></td><td>&minus;1</td><td>&minus;1 leaves the server's setting. Otherwise a gain index from 0 up to the receiver's maximum.</td></tr>
-<tr><td><code class="opt">input.spyserver.lo_below_hz</code></td><td>1000</td><td>The I/Q stream is centred 1 kHz below the channel. A few kHz moves the carrier away from the receiver's DC spur.</td></tr>
-<tr><td><code class="opt">input.spyserver.swap_iq</code></td><td>false</td><td>Switch on only if the spectrum is mirrored (see section 5)</td></tr>
-<tr><td><code class="opt">input.spyserver.autotune</code></td><td>true</td><td></td></tr>
+<tr><td><code class="opt">{input.source}</code></td><td>spyserver</td><td></td></tr>
+<tr><td><code class="opt">{input.spyserver.address}</code></td><td>host:port</td><td>Empty = 127.0.0.1:5555, SpyServer on this computer</td></tr>
+<tr><td><code class="opt">{input.spyserver.gain}</code></td><td>&minus;1</td><td>&minus;1 leaves the server's setting. Otherwise a gain index from 0 up to the receiver's maximum.</td></tr>
+<tr><td><code class="opt">{input.spyserver.lo_below_hz}</code></td><td>1000</td><td>The I/Q stream is centred 1 kHz below the channel. A few kHz moves the carrier away from the receiver's DC spur.</td></tr>
+<tr><td><code class="opt">{input.spyserver.mirror_iq}</code></td><td>false</td><td>Switch on only if the spectrum is mirrored (see section 5)</td></tr>
+<tr><td><code class="opt">{input.spyserver.autotune}</code></td><td>true</td><td></td></tr>
 </table>
 <ul>
 <li>The sample rate is not an option: the decimation stage nearest to 250 kS/s is used (the HF+ Discovery: 228 kS/s, &plusmn;114 kHz around the centre).</li>
@@ -89,19 +89,19 @@
 <p>SDRconnect (version 1.0.9 or later), with its window or headless, owns the SDRplay receiver. navtexd is a client of SDRconnect's WebSocket server and asks it for the I/Q stream. Enable the WebSocket server in SDRconnect (Preferences, WebSocket Server); by default it listens on port 5454.</p>
 <table>
 <tr><th>Option</th><th>Typical value</th><th>Notes</th></tr>
-<tr><td><code class="opt">input.source</code></td><td>sdrconnect</td><td></td></tr>
-<tr><td><code class="opt">input.sdrconnect.address</code></td><td>host:port</td><td>Empty = 127.0.0.1:5454, SDRconnect on this computer</td></tr>
-<tr><td><code class="opt">input.sdrconnect.device</code></td><td>e.g. RSPduo</td><td>Part of the receiver's name or its serial number. Empty = the receiver SDRconnect has selected.</td></tr>
-<tr><td><code class="opt">input.sdrconnect.antenna</code></td><td>e.g. Tuner 1 50 ohm, HiZ Port</td><td>As SDRconnect names it; a unique part is enough. Empty = leave as it is.</td></tr>
-<tr><td><code class="opt">input.sdrconnect.lna_state</code></td><td>&minus;1</td><td>&minus;1 leaves the receiver's setting. Otherwise the gain-reduction step.</td></tr>
-<tr><td><code class="opt">input.sdrconnect.lo_below_hz</code></td><td>1000</td><td>The receiver is tuned 1 kHz below the channel</td></tr>
-<tr><td><code class="opt">input.sdrconnect.swap_iq</code></td><td>false</td><td></td></tr>
-<tr><td><code class="opt">input.sdrconnect.autotune</code></td><td>true</td><td></td></tr>
+<tr><td><code class="opt">{input.source}</code></td><td>sdrconnect</td><td></td></tr>
+<tr><td><code class="opt">{input.sdrconnect.address}</code></td><td>host:port</td><td>Empty = 127.0.0.1:5454, SDRconnect on this computer</td></tr>
+<tr><td><code class="opt">{input.sdrconnect.device}</code></td><td>e.g. RSPduo</td><td>Part of the receiver's name or its serial number. Empty = the receiver SDRconnect has selected.</td></tr>
+<tr><td><code class="opt">{input.sdrconnect.antenna}</code></td><td>e.g. Tuner 1 50 ohm, HiZ Port</td><td>As SDRconnect names it; a unique part is enough. Empty = leave as it is.</td></tr>
+<tr><td><code class="opt">{input.sdrconnect.lna_state}</code></td><td>&minus;1</td><td>&minus;1 leaves the receiver's setting. Otherwise the gain-reduction step.</td></tr>
+<tr><td><code class="opt">{input.sdrconnect.lo_below_hz}</code></td><td>1000</td><td>The receiver is tuned 1 kHz below the channel</td></tr>
+<tr><td><code class="opt">{input.sdrconnect.mirror_iq}</code></td><td>false</td><td></td></tr>
+<tr><td><code class="opt">{input.sdrconnect.autotune}</code></td><td>true</td><td></td></tr>
 </table>
 <ul>
 <li>The sample rate is fixed at 250 kS/s (&plusmn;125 kHz around the centre).</li>
 <li>Only one program should control the receiver. If another client changes the sample rate, the stream stops with an explanation, and a changed centre frequency is logged as a warning because the carrier is no longer where the decoder looks.</li>
-<li>Adjust <code class="opt">input.sdrconnect.lna_state</code> (or the gain in SDRconnect) until INP.LEVEL stays out of the red.</li>
+<li>Adjust <code class="opt">{input.sdrconnect.lna_state}</code> (or the gain in SDRconnect) until INP.LEVEL stays out of the red.</li>
 <li>To decode 518 and 490 kHz from the same stream, add the second channel as in section 2.</li>
 </ul>
 
@@ -109,20 +109,20 @@
 <p>I/Q straight from an OpenHPSDR (Protocol 1) radio over the network: Hermes, Hermes Lite, ANAN and Pavel Demin's Red Pitaya and QMtech images. Receive only. Close Thetis, SDRConnect or any other program that uses the radio first, because only one program can use a radio address at a time.</p>
 <table>
 <tr><th>Option</th><th>Typical value</th><th>Notes</th></tr>
-<tr><td><code class="opt">input.source</code></td><td>hpsdr</td><td></td></tr>
-<tr><td><code class="opt">input.hpsdr.address</code></td><td>e.g. 192.168.1.50</td><td>Empty = search the local network. The radios that worked last are offered in a list.</td></tr>
-<tr><td><code class="opt">input.hpsdr.sample_rate_hz</code></td><td>48000</td><td>48000, 96000, 192000 or 384000. 48 kS/s is enough for one channel.</td></tr>
-<tr><td><code class="opt">input.hpsdr.lo_below_hz</code></td><td>3000</td><td>The radio is tuned 3 kHz below the channel, so the carrier sits 3 kHz from the radio's DC spur</td></tr>
-<tr><td><code class="opt">input.hpsdr.mirror_iq</code></td><td>false</td><td>Leave off; see below</td></tr>
-<tr><td><code class="opt">input.hpsdr.autotune</code></td><td>true</td><td></td></tr>
+<tr><td><code class="opt">{input.source}</code></td><td>hpsdr</td><td></td></tr>
+<tr><td><code class="opt">{input.hpsdr.address}</code></td><td>e.g. 192.168.1.50</td><td>Empty = search the local network. The radios that worked last are offered in a list.</td></tr>
+<tr><td><code class="opt">{input.hpsdr.sample_rate_hz}</code></td><td>48000</td><td>48000, 96000, 192000 or 384000. 48 kS/s is enough for one channel.</td></tr>
+<tr><td><code class="opt">{input.hpsdr.lo_below_hz}</code></td><td>3000</td><td>The radio is tuned 3 kHz below the channel, so the carrier sits 3 kHz from the radio's DC spur</td></tr>
+<tr><td><code class="opt">{input.hpsdr.mirror_iq}</code></td><td>false</td><td>Leave off; see below</td></tr>
+<tr><td><code class="opt">{input.hpsdr.autotune}</code></td><td>true</td><td></td></tr>
 </table>
 <ul>
-<li><strong>Several channels from one radio:</strong> do not use <code class="opt">input.shared_from</code>. Give each channel <code class="opt">input.source</code> = hpsdr with the same address and the same sample rate. The radio is asked for one receiver per channel, each tuned to its own channel, so 518, 490 and 424 kHz can all come from one radio and one antenna (a radio offers up to 8 receivers).</li>
+<li><strong>Several channels from one radio:</strong> do not use <code class="opt">{input.shared_from}</code>. Give each channel <code class="opt">{input.source}</code> = hpsdr with the same address and the same sample rate. The radio is asked for one receiver per channel, each tuned to its own channel, so 518, 490 and 424 kHz can all come from one radio and one antenna (a radio offers up to 8 receivers).</li>
 <li>Each receiver delivers its own I/Q stream, so 48 kS/s is enough for every channel.</li>
 <li>Watch the System Log for lost packets on a busy network.</li>
 </ul>
 <h3>If no carrier is found: mirror_iq</h3>
-<p>The program already exchanges I and Q for OpenHPSDR radios, because every radio tried so far (Red Pitaya and QMtech with Pavel Demin's images, Hermes, Hermes Lite) needs it to give the right spectrum. If a radio of yours still comes out mirrored, the two tones swap places, which the polarity detection handles, but the carrier also appears on the other side of the centre, at &minus;<code class="opt">input.hpsdr.lo_below_hz</code> instead of +, outside the place where the search looks. The symptom is a clean signal in the spectrum, on the wrong side of the centre, but no LOCK. Switch <code class="opt">input.hpsdr.mirror_iq</code> on, and the channel restarts. The other I/Q inputs have the usual <code class="opt">swap_iq</code> option (<code class="opt">input.device.swap_iq</code>, <code class="opt">input.sdrconnect.swap_iq</code>, <code class="opt">input.spyserver.swap_iq</code>).</p>
+<p>The program already exchanges I and Q for OpenHPSDR radios, because every radio tried so far (Red Pitaya and QMtech with Pavel Demin's images, Hermes, Hermes Lite) needs it to give the right spectrum. If a radio of yours still comes out mirrored, the two tones swap places, which the polarity detection handles, but the carrier also appears on the other side of the centre, at &minus;<code class="opt">{input.hpsdr.lo_below_hz}</code> instead of +, outside the place where the search looks. The symptom is a clean signal in the spectrum, on the wrong side of the centre, but no LOCK. Switch <code class="opt">{input.hpsdr.mirror_iq}</code> on, and the channel restarts. The other I/Q inputs have an option of the same name (<code class="opt">{input.device.mirror_iq}</code>, <code class="opt">{input.sdrconnect.mirror_iq}</code>, <code class="opt">{input.spyserver.mirror_iq}</code>); with them, switching it on exchanges I and Q.</p>
 </main>
 </body>
 </html>

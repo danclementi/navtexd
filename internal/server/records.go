@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -62,7 +63,9 @@ func parseTime(v string) (time.Time, error) {
 // limits are honoured (viewers may not be told distances).
 func logFilter(q url.Values, withDist bool) (store.Filter, error) {
 	f := store.Filter{Text: q.Get("text"), B1: q.Get("b1"), Kind: q.Get("kind"), Newest: q.Get("order") == "newest", Unidentified: q.Get("unid") == "1"}
-	f.Channel, _ = strconv.Atoi(q.Get("freq"))
+	if k, err := strconv.ParseFloat(q.Get("freq"), 64); err == nil && k > 0 { // kHz (4209.5)
+		f.Channel = int(math.Round(k * 1000))
+	}
 	f.Rcv, _ = strconv.Atoi(q.Get("rcv"))
 	if v := q.Get("navarea"); v != "" { // a list: 1,2,5
 		f.NavAreas = map[int]bool{}
@@ -149,9 +152,10 @@ func (s *Server) message(w http.ResponseWriter, r *http.Request, id Identity) {
 	c, cfg := s.run.Corrector()
 	det := struct {
 		store.Record
+		Ch  float64               `json:"ch"` // kHz (the record's own value is in Hz)
 		Rev [][]autocorr.Reversal `json:"rv,omitempty"`
 		Eff []string              `json:"eff,omitempty"` // the lines with the operator's revisions applied
-	}{Record: rec}
+	}{Record: rec, Ch: store.KHz(rec.Channel)}
 	if len(rec.Revs) > 0 {
 		det.Eff = rec.EffectiveLines()
 	}
@@ -222,7 +226,7 @@ func (s *Server) patchMessage(w http.ResponseWriter, r *http.Request, id Identit
 			rec.Picked = 0
 		} else {
 			st, ok := s.cat.Station(*body.Station)
-			if !ok || st.FreqKHz != rec.Channel {
+			if !ok || st.FreqKHz*1000 != rec.Channel {
 				fail(w, 400, errors.New("that station does not transmit on this channel"))
 				return
 			}
@@ -377,14 +381,14 @@ func (s *Server) trashList(w http.ResponseWriter, r *http.Request, id Identity) 
 	offset, _ := strconv.Atoi(q.Get("offset"))
 	recs, total := s.st.Trash(store.Filter{Text: strings.TrimSpace(q.Get("text")), Limit: limit, Offset: max(offset, 0)})
 	type item struct {
-		ID      int64  `json:"id"`
-		Hex     string `json:"hex"`
-		Rx      int64  `json:"rx"`
-		Deleted int64  `json:"deleted"`
-		Ch      int    `json:"ch"`
-		Kind    string `json:"kind"`
-		Station string `json:"st"`
-		Text    string `json:"text"`
+		ID      int64   `json:"id"`
+		Hex     string  `json:"hex"`
+		Rx      int64   `json:"rx"`
+		Deleted int64   `json:"deleted"`
+		Ch      float64 `json:"ch"` // kHz
+		Kind    string  `json:"kind"`
+		Station string  `json:"st"`
+		Text    string  `json:"text"`
 	}
 	out := make([]item, len(recs))
 	for i, r := range recs {
@@ -392,7 +396,7 @@ func (s *Server) trashList(w http.ResponseWriter, r *http.Request, id Identity) 
 		if rs := []rune(t); len(rs) > 120 {
 			t = string(rs[:120]) + "\u2026"
 		}
-		out[i] = item{r.ID, hexID(r.ID), r.Received.UnixMilli(), r.DeletedAt.UnixMilli(), r.Channel, r.Kind, r.Station, t}
+		out[i] = item{r.ID, hexID(r.ID), r.Received.UnixMilli(), r.DeletedAt.UnixMilli(), store.KHz(r.Channel), r.Kind, r.Station, t}
 	}
 	writeJSON(w, 200, map[string]any{"total": total, "records": out})
 }

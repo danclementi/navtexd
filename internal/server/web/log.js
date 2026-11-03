@@ -414,7 +414,7 @@
     const i = pos(), n = L.total;
     const rank = newestFirst() ? n - i : i + 1; // counted in time, whichever way the list is sorted: the newest record is "n of n"
     const where = i >= 0 && n && !L.gone ? ` ${rank} of ${n}${filterOn() ? " (filtered)" : ""}` : L.gone ? " (no longer in the filtered list)" : "";
-    $("rec-title").textContent = L.rec ? `${L.rec.kind}${where} (${NX.hex(L.rec.id)})` : "";
+    $("rec-title").textContent = L.rec ? `${L.rec.kind}${where}` : "";
     $("ld-prev").disabled = !canStep(earlier());
     $("ld-next").disabled = !canStep(-earlier());
     $("ld-report").hidden = false;

@@ -1,7 +1,7 @@
 package store
 
 // schemaVersion is stored in the database (PRAGMA user_version). When it is raised, the views are dropped and created again.
-const schemaVersion = 1
+const schemaVersion = 2
 
 // The records table has a readable column for every field a person might want to look at, so that a viewer (the sqlite3 command
 // line, DB Browser for SQLite and the like) shows a normal table. The program itself reads the whole record back from the data
@@ -12,7 +12,7 @@ const tableSQL = `
 CREATE TABLE IF NOT EXISTS records (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,  -- numbers are never reused, not even after a record is purged
   received     TEXT    NOT NULL,                   -- UTC, e.g. 2026-11-02T20:50:12.345Z
-  channel      INTEGER NOT NULL,                   -- kHz
+  channel      INTEGER NOT NULL,                   -- carrier frequency in Hz (518000, 4209500)
   kind         TEXT    NOT NULL,                   -- message, incomplete, fragment
   b1           TEXT    NOT NULL,                   -- station identification letter
   b2           TEXT    NOT NULL,                   -- subject indicator letter
@@ -34,9 +34,12 @@ CREATE TABLE IF NOT EXISTS records (
   deleted_at   TEXT,                               -- NULL = in the log; else when it was deleted (it is in the trash)
   batch_id     INTEGER                             -- the deletion it belongs to
 );
-CREATE INDEX IF NOT EXISTS rec_time    ON records(received, id)     WHERE deleted_at IS NULL;
-CREATE INDEX IF NOT EXISTS rec_chan    ON records(channel, received) WHERE deleted_at IS NULL;
-CREATE INDEX IF NOT EXISTS rec_station ON records(station_id)        WHERE deleted_at IS NULL;
+-- One covering index for the log: the list, its total and the filters read only this index, not the table. (Earlier databases
+-- had rec_time and rec_chan, which this one replaces.)
+DROP INDEX IF EXISTS rec_time;
+DROP INDEX IF EXISTS rec_chan;
+DROP INDEX IF EXISTS rec_station; -- (the planner preferred it for counts and then read the table row by row)
+CREATE INDEX IF NOT EXISTS rec_filter ON records(received, id, channel, rcv, navarea, b1, kind, station_id, distance_km) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS rec_deleted ON records(deleted_at)        WHERE deleted_at IS NOT NULL;
 CREATE INDEX IF NOT EXISTS rec_batch   ON records(batch_id)          WHERE batch_id IS NOT NULL;
 
@@ -75,7 +78,7 @@ DROP VIEW IF EXISTS trash_messages;
 
 -- the messages in the log, oldest first
 CREATE VIEW messages AS
-  SELECT r.id, r.received AS received_utc, r.channel AS channel_khz, r.kind, r.b1, r.b2, r.serial, r.navarea, r.station,
+  SELECT r.id, r.received AS received_utc, r.channel / 1000.0 AS channel_khz, r.kind, r.b1, r.b2, r.serial, r.navarea, r.station,
          r.distance_km, r.bearing_deg, r.quality, r.comment, b.text, b.corrected AS corrected_text
   FROM records r JOIN bodies b ON b.id = r.id WHERE r.deleted_at IS NULL ORDER BY r.received, r.id;
 
@@ -87,7 +90,7 @@ CREATE VIEW message_lines AS
 
 -- the messages in the trash (they can be brought back by the program for 30 days)
 CREATE VIEW trash_messages AS
-  SELECT r.id, r.deleted_at AS deleted_utc, r.received AS received_utc, r.channel AS channel_khz, r.kind, r.b1, r.b2, r.serial,
+  SELECT r.id, r.deleted_at AS deleted_utc, r.received AS received_utc, r.channel / 1000.0 AS channel_khz, r.kind, r.b1, r.b2, r.serial,
          r.navarea, r.station, r.comment, b.text
   FROM records r JOIN bodies b ON b.id = r.id WHERE r.deleted_at IS NOT NULL ORDER BY r.deleted_at DESC, r.id;
 `

@@ -11,7 +11,7 @@ import (
 var t0 = time.Date(2026, 9, 30, 6, 0, 0, 0, time.UTC)
 
 func rec(min int, b1 string, area int, text string) Record {
-	return Record{Channel: 518, Received: t0.Add(time.Duration(min) * time.Minute), Kind: "message", B1: b1, NavArea: area,
+	return Record{Channel: 518000, Received: t0.Add(time.Duration(min) * time.Minute), Kind: "message", B1: b1, NavArea: area,
 		Lines: []Line{{Time: t0, Text: text}}}
 }
 

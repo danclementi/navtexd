@@ -755,7 +755,7 @@ func toStore(r segment.Record, cfg config.Config, wallAt func(float64) time.Time
 		comment += c
 	}
 	rec := store.Record{
-		Channel:  int(cfg.Channel.FrequencyHz/1000 + 0.5),
+		Channel:  int(math.Round(cfg.Channel.FrequencyHz)),
 		Received: wallAt(r.StartS), End: wallAt(r.EndS),
 		Kind: r.Kind.String(), B1: r.B1, B2: r.B2, Serial: r.Serial, StartFix: r.StartFix, Quality: store.F2(r.Quality), Comment: comment,
 	}

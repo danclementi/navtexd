@@ -36,7 +36,7 @@ type Line struct {
 type Record struct {
 	ID          int64       `json:"id"`
 	Version     int         `json:"v"`
-	Channel     int         `json:"ch"`            // kHz
+	Channel     int         `json:"ch"`            // carrier frequency in Hz (518000, 4209500); files of earlier versions hold kHz
 	Rcv         int         `json:"rcv,omitempty"` // decoding channel (receiver) that received it: 0 = the first, 1 = the second
 	Received    time.Time   `json:"rx"`
 	End         time.Time   `json:"end"`
@@ -118,7 +118,7 @@ func (r Record) Text() string {
 
 // Filter selects records. Zero values mean "any".
 type Filter struct {
-	Channel      int
+	Channel      int             // carrier frequency in Hz (0: any)
 	Rcv          int             // 0 = any decoding channel, 1 = the first, 2 = the second
 	NavArea      int             // 0 = any
 	B1           string          // "" or "*" = any
@@ -199,3 +199,16 @@ const (
 	logFile    = "syslog.jsonl"
 	qualFile   = "quality.csv"
 )
+
+// KHz is a carrier frequency (Hz) in kHz (4209.5 for 4209500).
+func KHz(hz int) float64 { return float64(hz) / 1000 }
+
+// FormatKHz writes a carrier frequency (Hz) in kHz without superfluous digits: "518", "4209.5".
+func FormatKHz(hz int) string { return strconv.FormatFloat(KHz(hz), 'f', -1, 64) }
+
+// legacyKHz converts a frequency that an earlier version stored in kHz to Hz (no NAVTEX carrier is below 100 kHz).
+func legacyKHz(r *Record) {
+	if r.Channel > 0 && r.Channel < 100000 {
+		r.Channel *= 1000
+	}
+}

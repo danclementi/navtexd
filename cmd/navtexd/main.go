@@ -400,7 +400,7 @@ func listRecords(dir string, id int64) {
 		if !ok {
 			fatal(fmt.Errorf("no record %d", id))
 		}
-		fmt.Printf("0x%08X %s %d kHz  %s .. %s UTC  %s%s%s  quality %.0f  station %s\n", r.ID, r.Kind, r.Channel, r.Received.Format(config.TimeFormat),
+		fmt.Printf("0x%08X %s %s kHz  %s .. %s UTC  %s%s%s  quality %.0f  station %s\n", r.ID, r.Kind, store.FormatKHz(r.Channel), r.Received.Format(config.TimeFormat),
 			r.End.Format("15:04:05"), r.B1, r.B2, r.Serial, r.Quality, r.Station)
 		for _, l := range r.Lines {
 			fmt.Printf("%s %3.0f> %s\n", l.Time.Format(config.TimeFormat), l.Quality, l.Text)

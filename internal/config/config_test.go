@@ -196,6 +196,8 @@ func TestLiveListMatchesRestartRule(t *testing.T) {
 			if rel != f.Path {
 				v = "1"
 			}
+		case "channel.frequency_hz":
+			v = "486000"
 		}
 		if err := Set(&next, f.Path, v); err != nil {
 			t.Errorf("%s: %v", f.Path, err)
@@ -573,5 +575,23 @@ func TestOldHPSDRSwapIQIsIgnored(t *testing.T) {
 	}
 	if c.Input.HPSDR.MirrorIQ {
 		t.Error("mirror_iq is on after loading a file with only the old swap_iq")
+	}
+}
+
+// The I/Q exchange option has one name for every source; a file with the old name keeps its meaning (except for OpenHPSDR radios).
+func TestOldSwapIQBecomesMirrorIQ(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "navtex.json")
+	old := `{"input":{"source":"spyserver","spyserver":{"swap_iq":true},"device":{"swap_iq":true,"channels":2},"hpsdr":{"swap_iq":true}},
+		"extra":[{"input":{"sdrconnect":{"swap_iq":true},"file":{"swap_iq":false}}}]}`
+	if err := os.WriteFile(p, []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.Input.SpyServer.MirrorIQ || !c.Input.Device.MirrorIQ || c.Input.HPSDR.MirrorIQ || !c.Extra[0].Input.SDRconnect.MirrorIQ || c.Extra[0].Input.File.MirrorIQ {
+		t.Errorf("migrated values: spy %v device %v hpsdr %v extra sdrconnect %v file %v", c.Input.SpyServer.MirrorIQ, c.Input.Device.MirrorIQ,
+			c.Input.HPSDR.MirrorIQ, c.Extra[0].Input.SDRconnect.MirrorIQ, c.Extra[0].Input.File.MirrorIQ)
 	}
 }

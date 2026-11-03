@@ -61,8 +61,8 @@ th { color: var(--dim); font-weight: 600; }
 .note { background: var(--bg); border-left: 3px solid var(--warn); padding: 6px 10px; margin-bottom: 10px; border-radius: 4px; }
 fieldset { border: 1px solid var(--line); border-radius: 8px; margin: 0 0 12px; padding: 8px 12px; }
 legend { font-weight: 600; padding: 0 6px; text-transform: capitalize; }
-.opt { display: grid; grid-template-columns: minmax(180px, 260px) 160px 1fr; gap: 8px; align-items: center; padding: 3px 0; }
-.opt code { font-size: 12px; }
+.opt { display: grid; grid-template-columns: minmax(200px, 340px) 160px 1fr; gap: 8px; align-items: center; padding: 3px 0; }
+.opt code { font-size: 12px; overflow-wrap: anywhere; }
 .opt input[type=text], .opt input[type=number], .opt select { width: 100%; font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; }
 .opt .doc { font-size: 12px; color: var(--dim); }
 .opt.changed input, .opt.changed select { border-color: var(--accent); }

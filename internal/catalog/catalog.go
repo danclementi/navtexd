@@ -208,12 +208,12 @@ func (c *Catalog) Enrich(r *store.Record) {
 	}
 	if r.Kind == "fragment" {
 		// only the operator can give a fragment a station: a "forced ID"
-		if r.Picked >= 1 && r.Picked <= len(c.tab.Stations) && c.tab.Stations[r.Picked-1].FreqKHz == r.Channel {
+		if r.Picked >= 1 && r.Picked <= len(c.tab.Stations) && c.tab.Stations[r.Picked-1].FreqKHz*1000 == r.Channel {
 			place(c.tab.Stations[r.Picked-1], r.Picked-1, "forced ID", 0)
 		}
 		return
 	}
-	in := ident.Input{FreqKHz: r.Channel, B1: r.B1, When: r.Received, Text: bodyText(r)}
+	in := ident.Input{FreqKHz: r.Channel / 1000, B1: r.B1, When: r.Received, Text: bodyText(r)}
 	if r.Manual {
 		in.NavArea = r.NavArea
 	}
@@ -225,7 +225,7 @@ func (c *Catalog) Enrich(r *store.Record) {
 	for _, cd := range res.Candidates {
 		r.Candidates = append(r.Candidates, store.Candidate{StationID: cd.Index + 1, Label: Label(c.tab.Stations[cd.Index]), Score: store.F2(cd.Score)})
 	}
-	if r.Picked >= 1 && r.Picked <= len(c.tab.Stations) && c.tab.Stations[r.Picked-1].FreqKHz == r.Channel {
+	if r.Picked >= 1 && r.Picked <= len(c.tab.Stations) && c.tab.Stations[r.Picked-1].FreqKHz*1000 == r.Channel {
 		// the operator chose this station among the candidates (needed when several share frequency, B1 and NAVAREA)
 		res.Index, res.Method, res.Score = r.Picked-1, "forced ID", 0 // not among the candidates: a forced ID
 		for _, cd := range res.Candidates {

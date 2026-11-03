@@ -21,7 +21,7 @@ import (
 
 func addMsg(t *testing.T, st *store.Store, cat interface{ Enrich(*store.Record) }, b1 string, at time.Time, lines ...string) store.Record {
 	t.Helper()
-	r := store.Record{Channel: 518, Kind: "message", B1: b1, B2: "E", Serial: "01", Received: at, End: at.Add(time.Minute), Quality: 50}
+	r := store.Record{Channel: 518000, Kind: "message", B1: b1, B2: "E", Serial: "01", Received: at, End: at.Add(time.Minute), Quality: 50}
 	r.Lines = append(r.Lines, store.Line{Time: at, Text: "ZCZC " + b1 + "E01"})
 	for _, l := range lines {
 		r.Lines = append(r.Lines, store.Line{Time: at, Text: l})

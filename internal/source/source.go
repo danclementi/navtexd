@@ -45,6 +45,34 @@ func WithRadios(m *hpsdr.MRU) Option { return func(e *env) { e.radios = m } }
 
 // Open opens the source named by cfg.Input. Cancelling ctx unblocks a waiting read on a live source.
 func Open(ctx context.Context, cfg config.Config, opts ...Option) (*Opened, error) {
+	o, err := open(ctx, cfg, opts...)
+	if err == nil && o != nil && mirrorIQ(cfg) {
+		o.Info += "; mirror_iq is on (I and Q are exchanged): if no carrier is found, try turning it off"
+	}
+	return o, err
+}
+
+// mirrorIQ says whether the option that exchanges I and Q is on for the selected source (it has no effect on real audio).
+func mirrorIQ(cfg config.Config) bool {
+	in := cfg.Input
+	switch in.Source {
+	case "hpsdr":
+		return in.HPSDR.MirrorIQ
+	case "sdrconnect":
+		return in.SDRconnect.MirrorIQ
+	case "spyserver":
+		return in.SpyServer.MirrorIQ
+	case "device":
+		return in.Device.MirrorIQ && in.Device.Channels == 2
+	case "stdin":
+		return in.Stdin.MirrorIQ && in.Stdin.Channels == 2
+	case "file":
+		return in.File.MirrorIQ
+	}
+	return false
+}
+
+func open(ctx context.Context, cfg config.Config, opts ...Option) (*Opened, error) {
 	var e env
 	for _, o := range opts {
 		o(&e)
@@ -60,7 +88,7 @@ func Open(ctx context.Context, cfg config.Config, opts ...Option) (*Opened, erro
 		if centre == 0 && haveMeta {
 			centre = meta.CentreHz
 		}
-		w, err := iq.OpenWav(fi.Path, iq.WavOptions{SwapIQ: fi.SwapIQ, CentreHz: centre, HasCentre: centre != 0})
+		w, err := iq.OpenWav(fi.Path, iq.WavOptions{SwapIQ: fi.MirrorIQ, CentreHz: centre, HasCentre: centre != 0})
 		if err != nil {
 			return nil, err
 		}
@@ -123,7 +151,7 @@ func Open(ctx context.Context, cfg config.Config, opts ...Option) (*Opened, erro
 		sc := cfg.Input.SDRconnect
 		centre := cfg.LiveCentreHz()
 		s, err := sdrconnect.Open(ctx, sdrconnect.Options{Addr: strings.TrimSpace(sc.Address), Device: sc.Device, RateHz: config.SDRconnectRateHz, LOHz: centre,
-			DialHz: cfg.Channel.FrequencyHz, Antenna: sc.Antenna, LNAState: sc.LNAState, SwapIQ: sc.SwapIQ, Debug: cfg.Output.Verbose, Notice: say})
+			DialHz: cfg.Channel.FrequencyHz, Antenna: sc.Antenna, LNAState: sc.LNAState, SwapIQ: sc.MirrorIQ, Debug: cfg.Output.Verbose, Notice: say})
 		if err != nil {
 			// the messages of a failed set-up are never read by the caller: put them into the error
 			var trace []string
@@ -153,7 +181,7 @@ func Open(ctx context.Context, cfg config.Config, opts ...Option) (*Opened, erro
 			}
 		}
 		sc := cfg.Input.SpyServer
-		s, err := spyserver.Open(ctx, spyserver.Options{Addr: strings.TrimSpace(sc.Address), LOHz: cfg.LiveCentreHz(), Gain: sc.Gain, SwapIQ: sc.SwapIQ,
+		s, err := spyserver.Open(ctx, spyserver.Options{Addr: strings.TrimSpace(sc.Address), LOHz: cfg.LiveCentreHz(), Gain: sc.Gain, SwapIQ: sc.MirrorIQ,
 			Debug: cfg.Output.Verbose, Notice: say})
 		if err != nil {
 			var trace []string
@@ -175,13 +203,13 @@ func Open(ctx context.Context, cfg config.Config, opts ...Option) (*Opened, erro
 			s.Describe(), s.SampleRate(), cfg.Channel.FrequencyHz/1e3, s.CentreHz()/1e3, cfg.Channel.FrequencyHz-s.CentreHz())
 		return o, nil
 	case "device", "stdin":
-		rate, channels, swap := cfg.Input.Stdin.SampleRateHz, cfg.Input.Stdin.Channels, cfg.Input.Stdin.SwapIQ
+		rate, channels, swap := cfg.Input.Stdin.SampleRateHz, cfg.Input.Stdin.Channels, cfg.Input.Stdin.MirrorIQ
 		format, _ := iq.ParsePCMFormat(cfg.Input.Stdin.PCMFormat)
 		var r io.Reader = os.Stdin
 		what := "standard input"
 		if cfg.Input.Source == "device" {
 			dev := cfg.Input.Device
-			rate, channels, swap = dev.SampleRateHz, dev.Channels, dev.SwapIQ
+			rate, channels, swap = dev.SampleRateHz, dev.Channels, dev.MirrorIQ
 			c, err := capture.Open(dev.Name, rate, channels)
 			if err != nil {
 				return nil, err

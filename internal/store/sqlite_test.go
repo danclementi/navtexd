@@ -46,7 +46,7 @@ func TestSQLFilterAgreesWithMatch(t *testing.T) {
 	var all []*Record
 	for i := 0; i < 300; i++ {
 		r := Record{
-			Channel: []int{490, 518}[rnd.Intn(2)], Rcv: rnd.Intn(2), Kind: kinds[rnd.Intn(3)],
+			Channel: []int{490000, 518000}[rnd.Intn(2)], Rcv: rnd.Intn(2), Kind: kinds[rnd.Intn(3)],
 			Received: t0.Add(time.Duration(rnd.Intn(500)) * time.Minute).Add(time.Duration(rnd.Intn(1000)) * time.Millisecond),
 			B1:       string(rune('A' + rnd.Intn(6))), NavArea: rnd.Intn(5), StationID: rnd.Intn(4), DistanceKm: float64(rnd.Intn(900)),
 			Lines: []Line{{Text: words[rnd.Intn(len(words))] + " " + words[rnd.Intn(len(words))]}},
@@ -69,7 +69,7 @@ func TestSQLFilterAgreesWithMatch(t *testing.T) {
 	for n := 0; n < 400; n++ {
 		var f Filter
 		if rnd.Intn(2) == 0 {
-			f.Channel = []int{490, 518}[rnd.Intn(2)]
+			f.Channel = []int{490000, 518000}[rnd.Intn(2)]
 		}
 		if rnd.Intn(3) == 0 {
 			f.Rcv = 1 + rnd.Intn(2)
@@ -342,7 +342,7 @@ func TestNoSecondConversion(t *testing.T) {
 func TestViews(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := Open(dir)
-	s.Add(Record{Received: t0, Channel: 518, Kind: "message", B1: "E", B2: "A", Serial: "12", NavArea: 4, Station: "Boston",
+	s.Add(Record{Received: t0, Channel: 518000, Kind: "message", B1: "E", B2: "A", Serial: "12", NavArea: 4, Station: "Boston",
 		Lines: []Line{{Time: t0, Quality: 71.5, Text: "FIRST"}, {Time: t0.Add(time.Second), Quality: 60, Text: "SECOND"}}})
 	d, _ := s.Add(Record{Received: t0.Add(time.Minute), Kind: "message", Lines: []Line{{Text: "GONE"}}})
 	s.Delete(d.ID)
@@ -484,5 +484,45 @@ func TestDamagedDatabaseRefused(t *testing.T) {
 		t.Error("a damaged database must be refused")
 	} else if !strings.Contains(err.Error(), "backups") && !strings.Contains(err.Error(), "database") && !strings.Contains(err.Error(), "malformed") {
 		t.Logf("error: %v", err)
+	}
+}
+
+// A database of the first version holds the carrier frequency in kHz; opening it converts it to Hz.
+func TestUpgradeFrequencyToHz(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := Open(dir)
+	a, _ := s.Add(Record{Received: t0, Channel: 518000, Kind: "message", Lines: []Line{{Text: "ONE"}}})
+	b, _ := s.Add(Record{Received: t0.Add(time.Minute), Channel: 4209500, Kind: "message", Lines: []Line{{Text: "TWO"}}})
+	s.Close()
+	db, err := sql.Open("sqlite", filepath.Join(dir, "messages.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`UPDATE records SET channel = channel / 1000 WHERE id = ` + fmt.Sprint(a.ID),
+		`UPDATE bodies SET data = json_set(data, '$.ch', 518) WHERE id = ` + fmt.Sprint(a.ID),
+		`PRAGMA user_version = 1`,
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	db.Close()
+	s, err = Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if r, ok := s.Get(a.ID); !ok || r.Channel != 518000 {
+		t.Errorf("record 1: %+v", r)
+	}
+	if r, ok := s.Get(b.ID); !ok || r.Channel != 4209500 {
+		t.Errorf("record 2: %+v", r)
+	}
+	if got, n := s.Query(Filter{Channel: 518000}); n != 1 || len(got) != 1 || got[0].ID != a.ID {
+		t.Errorf("filter by 518000: %d", n)
+	}
+	if FormatKHz(4209500) != "4209.5" || FormatKHz(518000) != "518" {
+		t.Errorf("FormatKHz %s %s", FormatKHz(4209500), FormatKHz(518000))
 	}
 }

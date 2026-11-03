@@ -724,7 +724,7 @@
         lg.textContent = /^extra\.\d+$/.test(g) ? `Channel ${Number(g.slice(6)) + 2}: switch it on to decode it at the same time, from its own input` : gb === "channel" ? "Channel: frequency, name and comment" : title[gb] || g; fs.appendChild(lg); page.appendChild(fs);
         for (const f of groups.get(g)) {
           const row = document.createElement("div"); row.className = "opt";
-          const name = document.createElement("div"); const code = document.createElement("code"); code.textContent = f.path.slice(g.length + 1);
+          const name = document.createElement("div"); const code = document.createElement("code"); code.textContent = "{" + f.path.replace(/^extra\.\d+\./, "") + "}"; // the full name as the help writes it (a channel's own page leaves out extra.N.)
           name.appendChild(code);
           if (f.apply !== "live") { const b = document.createElement("span"); b.className = "badge"; b.textContent = f.apply === "server" ? "restart navtexd" : "restarts channel"; name.appendChild(b); }
           let inp;
@@ -734,9 +734,9 @@
             for (const c of f.choices || [f.value]) inp.add(new Option(c, c));
             inp.value = f.value;
           } else if (f.path === "operator.info") { inp = document.createElement("textarea"); inp.rows = 5; inp.value = f.value; row.classList.add("wide"); }
-          else if (/(^|\.)channel\.frequency_hz$/.test(f.path)) { // only the four NAVTEX channels
+          else if (/(^|\.)channel\.frequency_hz$/.test(f.path)) { // only the NAVTEX channels
             inp = document.createElement("select");
-            const hz = [518000, 490000, 486000, 424000]; if (!hz.includes(Number(f.value))) hz.push(Number(f.value));
+            const hz = [518000, 490000, 486000, 424000, 4209500]; if (!hz.includes(Number(f.value))) hz.push(Number(f.value));
             for (const v of hz) inp.add(new Option(`${v / 1000} kHz`, String(v)));
             inp.value = String(f.value);
           }
@@ -752,7 +752,7 @@
             for (let n = 1; n <= N; n++) {
               if (n === me) continue;
               const fq = fields.find((x) => x.path === (n === 1 ? "channel.frequency_hz" : `extra.${n - 2}.channel.frequency_hz`));
-              inp.add(new Option(`same input as channel ${n}` + (fq ? ` (${(Number(fq.value) / 1000).toFixed(0)} kHz)` : ""), String(n)));
+              inp.add(new Option(`same input as channel ${n}` + (fq ? ` (${Number(fq.value) / 1000} kHz)` : ""), String(n)));
             }
             inp.value = String(f.value);
           }

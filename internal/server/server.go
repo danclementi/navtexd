@@ -115,7 +115,7 @@ type sunMsg struct {
 }
 
 type controlsMsg struct {
-	Channel  int     `json:"channel"` // kHz
+	Channel  float64 `json:"channel"` // kHz (518, 4209.5)
 	Polarity string  `json:"polarity"`
 	UoS      bool    `json:"uos"`
 	Autotune bool    `json:"autotune"`
@@ -135,7 +135,7 @@ type recordMsg struct {
 	Action    string  `json:"action,omitempty"` // new, update, delete (events only)
 	ID        int64   `json:"id"`
 	Version   int     `json:"v"`
-	Channel   int     `json:"ch"`
+	Channel   float64 `json:"ch"` // kHz
 	Received  int64   `json:"rx"`
 	End       int64   `json:"end"`
 	Kind      string  `json:"kind"`
@@ -157,7 +157,7 @@ type recordMsg struct {
 
 // brief is the list / event form of a record; distance and bearing only when withDist.
 func brief(r store.Record, withDist bool) recordMsg {
-	m := recordMsg{ID: r.ID, Version: r.Version, Channel: r.Channel, Received: r.Received.UnixMilli(), End: r.End.UnixMilli(), Kind: r.Kind,
+	m := recordMsg{ID: r.ID, Version: r.Version, Channel: store.KHz(r.Channel), Received: r.Received.UnixMilli(), End: r.End.UnixMilli(), Kind: r.Kind,
 		B1: r.B1, B2: r.B2, Serial: r.Serial, NavArea: r.NavArea, StationID: r.StationID, Station: r.Station, Quality: float64(r.Quality),
 		Comment: r.Comment, Manual: r.Manual, Method: r.IdentMethod, Lines: len(r.Lines), Rcv: r.Rcv}
 	if withDist {
@@ -170,7 +170,7 @@ func (s *Server) controls(rcv int, admin bool) controlsMsg {
 	full := s.run.Config()
 	c := full.ForChannel(rcv)
 	pol, _ := c.Decoder.Polarity.MarshalText()
-	m := controlsMsg{Channel: int(c.Channel.FrequencyHz/1000 + 0.5), Polarity: string(pol), UoS: c.Decoder.UnshiftOnSpace, Autotune: c.Autotune(),
+	m := controlsMsg{Channel: c.Channel.FrequencyHz / 1000, Polarity: string(pol), UoS: c.Decoder.UnshiftOnSpace, Autotune: c.Autotune(),
 		Carrier: c.ManualCarrierHz(), Comment: c.Operator.Comment, Source: c.Input.Source, LineQ: c.Logging.LineQuality,
 		Rcv: rcv, Enabled: full.ChannelEnabled(rcv), Name: strings.TrimSpace(c.Channel.Name), Label: full.Label(rcv), ChanNote: c.Channel.Comment}
 	if admin {
@@ -886,16 +886,16 @@ func (s *Server) control(w http.ResponseWriter, r *http.Request, id Identity) {
 	case "frequency":
 		var f float64
 		if f, err = asFloat(); err == nil {
-			if f != 518 && f != 490 && f != 486 && f != 424 {
-				err = errors.New("frequency must be 518, 490, 486 or 424 (kHz)")
+			if !config.ValidChannelHz(math.Round(f * 1000)) {
+				err = errors.New("frequency must be 518, 490, 486, 424 or 4209.5 (kHz)")
 			} else {
 				var restart bool
 				restart, err = s.run.Modify(func(c *config.Config) error {
-					c.EditChannel(ch, func(d *config.Config) { d.Channel.FrequencyHz = f * 1000 })
+					c.EditChannel(ch, func(d *config.Config) { d.Channel.FrequencyHz = math.Round(f * 1000) })
 					return nil
 				})
 				if err == nil && restart {
-					s.run.Log("info", fmt.Sprintf("%schannel changed to %.0f kHz", s.chTag(ch), f))
+					s.run.Log("info", fmt.Sprintf("%schannel changed to %g kHz", s.chTag(ch), f))
 					s.run.Restart()
 				}
 			}

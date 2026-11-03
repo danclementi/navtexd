@@ -72,7 +72,7 @@ server and a multi-client browser UI, comparable to YaND. Public GPL v3 project.
 - Protocol 1 over UDP port 1024; the radio streams to the source address/port of the start packet. One host per radio:
   navtexd replaces Thetis / SDRConnect while it runs. Rates 48/96/192/384 kHz; the radio is tuned to the LO (default
   channel − 3000 Hz) and navtexd's own mixer takes the carrier from there. Details and open questions: `docs/HPSDR_DESIGN.md`.
-- The QMtech image delivers a mirrored spectrum with the default I/Q order: the owner turns on `input.hpsdr.swap_iq`.
+- OpenHPSDR radios (Red Pitaya, QMtech, Hermes, Hermes Lite) need I and Q exchanged: the program does it by default. The option that exchanges I and Q has one name for every source, `mirror_iq` (`input.<source>.mirror_iq`); for OpenHPSDR it undoes the default exchange. Settings files with the old name `swap_iq` migrate to `mirror_iq` (same meaning) except for OpenHPSDR, where the old value is ignored. Opening a source with it on logs a one-line hint.
   Automatic detection was considered and postponed (a later 490 + 518 kHz decode from one stream may have the two
   carriers on opposite sides of the centre).
 - Lost packets are zero-filled (≤ 1 s) and counted; the receive socket asks for a 4 MB buffer.

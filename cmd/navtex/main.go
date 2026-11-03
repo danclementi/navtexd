@@ -42,7 +42,7 @@ func main() {
 		"device":     "input.device.name",
 		"rate":       "input.*.sample_rate_hz",
 		"start":      "input.*.start_utc",
-		"swap":       "input.*.swap_iq",
+		"swap":       "input.*.mirror_iq",
 		"order":      "decoder.bit_order",
 		"unreadable": "decoder.unreadable",
 		"format":     "output.format",

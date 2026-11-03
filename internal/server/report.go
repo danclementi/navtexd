@@ -98,7 +98,7 @@ func (s *Server) reportText(w http.ResponseWriter, r *http.Request, id Identity)
 		if b1 == "" {
 			b1 = "?"
 		}
-		line := fmt.Sprintf("%s %-3d $%02d%s %-3s %-28s", rec.Received.UTC().Format("20060102 1504"), rec.Channel, rec.NavArea, b1, call, name)
+		line := fmt.Sprintf("%s %-3s $%02d%s %-3s %-28s", rec.Received.UTC().Format("20060102 1504"), store.FormatKHz(rec.Channel), rec.NavArea, b1, call, name)
 		if dist && rec.DistanceKm > 0 {
 			line += fmt.Sprintf("%4.0f", rec.DistanceKm)
 		} else {

@@ -155,6 +155,17 @@ func (s *Store) initSchema() error {
 	if _, err := tx.Exec(viewsSQL); err != nil {
 		return err
 	}
+	if ver >= 1 && ver < 2 { // version 2: the carrier frequency is kept in Hz (it was kHz)
+		for _, q := range []string{
+			`UPDATE records SET channel = channel * 1000 WHERE channel > 0 AND channel < 100000`,
+			`UPDATE bodies SET data = json_set(data, '$.ch', json_extract(data, '$.ch') * 1000) WHERE json_extract(data, '$.ch') BETWEEN 1 AND 99999`,
+			`UPDATE edit_history SET data = json_set(data, '$.ch', json_extract(data, '$.ch') * 1000) WHERE json_extract(data, '$.ch') BETWEEN 1 AND 99999`,
+		} {
+			if _, err := tx.Exec(q); err != nil {
+				return err
+			}
+		}
+	}
 	if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion)); err != nil {
 		return err
 	}
@@ -211,6 +222,7 @@ func (s *Store) closeDBs() {
 
 // normalize rounds times to the millisecond and qualities to two decimals, as they are stored.
 func normalize(r *Record) {
+	legacyKHz(r)
 	r.Received, r.End = r.Received.Round(time.Millisecond), r.End.Round(time.Millisecond)
 	r.Quality = F2(math.Round(float64(r.Quality)*100) / 100)
 	r.IdentScore = F2(math.Round(float64(r.IdentScore)*100) / 100)
@@ -268,6 +280,7 @@ type execer interface {
 }
 
 func insertRec(tx execer, r *Record) error {
+	legacyKHz(r)
 	a, body, err := recArgs(r)
 	if err != nil {
 		return err
@@ -280,6 +293,7 @@ func insertRec(tx execer, r *Record) error {
 }
 
 func updateRec(tx execer, r *Record) error {
+	legacyKHz(r)
 	a, body, err := recArgs(r)
 	if err != nil {
 		return err
@@ -328,6 +342,7 @@ func (s *Store) Add(r Record) (Record, error) {
 func decode(data string) (Record, error) {
 	var r Record
 	err := json.Unmarshal([]byte(data), &r)
+	legacyKHz(&r)
 	return r, err
 }
 
