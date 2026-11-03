@@ -62,6 +62,7 @@ func TestDeleteUndo(t *testing.T) {
 
 func TestExportImport(t *testing.T) {
 	a, _ := Open(t.TempDir())
+	defer a.Close() // (Windows cannot delete the folder of a database that is still open)
 	for i := 0; i < 3; i++ {
 		a.Add(Record{Received: time.Date(2026, 1, 1, 0, i, 0, 0, time.UTC), Kind: "message", Channel: 518000, Lines: []Line{{Text: "LINE " + string(rune('A'+i))}}})
 	}
@@ -70,6 +71,7 @@ func TestExportImport(t *testing.T) {
 		t.Fatalf("export %d %v", n, err)
 	}
 	b, _ := Open(t.TempDir())
+	defer b.Close()
 	b.Add(Record{Received: time.Date(2026, 1, 1, 0, 1, 0, 0, time.UTC), Kind: "message", Channel: 518000, Lines: []Line{{Text: "LINE B"}}}) // same as one of them
 	b.Add(Record{Received: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC), Kind: "message", Channel: 490000})
 	res, err := b.Import(strings.NewReader(buf.String()), false)
@@ -94,6 +96,7 @@ func TestUndoRestoresPlace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer s.Close()
 	var ids []int64
 	for i := 0; i < 5; i++ {
 		r, _ := s.Add(Record{Received: time.Date(2026, 1, 1, 0, i, 0, 0, time.UTC), Kind: "message", B1: "E"})
@@ -162,6 +165,7 @@ func TestUndoEdit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer s.Close()
 	if got, _ = s.Get(a.ID); got.B1 != "E" {
 		t.Fatalf("after reopening: %+v", got)
 	}

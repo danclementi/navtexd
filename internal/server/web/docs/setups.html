@@ -34,16 +34,18 @@
 <p>A conventional receiver in USB mode, with its audio going to a sound card or a virtual audio cable. The signal appears as a pair of tones in the audio.</p>
 <table>
 <tr><th>Option</th><th>Typical value</th><th>Notes</th></tr>
+<tr><td><code class="opt">{channel.frequency_hz}</code></td><td>518000</td><td>The NAVTEX channel: 518000, 490000, 486000, 424000 or 4209500</td></tr>
+<tr><td><code class="opt">{input.shared_from}</code></td><td>own input</td><td>own input or select another channel's input</td></tr>
 <tr><td><code class="opt">{input.source}</code></td><td>device</td><td>Sound card or virtual audio cable</td></tr>
 <tr><td><code class="opt">{input.device.name}</code></td><td>part of the device name</td><td>Empty = the system default input. The program's <code>-list-devices</code> command lists the names.</td></tr>
 <tr><td><code class="opt">{input.device.channels}</code></td><td>1</td><td>1 = real audio, 2 = I/Q</td></tr>
 <tr><td><code class="opt">{input.device.sample_rate_hz}</code></td><td>48000</td><td>Sound-card rates of 8 to 48 kHz are possible; 48000 is typical</td></tr>
-<tr><td><code class="opt">{input.device.lo_below_hz}</code></td><td>1000</td><td>The receiver's dial is 1 kHz below the channel</td></tr>
-<tr><td><code class="opt">{channel.frequency_hz}</code></td><td>518000</td><td>The NAVTEX channel: 518000, 490000, 486000, 424000 or 4209500</td></tr>
+<tr><td><code class="opt">{input.device.lo_below_hz}</code></td><td>1000</td><td>The receiver's dial frequency is 1 kHz below the channel</td></tr>
+<tr><td><code class="opt">{input.device.manual_carrier_hz}</code></td><td>1000</td><td>The carrier is expected 1 kHz above the receiver's dial frequency</td></tr>
 </table>
 <ul>
 <li><strong>Dial the receiver</strong> to the channel minus <code class="opt">{input.device.lo_below_hz}</code> in USB: 517.000 kHz for 518 kHz, 489.000 kHz for 490 kHz. The carrier then lies at 1000 Hz in the audio. Keep it between about 0.5 and 2.5 kHz, away from 0 Hz and the top of the band.</li>
-<li><strong>LSB:</strong> if the receiver is in LSB, the dial is above the channel: give <code class="opt">{input.device.lo_below_hz}</code> a negative value (&minus;1000, dial 519.000 kHz). The two tones are then swapped, which the polarity detection handles.</li>
+<li><strong>LSB:</strong> if the receiver is in LSB, the dial is above the channel: give <code class="opt">{input.device.lo_below_hz}</code> a negative value (&minus;1000, dial 519.000 kHz). The two tones are then swapped, which the automatic polarity detection handles.</li>
 <li><strong>One channel per audio stream.</strong> A narrow audio channel cannot hold both 518 and 490 kHz. For two channels use two audio inputs (two receivers, or two virtual cables), each channel with its own <code class="opt">{input.device.name}</code>.</li>
 <li><strong>Receiver filter:</strong> a USB passband of about 3 kHz is plenty for a carrier at 1000 Hz.</li>
 <li>A stereo I/Q signal from a sound card (for example an SDR program's I/Q output over a virtual cable) uses the same options with <code class="opt">{input.device.channels}</code> = 2 and a higher sample rate; if left and right are exchanged, use <code class="opt">{input.device.mirror_iq}</code>.</li>
@@ -106,23 +108,43 @@
 </ul>
 
 <h2 id="t5">5. Hermes and other OpenHPSDR radios</h2>
-<p>I/Q straight from an OpenHPSDR (Protocol 1) radio over the network: Hermes, Hermes Lite, ANAN and Pavel Demin's Red Pitaya and QMtech images. Receive only. Close Thetis, SDRConnect or any other program that uses the radio first, because only one program can use a radio address at a time.</p>
-<table>
-<tr><th>Option</th><th>Typical value</th><th>Notes</th></tr>
-<tr><td><code class="opt">{input.source}</code></td><td>hpsdr</td><td></td></tr>
-<tr><td><code class="opt">{input.hpsdr.address}</code></td><td>e.g. 192.168.1.50</td><td>Empty = search the local network. The radios that worked last are offered in a list.</td></tr>
-<tr><td><code class="opt">{input.hpsdr.sample_rate_hz}</code></td><td>48000</td><td>48000, 96000, 192000 or 384000. 48 kS/s is enough for one channel.</td></tr>
-<tr><td><code class="opt">{input.hpsdr.lo_below_hz}</code></td><td>3000</td><td>The radio is tuned 3 kHz below the channel, so the carrier sits 3 kHz from the radio's DC spur</td></tr>
-<tr><td><code class="opt">{input.hpsdr.mirror_iq}</code></td><td>false</td><td>Leave off; see below</td></tr>
-<tr><td><code class="opt">{input.hpsdr.autotune}</code></td><td>true</td><td></td></tr>
-</table>
+<p>I/Q spectrum data straight from an OpenHPSDR (Protocol 1) radio over the network: Hermes, Hermes Lite, ANAN, Pavel Demin's Red Pitaya and QMtech images, and UberSDR (RX-888 MKII). Receive only modes are supported, of course.</p>
+<p>We refer to these OpenHPSDR devices as "radios", and each radio can provide multiple virtual "receivers".  Each receiver delivers a certain width of radio spectrum at its own center frequency.</p>
+<p><strong>General setup:</strong></p>
+
 <ul>
-<li><strong>Several channels from one radio:</strong> do not use <code class="opt">{input.shared_from}</code>. Give each channel <code class="opt">{input.source}</code> = hpsdr with the same address and the same sample rate. The radio is asked for one receiver per channel, each tuned to its own channel, so 518, 490 and 424 kHz can all come from one radio and one antenna (a radio offers up to 8 receivers).</li>
-<li>Each receiver delivers its own I/Q stream, so 48 kS/s is enough for every channel.</li>
-<li>Watch the System Log for lost packets on a busy network.</li>
+<li><strong>Single receiver, single channel</strong></li>
+<ul>
+    <li>Set the channel's frequency from the selector: <code class="opt">{channel.frequency_hz}.</code></li>
+    <li>Disable input sharing: <code class="opt">{input.shared_from}</code> = "own input".</li>
+    <li>Set the channel's source: <code class="opt">{input.source}</code> = hpsdr</li>
+    <li>Set the radio's IP address: <code class="opt">{input.hpsdr.address}</code> = e.g. 192.168.1.50.</li>
+    <li>Set the receiver's sample rate: <code class="opt">{input.hpsdr.sample_rate_hz}</code> = typically 48000.</li>
+    <li>Set the local oscillator of the receiver to be near, but not exactly at, the selected channel frequency, to keep the LO spur away from it.  <b>Example:</b> for a 518 kHz channel, we might set the LO to be 515 kHz. The LO setting is done indirectly by entering the <b>difference</b> between the channel frequency and the LO frequency. Using our example, we would set: {input.hpsdr.lo_below_hz} = 3000.</li>
+    <li>Set the manual carrier frequency to the same value as entered in the LO setting: <code class="opt">{input.hpsdr.manual_carrier_hz}</code> = e.g. 3000.</li>
 </ul>
-<h3>If no carrier is found: mirror_iq</h3>
-<p>The program already exchanges I and Q for OpenHPSDR radios, because every radio tried so far (Red Pitaya and QMtech with Pavel Demin's images, Hermes, Hermes Lite) needs it to give the right spectrum. If a radio of yours still comes out mirrored, the two tones swap places, which the polarity detection handles, but the carrier also appears on the other side of the centre, at &minus;<code class="opt">{input.hpsdr.lo_below_hz}</code> instead of +, outside the place where the search looks. The symptom is a clean signal in the spectrum, on the wrong side of the centre, but no LOCK. Switch <code class="opt">{input.hpsdr.mirror_iq}</code> on, and the channel restarts. The other I/Q inputs have an option of the same name (<code class="opt">{input.device.mirror_iq}</code>, <code class="opt">{input.sdrconnect.mirror_iq}</code>, <code class="opt">{input.spyserver.mirror_iq}</code>); with them, switching it on exchanges I and Q.</p>
+
+<li><strong>Single receiver, multiple channels</strong></li>
+<ul>
+    <li>Setup the first channel as described above (Single receiver, single channel); EXCEPT...</li>
+    <li>Set the receiver's local oscillator to be in-between the channel frequencies so that none of them is more than 22 kHz away (in the usual case of a 48 kHz sample rate).  <b>Example:</b> Suppose we have set this first channel to 518 kHz; and we want a second at 490 kHz, and a third at 486 kHz.  We might set the LO to 500 kHz. The LO setting is done indirectly by entering the <b>difference</b> between this first channel's frequency and the LO frequency. Using our example, we would set: <code class="opt">{input.hpsdr.lo_below_hz}</code> = 18000.</li>
+    <li>Set the manual carrier frequency to the same value as entered in the LO setting: <code class="opt">{input.hpsdr.manual_carrier_hz}</code> = e.g. 18000.</li>
+    <li>For each other channel using this receiver, set the channel's frequency: <code class="opt">{channel.frequency_hz}</code> = e.g. 490 kHz.</li>
+    <li>For each other channel using this receiver, set its input sharing:<code class="opt">{input.shared_from}</code> = "same input as Channel x"</li>
+    <li>That's it.  Remaining setup decisions are automatically calculated.</li>
+</ul>
+
+<li><strong>Multiple receivers, multiple channels</strong></li>
+<ul>
+    <li>Set up each channel as described in Single receiver, single channel.</li>
+    <li>Make sure all channels are set to the SAME radio IP address.</li>
+    <li>Make sure all channels are set to the SAME sample rate.</li>
+</ul>
+
+
+
+</ul>
+
 </main>
 </body>
 </html>
