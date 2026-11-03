@@ -49,5 +49,5 @@ Four channels exist (`extra.*`, SERVER_DESIGN section 33); still to do:
 - Importing a YaND log (left out of the first release on purpose).
 
 ## Decided against
-- A vocabulary editor, and moving the log to SQLite (the current word lists and JSON-lines store stay).
+- A vocabulary editor (the current word lists stay).
 - Per-record edit before the report (Edit report works on the whole text).

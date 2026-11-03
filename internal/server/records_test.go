@@ -571,3 +571,57 @@ func TestLogFilterTimes(t *testing.T) {
 		}
 	}
 }
+
+// The trash can be listed (the latest deletion first), searched, and any of its messages restored, whichever deletion they
+// were in; viewers may not touch it.
+func TestTrashListAndRestore(t *testing.T) {
+	cfg := config.Default()
+	cfg.Input.File.Path = "/nonexistent.wav"
+	cfg.Input.Source = "file"
+	s, _, st, _ := setup(t, cfg)
+	admin := httptest.NewServer(s.handler(false))
+	defer admin.Close()
+	tunnel := httptest.NewServer(s.handler(true))
+	defer tunnel.Close()
+	at := time.Date(2026, 9, 28, 0, 50, 0, 0, time.UTC)
+	a := addMsg(t, st, s.cat, "E", at, "GALE WARNING NORTH")
+	b := addMsg(t, st, s.cat, "E", at.Add(time.Hour), "ICE REPORT")
+	c := addMsg(t, st, s.cat, "E", at.Add(2*time.Hour), "FOG IN THE CHANNEL")
+	do(t, admin, "POST", "/api/messages/delete", map[string]any{"ids": []int64{a.ID}}, nil)
+	do(t, admin, "POST", "/api/messages/delete", map[string]any{"ids": []int64{b.ID, c.ID}}, nil)
+
+	code, l := do(t, admin, "GET", "/api/trash", nil, nil)
+	rows, _ := l["records"].([]any)
+	if code != 200 || l["total"].(float64) != 3 || len(rows) != 3 {
+		t.Fatalf("trash list: %d %v", code, l)
+	}
+	if first := rows[0].(map[string]any); first["id"].(float64) == float64(a.ID) || first["hex"] == "" || first["text"] == "" {
+		t.Errorf("the latest deletion comes first: %v", first)
+	}
+	if _, l = do(t, admin, "GET", "/api/trash?text=gale", nil, nil); l["total"].(float64) != 1 {
+		t.Errorf("search in the trash: %v", l)
+	}
+	if code, _ = do(t, tunnel, "GET", "/api/trash", nil, nil); code != 403 && code != 401 {
+		t.Errorf("a viewer must not list the trash: %d", code)
+	}
+	if code, _ = do(t, tunnel, "POST", "/api/trash/restore", map[string]any{"ids": []int64{a.ID}}, nil); code != 403 && code != 401 {
+		t.Errorf("a viewer must not restore: %d", code)
+	}
+	// one message out of the latest deletion, and one of the first
+	code, r := do(t, admin, "POST", "/api/trash/restore", map[string]any{"ids": []int64{a.ID, c.ID, 9999}}, nil)
+	if code != 200 || r["restored"].(float64) != 2 {
+		t.Fatalf("restore: %d %v", code, r)
+	}
+	if st.Count() != 2 {
+		t.Errorf("count %d", st.Count())
+	}
+	if _, l = do(t, admin, "GET", "/api/trash", nil, nil); l["total"].(float64) != 1 {
+		t.Errorf("trash after restore: %v", l)
+	}
+	if code, _ = do(t, admin, "POST", "/api/trash/restore", map[string]any{"ids": []int64{a.ID}}, nil); code != 404 {
+		t.Errorf("restoring what is not in the trash: %d", code)
+	}
+	if code, _ = do(t, admin, "POST", "/api/trash/restore", map[string]any{"ids": []int64{}}, nil); code != 400 {
+		t.Errorf("no ids: %d", code)
+	}
+}

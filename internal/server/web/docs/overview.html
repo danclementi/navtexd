@@ -71,8 +71,9 @@
 <li>Every message is stored with its time, channel, station, subject and serial number, in a log with filters (station, subject, text, distance) and de-duplication.</li>
 <li><strong>Multi-selection:</strong> Ctrl-click selects individual rows (i.e. log entries) and Shift-click selects a range. The selection can be reviewed, added to a report, or deleted.</li>
 <li><strong>Undo:</strong> deletions and edits can be undone, repeatedly, one step at a time. The undo history is kept on disk, so it survives a restart of the program (undo information is retained for 30 days).</li>
+<li><strong>Trash:</strong> deleted messages stay in the database for 30 days. The Database dialog lists them, with a search box, and brings back any of them in any order, whichever deletion they were part of.</li>
 <li><strong>Backups:</strong> before the log database is compacted, a backup copy is made automatically (the three newest are kept). Backups are also made before an import is made that would add to or replace the current log.</li>
-<li>Messages are stored as plain JSON lines in the data folder; all times are UTC.</li>
+<li>Messages are stored in one SQLite database file (<code>messages.db</code>) in the data folder, which other programs can open (the <code>messages</code> view is the readable table); all times are UTC.</li>
 </ul>
 
 <h2 id="o7">7. Station identification</h2>

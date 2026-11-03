@@ -1,7 +1,3 @@
 package store
 
-import "os"
-
-func osOpenAppend(path string) (*os.File, error) {
-	return os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
-}
+// (The helper that appended to the message file is gone with the file; the messages live in messages.db.)

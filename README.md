@@ -4,7 +4,7 @@
 shift, CCIR 476 / SITOR-B) from an audio stream and presents the messages in a web interface that several people can
 use at the same time. It is modelled on the Windows program YaND and keeps YaND's station-file format.
 
-It is a single self-contained program written in pure Go (standard library only, no cgo, no installer).
+It is a single self-contained program written in pure Go (no cgo, no installer; the only library besides the standard one is the pure-Go SQLite driver).
 
 > **Not for navigation.** NAVTEX reception here is experimental and error-prone. Never rely on this software for
 > navigation, weather routing, collision avoidance, or any other safety-of-life decision. Use certified equipment and
@@ -43,7 +43,7 @@ It is a single self-contained program written in pure Go (standard library only,
 - Two access roles: **admin** (direct connections from the local machine or private network) and **view-only**
   (anything arriving through a proxy or tunnel, such as a Cloudflare tunnel). The operator position is stored only in
   the server settings and is hidden from viewers unless you allow it.
-- Messages are stored as plain JSON lines in the data folder; all times are UTC.
+- Messages are stored in one SQLite database file (`messages.db`) in the data folder, which other programs can open (the `messages` view is the readable table); all times are UTC.
 
 ## Quick start (Windows)
 

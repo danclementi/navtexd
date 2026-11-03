@@ -25,6 +25,8 @@ func (s *Server) recordRoutes(mux *http.ServeMux, tunnel bool) {
 	mux.HandleFunc("POST /api/messages/delete", s.admin(tunnel, s.deleteMessages))
 	mux.HandleFunc("GET /api/messages/undo", s.admin(tunnel, s.undoInfo))
 	mux.HandleFunc("POST /api/messages/undo", s.admin(tunnel, s.undoDelete))
+	mux.HandleFunc("GET /api/trash", s.admin(tunnel, s.trashList))
+	mux.HandleFunc("POST /api/trash/restore", s.admin(tunnel, s.trashRestore))
 	mux.HandleFunc("POST /api/maintenance/compact", s.admin(tunnel, s.maintCompact))
 	mux.HandleFunc("GET /api/database", s.admin(tunnel, s.dbInfo))
 	mux.HandleFunc("GET /api/database/export", s.admin(tunnel, s.dbExport))
@@ -364,12 +366,74 @@ func (s *Server) undoDelete(w http.ResponseWriter, r *http.Request, id Identity)
 	writeJSON(w, 200, map[string]any{"restored": len(recs), "kind": last.Kind, "ids": ids, "undo": s.undoState()})
 }
 
+// trashList lists the deleted messages (the newest deletion first) for the Database dialog; text= searches them, limit and
+// offset page through them.
+func (s *Server) trashList(w http.ResponseWriter, r *http.Request, id Identity) {
+	q := r.URL.Query()
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	offset, _ := strconv.Atoi(q.Get("offset"))
+	recs, total := s.st.Trash(store.Filter{Text: strings.TrimSpace(q.Get("text")), Limit: limit, Offset: max(offset, 0)})
+	type item struct {
+		ID      int64  `json:"id"`
+		Hex     string `json:"hex"`
+		Rx      int64  `json:"rx"`
+		Deleted int64  `json:"deleted"`
+		Ch      int    `json:"ch"`
+		Kind    string `json:"kind"`
+		Station string `json:"st"`
+		Text    string `json:"text"`
+	}
+	out := make([]item, len(recs))
+	for i, r := range recs {
+		t := strings.Join(strings.Fields(r.Text()), " ")
+		if rs := []rune(t); len(rs) > 120 {
+			t = string(rs[:120]) + "\u2026"
+		}
+		out[i] = item{r.ID, hexID(r.ID), r.Received.UnixMilli(), r.DeletedAt.UnixMilli(), r.Channel, r.Kind, r.Station, t}
+	}
+	writeJSON(w, 200, map[string]any{"total": total, "records": out})
+}
+
+// trashRestore brings back chosen messages from the trash, whichever deletion they belong to.
+func (s *Server) trashRestore(w http.ResponseWriter, r *http.Request, id Identity) {
+	var body struct {
+		IDs []int64 `json:"ids"`
+	}
+	if err := readBody(r, &body); err != nil || len(body.IDs) == 0 {
+		fail(w, 400, errors.New("no records given"))
+		return
+	}
+	recs, err := s.st.Restore(body.IDs...)
+	if err != nil {
+		fail(w, 500, err)
+		return
+	}
+	if len(recs) == 0 {
+		fail(w, 404, errors.New("those messages are no longer in the trash"))
+		return
+	}
+	if len(recs) == 1 {
+		s.run.Log("info", fmt.Sprintf("record %s restored from the trash", hexID(recs[0].ID)))
+	} else {
+		s.run.Log("info", fmt.Sprintf("%d records restored from the trash", len(recs)))
+	}
+	s.hub.Publish("record", recordMsg{Action: "restore"}, false, false)
+	ids := make([]int64, len(recs))
+	for i, x := range recs {
+		ids[i] = x.ID
+	}
+	writeJSON(w, 200, map[string]any{"restored": len(recs), "ids": ids, "undo": s.undoState()})
+}
+
 // dbInfo describes the log database for the Database dialog.
 func (s *Server) dbInfo(w http.ResponseWriter, r *http.Request, id Identity) {
 	writeJSON(w, 200, map[string]any{"records": s.st.Count(), "bytes": s.st.Size(), "backups": s.st.Backups(), "undo": s.undoState()})
 }
 
-// maintCompact rewrites the message file (after saving a copy; the last three copies are kept).
+// maintCompact empties the old trash and shrinks the database file (after saving a copy; the last three copies are kept).
 func (s *Server) maintCompact(w http.ResponseWriter, r *http.Request, id Identity) {
 	before := s.st.Size()
 	name, err := s.st.Backup("before-compact", 3)
@@ -381,7 +445,7 @@ func (s *Server) maintCompact(w http.ResponseWriter, r *http.Request, id Identit
 		fail(w, 500, err)
 		return
 	}
-	s.run.Log("info", fmt.Sprintf("message file compacted (%d -> %d bytes), backup %s", before, s.st.Size(), name))
+	s.run.Log("info", fmt.Sprintf("message database compacted (%d -> %d bytes), backup %s", before, s.st.Size(), name))
 	writeJSON(w, 200, map[string]any{"ok": true, "before": before, "after": s.st.Size(), "backup": name})
 }
 

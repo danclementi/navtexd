@@ -1,12 +1,12 @@
 # navtexd — project context
 
 ## What this is
-A pure-Go (stdlib only, no cgo) NAVTEX decoder (518/490/486/424 kHz, 100 baud FSK, CCIR 476 / SITOR-B) with an HTTP + SSE
+A pure-Go (no cgo; the only dependency outside the standard library is the SQLite driver `modernc.org/sqlite`) NAVTEX decoder (518/490/486/424 kHz, 100 baud FSK, CCIR 476 / SITOR-B) with an HTTP + SSE
 server and a multi-client browser UI, comparable to YaND. Public GPL v3 project. The user-facing description is in
 `README.md`; the design is in `docs/DESIGN.md` (decoder) and `docs/SERVER_DESIGN.md` (server/UI), `docs/HPSDR_DESIGN.md` (radio input) and `docs/TODO.md` (what is next).
 
 ## Ground rules
-1. Standard library only, no cgo. Ask before adding any dependency or changing the package layout.
+1. Standard library only, no cgo, except `modernc.org/sqlite` (pure Go) for the message log (`internal/store`). Ask before adding any other dependency or changing the package layout.
 2. Streaming everywhere: every stage is causal, keeps state between calls, and gives identical output regardless of
    block size. Time is the sample index; never wall-clock inside the DSP.
 3. Never block the audio callback; copy to a ring buffer and drain in a worker.

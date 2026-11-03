@@ -635,10 +635,57 @@
   async function dbInfo() {
     try {
       const j = await api("GET", "/api/database");
-      $("db-info").textContent = `${j.records} records, log file ${fmtB(j.bytes)}. ${j.backups.length} backup${j.backups.length === 1 ? "" : "s"} in the backups folder of the data folder.`;
+      $("db-info").textContent = `${j.records} records, database ${fmtB(j.bytes)}. ${j.backups.length} backup${j.backups.length === 1 ? "" : "s"} in the backups folder of the data folder.`;
     } catch (e) { $("db-info").textContent = e.message; }
   }
+  // ---- the trash (in the same dialog): bring back any deleted messages, in any order ----
+  const tr = { sel: new Set(), seq: 0, timer: 0, ids: [] };
+  async function trashLoad() {
+    const seq = ++tr.seq, q = $("tr-q").value.trim();
+    try {
+      const j = await api("GET", "/api/trash?limit=200" + (q ? "&text=" + encodeURIComponent(q) : ""));
+      if (seq !== tr.seq) return; // a newer search is on its way
+      const list = $("tr-list"); list.textContent = "";
+      tr.ids = j.records.map((r) => r.id);
+      for (const id of [...tr.sel]) if (!tr.ids.includes(id) && !q) tr.sel.delete(id); // (what is gone from the trash)
+      if (!j.records.length) list.append(el("div", { class: "trempty" }, q ? "No deleted message contains that text." : "The trash is empty."));
+      for (const r of j.records) {
+        const cb = el("input", { type: "checkbox" }); cb.checked = tr.sel.has(r.id);
+        cb.onchange = () => { if (cb.checked) tr.sel.add(r.id); else tr.sel.delete(r.id); trashButtons(); };
+        const row = el("label", { class: "trrow" }, cb,
+          el("span", { class: "tr1" }, `${r.hex} \u00b7 ${NX.stamp(r.rx)} \u00b7 ${r.ch} kHz \u00b7 ${r.kind} \u00b7 ${r.st}`),
+          el("span", { class: "tr2" }, `deleted ${NX.stamp(r.deleted)} \u00b7 ${r.text}`));
+        list.append(row);
+      }
+      $("tr-info").textContent = `${j.total} message${j.total === 1 ? "" : "s"} in the trash` + (q ? " match" + (j.total === 1 ? "es" : "") : "") +
+        (j.total > j.records.length ? `; the latest ${j.records.length} are shown (search to narrow the list)` : "") + ".";
+      trashButtons();
+    } catch (e) { $("tr-info").textContent = e.message; }
+  }
+  function trashButtons() {
+    const n = tr.sel.size;
+    $("tr-restore").disabled = n === 0;
+    $("tr-restore").textContent = n ? `Restore ${n}` : "Restore";
+    $("tr-all").textContent = tr.ids.length && tr.ids.every((id) => tr.sel.has(id)) ? "select none" : "select all";
+  }
+  $("tr-q").oninput = () => { clearTimeout(tr.timer); tr.timer = setTimeout(trashLoad, 300); };
+  $("tr-all").onclick = () => {
+    const all = tr.ids.length && tr.ids.every((id) => tr.sel.has(id));
+    for (const id of tr.ids) if (all) tr.sel.delete(id); else tr.sel.add(id);
+    for (const cb of $("tr-list").querySelectorAll("input")) cb.checked = !all;
+    trashButtons();
+  };
+  $("tr-restore").onclick = async () => {
+    const ids = [...tr.sel]; if (!ids.length) return;
+    try {
+      const r = await api("POST", "/api/trash/restore", { ids });
+      tr.sel.clear(); showUndo(r.undo);
+      dmsg(`${r.restored} message${r.restored === 1 ? "" : "s"} restored to the log.`);
+      await trashLoad(); dbInfo(); await reload(); indicate();
+    } catch (e) { dmsg(e.message); trashLoad(); }
+  };
   $("n-db").onclick = () => {
+    tr.sel.clear(); $("tr-q").value = ""; trashLoad();
     dmsg(""); dbInfo();
     const sum = filterOn() ? summaryText() : "";
     $("db-ex-f").disabled = !sum; $("db-ex-sum").textContent = sum ? "(" + sum + ")" : "(no filter is applied)";

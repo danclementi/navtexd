@@ -15,53 +15,44 @@ import (
 
 const backupDir = "backups"
 
-// Backup is a saved copy of the message file.
+// Backup is a saved copy of the message database (or of the message file of an earlier version).
 type Backup struct {
 	Name string    `json:"name"`
 	Size int64     `json:"size"`
 	Time time.Time `json:"time"`
 }
 
-// Size is the size of the message file in bytes.
+// Size is the size of the message database in bytes (including what is not yet moved from its journal into the main file).
 func (s *Store) Size() int64 {
-	if fi, err := os.Stat(filepath.Join(s.dir, msgFile)); err == nil {
-		return fi.Size()
+	var n int64
+	for _, suffix := range []string{"", "-wal"} {
+		if fi, err := os.Stat(filepath.Join(s.dir, dbFile) + suffix); err == nil {
+			n += fi.Size()
+		}
 	}
-	return 0
+	return n
 }
 
-// Backup copies the message file to backups/<what>-<time>.jsonl and keeps only the newest keep copies made for that reason
-// (keep <= 0: all). It returns the name of the copy.
+// Backup copies the message database to backups/messages-<what>-<time>.db (a complete database, made while the program goes on
+// working) and keeps only the newest keep copies made for that reason (keep <= 0: all). It returns the name of the copy.
 func (s *Store) Backup(what string, keep int) (string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.backupLocked(what, keep)
+	return s.backup(what, keep)
 }
 
-func (s *Store) backupLocked(what string, keep int) (string, error) {
+func (s *Store) backup(what string, keep int) (string, error) {
 	dir := filepath.Join(s.dir, backupDir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	src, err := os.Open(filepath.Join(s.dir, msgFile))
-	if err != nil {
-		return "", err
-	}
-	defer src.Close()
-	name := fmt.Sprintf("messages-%s-%s.jsonl", what, time.Now().UTC().Format("20060102T150405Z"))
-	dst, err := os.Create(filepath.Join(dir, name))
-	if err != nil {
-		return "", err
-	}
-	if _, err := io.Copy(dst, src); err != nil {
-		dst.Close()
-		return "", err
-	}
-	if err := dst.Close(); err != nil {
+	name := fmt.Sprintf("messages-%s-%s.db", what, time.Now().UTC().Format("20060102T150405Z"))
+	full := filepath.Join(dir, name)
+	os.Remove(full)
+	if _, err := s.bdb.Exec(`VACUUM INTO ?`, full); err != nil {
+		os.Remove(full)
 		return "", err
 	}
 	if keep > 0 {
-		all, _ := filepath.Glob(filepath.Join(dir, "messages-"+what+"-*.jsonl"))
+		all := s.backupFiles(what)
 		sort.Strings(all) // the time is in the name
 		for len(all) > keep {
 			os.Remove(all[0])
@@ -71,9 +62,23 @@ func (s *Store) backupLocked(what string, keep int) (string, error) {
 	return name, nil
 }
 
+// backupFiles lists the copies made for a reason, including those of earlier versions (.jsonl).
+func (s *Store) backupFiles(what string) []string {
+	var all []string
+	for _, ext := range []string{"db", "jsonl"} {
+		m, _ := filepath.Glob(filepath.Join(s.dir, backupDir, "messages-"+what+"-*."+ext))
+		all = append(all, m...)
+	}
+	return all
+}
+
 // Backups lists the saved copies, newest first.
 func (s *Store) Backups() []Backup {
-	all, _ := filepath.Glob(filepath.Join(s.dir, backupDir, "messages-*.jsonl"))
+	var all []string
+	for _, ext := range []string{"db", "jsonl"} {
+		m, _ := filepath.Glob(filepath.Join(s.dir, backupDir, "messages-*."+ext))
+		all = append(all, m...)
+	}
 	out := []Backup{}
 	for _, p := range all {
 		if fi, err := os.Stat(p); err == nil {
@@ -84,23 +89,30 @@ func (s *Store) Backups() []Backup {
 	return out
 }
 
-// Export writes the records matching f (ignoring Limit and Offset) to w in the format of the message file, oldest first.
+// Export writes the records matching f (ignoring Limit and Offset) to w in the format of the message file of earlier versions
+// (one JSON line each), oldest first. This text file can be imported again, and read by other programs.
 func (s *Store) Export(w io.Writer, f Filter) (int, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	f.Limit, f.Offset, f.Newest = 0, 0, false
+	where, args := f.where(false)
+	rows, err := s.rdb.Query(`SELECT b.data FROM records r JOIN bodies b ON b.id = r.id WHERE `+where+f.order(), args...)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
 	bw := bufio.NewWriter(w)
 	n := 0
-	for _, r := range s.recs {
-		if !f.match(r) {
-			continue
-		}
-		b, err := json.Marshal(op{Op: "put", R: r})
-		if err != nil {
+	for rows.Next() {
+		var data string
+		if err := rows.Scan(&data); err != nil {
 			return n, err
 		}
-		bw.Write(b)
-		bw.WriteByte('\n')
+		bw.WriteString(`{"op":"put","r":`)
+		bw.WriteString(data)
+		bw.WriteString("}\n")
 		n++
+	}
+	if err := rows.Err(); err != nil {
+		return n, err
 	}
 	return n, bw.Flush()
 }
@@ -133,7 +145,11 @@ func (s *Store) Import(r io.Reader, replace bool) (ImportResult, error) {
 		if line == "" {
 			continue
 		}
-		var o op
+		var o struct {
+			Op string  `json:"op"`
+			R  *Record `json:"r,omitempty"`
+			ID int64   `json:"id,omitempty"`
+		}
 		if json.Unmarshal([]byte(line), &o) != nil || (o.Op != "put" && o.Op != "del") {
 			bad++
 			continue
@@ -171,30 +187,59 @@ func (s *Store) Import(r io.Reader, replace bool) (ImportResult, error) {
 			r.Station = "UNID"
 		}
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	res := ImportResult{Read: len(recs)}
 	if replace {
-		name, err := s.backupLocked("before-import", 0)
+		name, err := s.backup("before-import", 0)
 		if err != nil {
 			return res, fmt.Errorf("could not save the current log first: %w", err)
 		}
-		res.Backup, res.Replaced = name, len(s.recs)
-		s.recs, s.byID = nil, map[int64]*Record{}
-		for _, r := range recs {
-			s.byID[r.ID] = r
-			s.recs = append(s.recs, r)
-			if r.ID >= s.next {
-				s.next = r.ID + 1
+		res.Backup = name
+		tx, err := s.wdb.Begin()
+		if err != nil {
+			return res, err
+		}
+		defer tx.Rollback()
+		var old int
+		tx.QueryRow(`SELECT count(*) FROM records WHERE deleted_at IS NULL`).Scan(&old)
+		res.Replaced = old
+		for _, q := range []string{`DELETE FROM records`, `DELETE FROM bodies`, `DELETE FROM batches`, `DELETE FROM edit_history`} {
+			if _, err := tx.Exec(q); err != nil {
+				return res, err
 			}
 		}
+		for _, r := range recs {
+			if err := insertRec(tx, r); err != nil {
+				return res, err
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			return res, err
+		}
 		res.Added = len(recs)
-		s.sortRecs()
-		return res, s.rewriteLocked()
+		s.live.Store(int64(len(recs)))
+		return res, nil
 	}
+	tx, err := s.wdb.Begin()
+	if err != nil {
+		return res, err
+	}
+	defer tx.Rollback()
 	have := map[string]bool{}
-	for _, r := range s.recs {
-		have[recKey(r)] = true
+	rows, err := tx.Query(`SELECT r.received, r.channel, r.kind, b.text FROM records r JOIN bodies b ON b.id = r.id WHERE r.deleted_at IS NULL`)
+	if err != nil {
+		return res, err
+	}
+	for rows.Next() {
+		var rx, kind, text string
+		var ch int
+		if rows.Scan(&rx, &ch, &kind, &text) == nil {
+			have[fmt.Sprintf("%d|%d|%s|%s", parseTS(rx).UnixMilli(), ch, kind, text)] = true
+		}
+	}
+	rows.Close()
+	next, err := nextID(tx)
+	if err != nil {
+		return res, err
 	}
 	for _, r := range recs {
 		k := recKey(r)
@@ -203,15 +248,16 @@ func (s *Store) Import(r io.Reader, replace bool) (ImportResult, error) {
 			continue
 		}
 		have[k] = true
-		r.ID, r.Version = s.next, 1
-		if err := s.appendOp(op{Op: "put", R: r}); err != nil {
+		r.ID, r.Version = next, 1
+		next++
+		if err := insertRec(tx, r); err != nil {
 			return res, err
 		}
-		s.next++
-		s.byID[r.ID] = r
-		s.recs = append(s.recs, r)
 		res.Added++
 	}
-	s.sortRecs()
+	if err := tx.Commit(); err != nil {
+		return res, err
+	}
+	s.live.Add(int64(res.Added))
 	return res, nil
 }

@@ -3,7 +3,7 @@
 // Sources (any number, any mix):
 //
 //	-vocab FILE   an existing vocabulary file (words are included as they are)
-//	-store FILE   our message store (messages.jsonl): the stored lines
+//	-store FILE   our message store as exported from the Log tab (Database > Export, a JSON-lines file): the stored lines
 //	-text FILE    plain text, one received line per line
 //
 // A corpus word is kept when it has 5 to 16 letters and occurs in at least -min-lines different error-free lines
@@ -31,7 +31,7 @@ func (l *list) Set(s string) error { *l = append(*l, s); return nil }
 func main() {
 	var vfiles, stores, texts list
 	flag.Var(&vfiles, "vocab", "existing vocabulary file; may be repeated")
-	flag.Var(&stores, "store", "our message store (messages.jsonl); may be repeated")
+	flag.Var(&stores, "store", "our message store, an export from the Log tab (a JSON-lines file); may be repeated")
 	flag.Var(&texts, "text", "plain text file, one received line per line; may be repeated")
 	o := vocab.DefaultOptions()
 	flag.IntVar(&o.MinLen, "min-len", o.MinLen, "shortest word, letters")

@@ -1,29 +1,16 @@
 package store
 
 import (
-	"encoding/json"
-	"os"
-	"path/filepath"
+	"database/sql"
+	"errors"
+	"sort"
 	"time"
 )
 
-// Deleted records are kept in trash.jsonl, so that the last deletions can be undone. Each deletion is one line holding the
-// whole batch; an undo is a second line naming the batch it brought back. Batches older than TrashKeep are dropped when the
-// store opens, and so are the oldest ones beyond TrashMaxBytes.
-const (
-	trashFile     = "trash.jsonl"
-	TrashKeep     = 30 * 24 * time.Hour
-	TrashMaxBytes = 64 << 20
-)
-
-type trashLine struct {
-	Batch int64     `json:"b,omitempty"`
-	At    time.Time `json:"at,omitempty"`
-	Kind  string    `json:"k,omitempty"` // "" or "delete": the records were deleted; "edit": the record as it was before an edit
-	Desc  string    `json:"d,omitempty"` // what the edit was, for the Undo button
-	Recs  []*Record `json:"recs,omitempty"`
-	Undo  int64     `json:"u,omitempty"` // this batch was restored
-}
+// Deleted records stay in the database, marked as deleted, for TrashKeep. The last deletions (and the edits made with
+// UpdateUndoable) form a stack that Undo takes back one at a time, and Restore brings back any records from the trash, in any
+// order.
+const TrashKeep = 30 * 24 * time.Hour
 
 // TrashBatch describes one action (a deletion or an edit of a record) that can be undone. The actions form one stack:
 // Undo takes back the latest.
@@ -37,204 +24,232 @@ type TrashBatch struct {
 	Rx    time.Time // when that record was received
 }
 
-func batchOf(l trashLine) TrashBatch {
-	b := TrashBatch{ID: l.Batch, At: l.At, Count: len(l.Recs), Kind: "delete", Desc: l.Desc}
-	if l.Kind == "edit" {
-		b.Kind = "edit"
-	}
-	if len(l.Recs) > 0 {
-		b.RecID, b.Rx = l.Recs[0].ID, l.Recs[0].Received
-	}
-	return b
+// TrashedRecord is a record with what the trash knows about it (DeletedAt and Batch are empty for a record in the log).
+type TrashedRecord struct {
+	Record
+	DeletedAt time.Time `json:"deleted_at"`
+	Batch     int64     `json:"batch"`
 }
 
-func (s *Store) trashPath() string { return filepath.Join(s.dir, trashFile) }
+// The latest action that still has something to bring back.
+const lastBatchSQL = `SELECT id, at, kind, descr FROM batches b
+ WHERE (kind = 'edit' AND EXISTS (SELECT 1 FROM edit_history e WHERE e.batch_id = b.id))
+    OR (kind = 'delete' AND EXISTS (SELECT 1 FROM records r WHERE r.batch_id = b.id))
+ ORDER BY id DESC LIMIT 1`
 
-// loadTrash reads the file, drops what is old or too big (rewriting it), and sets s.trash (oldest first). It also moves s.next
-// past every ID in it, so a record that is undone gets its own ID back.
-func (s *Store) loadTrash() error {
-	var lines []trashLine
-	undone := map[int64]bool{}
-	err := scanLines(s.trashPath(), func(b []byte) error {
-		var l trashLine
-		if json.Unmarshal(b, &l) != nil {
-			return nil
-		}
-		if l.Undo != 0 {
-			undone[l.Undo] = true
-		} else if l.Batch != 0 {
-			lines = append(lines, l)
-		}
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-	var keep []trashLine
-	cut := time.Now().Add(-TrashKeep)
-	for _, l := range lines {
-		if !undone[l.Batch] && l.At.After(cut) {
-			keep = append(keep, l)
-		}
-	}
-	rewrite := len(keep) != len(lines) || len(undone) > 0
-	var size int
-	enc := make([][]byte, len(keep))
-	for i, l := range keep {
-		enc[i], _ = json.Marshal(l)
-		size += len(enc[i]) + 1
-	}
-	for size > TrashMaxBytes && len(keep) > 1 {
-		size -= len(enc[0]) + 1
-		keep, enc, rewrite = keep[1:], enc[1:], true
-	}
-	if rewrite {
-		var out []byte
-		for _, e := range enc {
-			out = append(out, e...)
-			out = append(out, '\n')
-		}
-		tmp := s.trashPath() + ".tmp"
-		if err := os.WriteFile(tmp, out, 0o644); err != nil {
-			return err
-		}
-		if err := os.Rename(tmp, s.trashPath()); err != nil {
-			return err
-		}
-	}
-	for _, l := range keep {
-		s.trash = append(s.trash, batchOf(l))
-		for _, r := range l.Recs {
-			if r.ID >= s.next {
-				s.next = r.ID + 1
-			}
-		}
-	}
-	return nil
-}
-
-func (s *Store) appendTrash(l trashLine) error {
-	b, err := json.Marshal(l)
-	if err != nil {
-		return err
-	}
-	f, err := os.OpenFile(s.trashPath(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return err
-	}
-	_, err = f.Write(append(b, '\n'))
-	if e := f.Close(); err == nil {
-		err = e
-	}
-	return err
-}
-
-// archive saves the records that are about to be deleted (store locked).
-func (s *Store) archive(ids []int64) error {
-	var recs []*Record
-	for _, id := range ids {
-		if r, ok := s.byID[id]; ok {
-			recs = append(recs, r)
-		}
-	}
-	if len(recs) == 0 {
-		return nil
-	}
-	l := trashLine{Batch: time.Now().UnixNano(), At: time.Now().UTC(), Recs: recs}
-	if err := s.appendTrash(l); err != nil {
-		return err
-	}
-	s.trash = append(s.trash, batchOf(l))
-	return nil
-}
-
-// archiveEdit saves the record as it is before an edit (store locked).
-func (s *Store) archiveEdit(old *Record, desc string) error {
-	c := *old
-	l := trashLine{Batch: time.Now().UnixNano(), At: time.Now().UTC(), Kind: "edit", Desc: desc, Recs: []*Record{&c}}
-	if err := s.appendTrash(l); err != nil {
-		return err
-	}
-	s.trash = append(s.trash, batchOf(l))
-	return nil
-}
-
-// LastDeletion is the deletion that Undo would bring back.
+// LastDeletion is the action that Undo would take back.
 func (s *Store) LastDeletion() (TrashBatch, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if len(s.trash) == 0 {
+	var b TrashBatch
+	var at string
+	if err := s.rdb.QueryRow(lastBatchSQL).Scan(&b.ID, &at, &b.Kind, &b.Desc); err != nil {
 		return TrashBatch{}, false
 	}
-	return s.trash[len(s.trash)-1], true
+	b.At = parseTS(at)
+	if b.Kind == "edit" {
+		var data string
+		rows, err := s.rdb.Query(`SELECT data FROM edit_history WHERE batch_id=? ORDER BY rowid`, b.ID)
+		if err != nil {
+			return TrashBatch{}, false
+		}
+		defer rows.Close()
+		for rows.Next() {
+			b.Count++
+			if b.Count == 1 && rows.Scan(&data) == nil {
+				if r, err := decode(data); err == nil {
+					b.RecID, b.Rx = r.ID, r.Received
+				}
+			}
+		}
+		return b, true
+	}
+	var rx string
+	s.rdb.QueryRow(`SELECT count(*) FROM records WHERE batch_id=?`, b.ID).Scan(&b.Count)
+	s.rdb.QueryRow(`SELECT id, received FROM records WHERE batch_id=? ORDER BY id LIMIT 1`, b.ID).Scan(&b.RecID, &rx)
+	b.Rx = parseTS(rx)
+	return b, true
 }
 
-// Undo restores the records of the last deletion and returns them. A record whose ID has been taken since (the file was
-// compacted and the number reused) gets a new one.
+// Undo takes back the latest action: the records of the last deletion return to the log (with their old numbers), or the record
+// goes back to how it was before the last edit. It returns the records that changed.
 func (s *Store) Undo() ([]Record, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if len(s.trash) == 0 {
-		return nil, ErrNotFound
-	}
-	last := s.trash[len(s.trash)-1]
-	var recs []*Record
-	err := scanLines(s.trashPath(), func(b []byte) error {
-		var l trashLine
-		if json.Unmarshal(b, &l) == nil && l.Batch == last.ID {
-			recs = l.Recs
-		}
-		return nil
-	})
+	tx, err := s.wdb.Begin()
 	if err != nil {
 		return nil, err
 	}
-	if last.Kind == "edit" { // the record goes back to how it was before the edit
-		var out []Record
-		for _, r := range recs {
-			if cur, ok := s.byID[r.ID]; ok {
-				r.Version = cur.Version + 1 // clients that kept the edited copy refetch it
-				if err := s.appendOp(op{Op: "put", R: r}); err != nil {
-					return out, err
-				}
-				*cur = *r
-			} else { // (deleted since, and that deletion is no longer on the stack)
-				r.Version++
-				if err := s.appendOp(op{Op: "put", R: r}); err != nil {
-					return out, err
-				}
-				s.byID[r.ID] = r
-				s.recs = append(s.recs, r)
-			}
-			out = append(out, *r)
+	defer tx.Rollback()
+	var bid int64
+	var at, kind, desc string
+	if err := tx.QueryRow(lastBatchSQL).Scan(&bid, &at, &kind, &desc); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
 		}
-		s.sortRecs()
-		if err := s.appendTrash(trashLine{Undo: last.ID}); err != nil {
-			return out, err
-		}
-		s.trash = s.trash[:len(s.trash)-1]
-		return out, nil
+		return nil, err
 	}
 	var out []Record
-	for _, r := range recs {
-		if _, taken := s.byID[r.ID]; taken {
-			r.ID = s.next
+	gained := 0
+	if kind == "edit" { // the record goes back to how it was before the edit
+		old, err := collect(tx, `SELECT data FROM edit_history WHERE batch_id=? ORDER BY rowid`, bid)
+		if err != nil {
+			return nil, err
 		}
-		if r.ID >= s.next {
-			s.next = r.ID + 1
+		for _, r := range old {
+			var ver int
+			var del sql.NullString
+			err := tx.QueryRow(`SELECT version, deleted_at FROM records WHERE id=?`, r.ID).Scan(&ver, &del)
+			switch {
+			case err == nil:
+				r.Version = ver + 1 // clients that kept the edited copy refetch it
+				if err := updateRec(tx, &r); err != nil {
+					return nil, err
+				}
+				if del.Valid { // (deleted since, and that deletion is no longer on the stack)
+					gained++
+				}
+			case errors.Is(err, sql.ErrNoRows): // (emptied from the trash since)
+				r.Version++
+				if err := insertRec(tx, &r); err != nil {
+					return nil, err
+				}
+				gained++
+			default:
+				return nil, err
+			}
+			out = append(out, r)
 		}
-		r.Version++ // clients that kept the old copy refetch it
-		if err := s.appendOp(op{Op: "put", R: r}); err != nil {
-			return out, err
+		if _, err := tx.Exec(`DELETE FROM edit_history WHERE batch_id=?`, bid); err != nil {
+			return nil, err
 		}
-		s.byID[r.ID] = r
-		s.recs = append(s.recs, r)
-		out = append(out, *r)
+	} else {
+		recs, err := collect(tx, `SELECT b.data FROM records r JOIN bodies b ON b.id = r.id WHERE r.batch_id=? AND r.deleted_at IS NOT NULL ORDER BY r.id`, bid)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range recs {
+			r.Version++ // clients that kept the old copy refetch it
+			if err := updateRec(tx, &r); err != nil {
+				return nil, err
+			}
+			out = append(out, r)
+			gained++
+		}
 	}
-	s.sortRecs()
-	if err := s.appendTrash(trashLine{Undo: last.ID}); err != nil {
-		return out, err
+	if _, err := tx.Exec(`DELETE FROM batches WHERE id=?`, bid); err != nil {
+		return nil, err
 	}
-	s.trash = s.trash[:len(s.trash)-1]
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	s.live.Add(int64(gained))
 	return out, nil
+}
+
+// collect reads the records of a query that returns one data column, completely, so that the transaction can write afterwards.
+func collect(tx interface {
+	Query(query string, args ...any) (*sql.Rows, error)
+}, query string, args ...any) ([]Record, error) {
+	rows, err := tx.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Record
+	for rows.Next() {
+		var data string
+		if err := rows.Scan(&data); err != nil {
+			return nil, err
+		}
+		r, err := decode(data)
+		if err != nil {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// Trash lists the deleted records matching f (honouring Limit and Offset; the most recently deleted first) and the total number
+// of matches.
+func (s *Store) Trash(f Filter) ([]TrashedRecord, int) { return s.queryRows(f, true) }
+
+// Restore brings records back from the trash, whichever deletion they belong to and in any order, and returns them (with new
+// versions, so that clients that kept an old copy refetch it). Numbers that are not in the trash are ignored.
+func (s *Store) Restore(ids ...int64) ([]Record, error) {
+	tx, err := s.wdb.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	var out []Record
+	for i := 0; i < len(ids); i += idChunk {
+		part := ids[i:min(i+idChunk, len(ids))]
+		args := make([]any, len(part))
+		for k, id := range part {
+			args[k] = id
+		}
+		recs, err := collect(tx, `SELECT b.data FROM records r JOIN bodies b ON b.id = r.id WHERE r.deleted_at IS NOT NULL AND r.id IN (`+placeholders(len(part))+`)`, args...)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range recs {
+			r.Version++
+			if err := updateRec(tx, &r); err != nil {
+				return nil, err
+			}
+			out = append(out, r)
+		}
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	if err := dropEmptyBatches(tx); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	s.live.Add(int64(len(out)))
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out, nil
+}
+
+// dropEmptyBatches removes the deletions that have nothing left in the trash.
+func dropEmptyBatches(tx execer) error {
+	_, err := tx.Exec(`DELETE FROM batches WHERE kind = 'delete' AND NOT EXISTS (SELECT 1 FROM records r WHERE r.batch_id = batches.id)`)
+	return err
+}
+
+// maybePurge empties the old trash at most once an hour.
+func (s *Store) maybePurge() {
+	now := time.Now().Unix()
+	if last := s.lastPurge.Load(); now-last < 3600 || !s.lastPurge.CompareAndSwap(last, now) {
+		return
+	}
+	if err := s.purgeTrash(); err != nil {
+		s.dbError("emptying the trash", err)
+	}
+}
+
+// purgeTrash removes what was deleted or edited more than TrashKeep ago.
+func (s *Store) purgeTrash() error {
+	s.lastPurge.Store(time.Now().Unix())
+	cut := ts(time.Now().Add(-TrashKeep))
+	tx, err := s.wdb.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, q := range []string{
+		`DELETE FROM bodies WHERE id IN (SELECT id FROM records WHERE deleted_at IS NOT NULL AND deleted_at < ?)`,
+		`DELETE FROM records WHERE deleted_at IS NOT NULL AND deleted_at < ?`,
+		`DELETE FROM edit_history WHERE batch_id IN (SELECT id FROM batches WHERE kind = 'edit' AND at < ?)`,
+		`DELETE FROM batches WHERE kind = 'edit' AND at < ?`,
+	} {
+		if _, err := tx.Exec(q, cut); err != nil {
+			return err
+		}
+	}
+	if err := dropEmptyBatches(tx); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

@@ -1,6 +1,8 @@
 package store
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -112,15 +114,19 @@ func TestCompactedFileReloads(t *testing.T) {
 	}
 }
 
+// The message file of earlier versions is converted when the database is first created; a damaged last line is skipped.
 func TestDamagedLastLineIgnored(t *testing.T) {
 	dir := t.TempDir()
-	s, _ := Open(dir)
-	s.Add(rec(1, "E", 1, "ok"))
-	s.Close()
-	appendFile(t, dir+"/messages.jsonl", `{"op":"put","r":{"id":2,"rx":"2026-`)
+	good := `{"op":"put","r":{"id":1,"v":1,"ch":518,"rx":"2026-09-30T06:00:00Z","end":"2026-09-30T06:01:00Z","kind":"message","b1":"E","b2":"A","ser":"01","area":4,"sid":0,"st":"UNID","lines":[{"t":"2026-09-30T06:00:00Z","q":50.00,"x":"HELLO"}]}}` + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "messages.jsonl"), []byte(good+`{"op":"put","r":{"id":2,"rx":"2026-`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	s, err := Open(dir)
 	if err != nil || s.Count() != 1 {
 		t.Fatalf("open: %v count %d", err, s.Count())
+	}
+	if r, ok := s.Get(1); !ok || r.Text() != "HELLO" {
+		t.Errorf("converted record: %+v", r)
 	}
 	s.Close()
 }
@@ -147,14 +153,4 @@ func TestSyslogAndQuality(t *testing.T) {
 	if len(s.Syslog(0)) != 5 {
 		t.Errorf("syslog reload: %d", len(s.Syslog(0)))
 	}
-}
-
-func appendFile(t *testing.T, path, text string) {
-	t.Helper()
-	f, err := osOpenAppend(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.WriteString(text)
-	f.Close()
 }
