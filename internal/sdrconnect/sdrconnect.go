@@ -80,6 +80,7 @@ type Source struct {
 	lo0          float64 // the centre frequency the channel was set up with
 	radioOff     bool    // SDRconnect reported started = false (under mu)
 	reconnecting bool    // a reconnect loop is running (under mu)
+	noControl    bool    // SDRconnect said can_control = false and selecting the receiver did not change that
 }
 
 func (s *Source) conn() *ws.Conn { s.mu.Lock(); defer s.mu.Unlock(); return s.c }
@@ -391,7 +392,11 @@ func (s *Source) setWait(ctx context.Context, prop, value string, same func(got 
 			return nil
 		}
 	}
-	return fmt.Errorf("SDRconnect did not accept %s = %s (it says %s)", prop, value, got)
+	hint := ""
+	if s.noControl {
+		hint = "; SDRconnect reports can_control = false, so another program probably has control of the receiver (close other SDRconnect windows and clients, or restart SDRconnect and power-cycle the RSP)"
+	}
+	return fmt.Errorf("SDRconnect did not accept %s = %s (it says %s)%s", prop, value, got, hint)
 }
 
 func sameNum(want float64) func(string) bool {
@@ -411,7 +416,7 @@ func (s *Source) setup(ctx context.Context) error {
 	}
 	// (the headless SDRconnect says can_control is false until a receiver has been opened by a selection, even if it
 	// reports one as active, so this is asked only now)
-	s.needControl(ctx, idx)
+	s.noControl = !s.needControl(ctx, idx)
 	dev, _ := s.get(ctx, "active_device")
 	s.info = fmt.Sprintf("SDRconnect at %s (API %s), receiver %s", s.o.Addr, ver, strings.TrimSpace(dev))
 
@@ -494,33 +499,63 @@ func (s *Source) recentre(ctx context.Context, want float64) {
 	time.Sleep(500 * time.Millisecond)
 }
 
-// needControl makes sure the receiver is open for this client. If can_control is false the receiver is selected
-// explicitly (the index base is not documented, so idx and idx+1 are tried); if it stays false the set-up goes on, and
-// the first setting that is refused says what is wrong.
-func (s *Source) needControl(ctx context.Context, idx int) {
+// sameDevice says whether two receiver names are the same one (ignoring case; one may be part of the other).
+func sameDevice(a, b string) bool {
+	a, b = strings.ToLower(strings.TrimSpace(a)), strings.ToLower(strings.TrimSpace(b))
+	return a != "" && b != "" && (a == b || strings.Contains(a, b) || strings.Contains(b, a))
+}
+
+// needControl makes sure the receiver is open for this client. If can_control is false the receiver (idx in the list, also when
+// it is the one that is active already) is selected again. The index base is not documented, so idx and then idx+1 are tried; if
+// that changes the receiver to another one, idx is sent again to bring the wanted one back. It says whether control was gained;
+// if not the set-up goes on, and the first setting that is refused says what is wrong.
+func (s *Source) needControl(ctx context.Context, idx int) bool {
 	can := func() bool {
 		v, err := s.get(ctx, "can_control")
 		return err != nil || !strings.EqualFold(strings.TrimSpace(v), "false") // true, or not reported
 	}
 	if can() {
-		return
+		return true
 	}
-	if idx >= 0 {
-		for _, k := range []int{idx, idx + 1} {
-			s.send(msg{EventType: "selected_device", Property: "", Value: strconv.Itoa(k)})
-			for i := 0; i < 5; i++ {
-				select {
-				case <-time.After(400 * time.Millisecond):
-				case <-ctx.Done():
-					return
-				}
-				if can() {
-					return
-				}
+	wait := func(d time.Duration, done func() bool) bool {
+		for end := time.Now().Add(d); time.Now().Before(end); {
+			select {
+			case <-time.After(300 * time.Millisecond):
+			case <-ctx.Done():
+				return false
+			}
+			if done() {
+				return true
 			}
 		}
+		return false
 	}
-	s.say("warn", "SDRconnect reports can_control = false; trying to set up the receiver anyway")
+	if idx < 0 {
+		s.say("warn", "SDRconnect reports can_control = false; trying to set up the receiver anyway")
+		return false
+	}
+	target, _ := s.get(ctx, "active_device")
+	active := func() string { a, _ := s.get(ctx, "active_device"); return a }
+	pick := func(k int) bool {
+		s.say("info", fmt.Sprintf("SDRconnect reports can_control = false: selecting the receiver again (index %d, active: %s)", k, strings.TrimSpace(target)))
+		s.send(msg{EventType: "selected_device", Property: "", Value: strconv.Itoa(k)})
+		return wait(1500*time.Millisecond, can)
+	}
+	ok := pick(idx) || pick(idx+1)
+	if a := active(); !sameDevice(a, target) { // a neighbour was selected (the first index was the base after all): the wanted one again
+		s.say("info", fmt.Sprintf("SDRconnect now shows %s: selecting %s again", strings.TrimSpace(a), strings.TrimSpace(target)))
+		for _, k := range []int{idx, idx + 1} {
+			s.send(msg{EventType: "selected_device", Property: "", Value: strconv.Itoa(k)})
+			if wait(1200*time.Millisecond, func() bool { return sameDevice(active(), target) }) {
+				break
+			}
+		}
+		ok = can()
+	}
+	if !ok {
+		s.say("warn", "SDRconnect reports can_control = false; trying to set up the receiver anyway")
+	}
+	return ok
 }
 
 // matchName finds the entry of list that the user means: the same name, ignoring case, spaces and hyphens, or else the
@@ -576,6 +611,11 @@ func (s *Source) selectDevice(ctx context.Context) (int, error) {
 		return -1, errors.New("SDRconnect lists no receiver: is the RSP connected, and is it free (not in use by another program)?")
 	}
 	if want == "" && strings.TrimSpace(active) != "" {
+		for i, n := range names { // none was asked for: the one that is active (the index is needed to select it again)
+			if sameDevice(active, n) {
+				return i, nil
+			}
+		}
 		return -1, nil
 	}
 	idx := -1
@@ -588,11 +628,7 @@ func (s *Source) selectDevice(ctx context.Context) (int, error) {
 	if idx < 0 {
 		return -1, fmt.Errorf("no receiver matching %q in SDRconnect's list (%s)", s.o.Device, list)
 	}
-	target := strings.ToLower(names[idx])
-	matches := func(a string) bool {
-		a = strings.ToLower(strings.TrimSpace(a))
-		return a != "" && (a == target || strings.Contains(a, target) || strings.Contains(target, a))
-	}
+	matches := func(a string) bool { return sameDevice(a, names[idx]) }
 	if matches(active) {
 		return idx, nil
 	}

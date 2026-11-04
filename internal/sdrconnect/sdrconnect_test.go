@@ -28,10 +28,12 @@ type fake struct {
 	log                []string
 	iq                 bool
 	refuseRate         bool
-	controlAfterSelect bool   // can_control becomes true only once a receiver is selected (headless SDRconnect)
-	lockCentre         string // if set, device_center_frequency cannot be changed
-	refreshing         int    // the next n answers about the receiver lists are "Refreshing..." (SDRconnect just started)
-	recentre           bool   // the centre follows the VFO when that leaves the span (SDRconnect 1.0.10, 250 kS/s)
+	controlAfterSelect bool     // can_control becomes true only once a receiver is selected (headless SDRconnect)
+	devices            []string // when set: the receivers of valid_devices, selected by index (from base); a selection of another one gives control
+	selected           []string // receivers selected so far (under mu)
+	lockCentre         string   // if set, device_center_frequency cannot be changed
+	refreshing         int      // the next n answers about the receiver lists are "Refreshing..." (SDRconnect just started)
+	recentre           bool     // the centre follows the VFO when that leaves the span (SDRconnect 1.0.10, 250 kS/s)
 	conn               net.Conn
 	ln                 net.Listener
 }
@@ -183,6 +185,18 @@ func (f *fake) handle(p []byte) {
 			f.sendJSON("property_changed", m.Property, m.Value)
 		}()
 	case "selected_device":
+		if f.devices != nil { // several receivers: selecting another one opens it (and gives control); selecting the active one changes nothing
+			k, _ := strconv.Atoi(m.Value)
+			if i := k - f.base; i >= 0 && i < len(f.devices) && f.devices[i] != f.props["active_device"] {
+				f.mu.Lock()
+				f.props["active_device"] = f.devices[i]
+				f.props["can_control"] = "true"
+				f.selected = append(f.selected, f.devices[i])
+				f.mu.Unlock()
+				f.sendJSON("property_changed", "active_device", f.devices[i])
+			}
+			return
+		}
 		if k, _ := strconv.Atoi(m.Value); k == f.base {
 			f.mu.Lock()
 			f.props["active_device"] = "RSPduo 1234"
@@ -327,6 +341,27 @@ func TestSetupErrors(t *testing.T) {
 			t.Errorf("headless (base %d): %v", base, err)
 		} else {
 			s.Close()
+		}
+	}
+	// headless, no receiver asked for, the active one is not open (can_control false) and selecting it again changes nothing: the
+	// neighbour is selected and the wanted one again, whatever the index base
+	for _, base := range []int{0, 1} {
+		f = newFake(t, base)
+		f.devices = []string{"RSPduo 1234 (Single)", "RSPduo 1234 (Dual)", "IQ File"}
+		f.props["valid_devices"] = strings.Join(f.devices, ",")
+		f.props["can_control"], f.props["active_device"] = "false", f.devices[0]
+		o = opts(f.addr())
+		if s, err := Open(ctx, o); err != nil {
+			t.Errorf("active receiver not open (base %d): %v", base, err)
+		} else {
+			s.Close()
+		}
+		f.mu.Lock()
+		got := strings.Join(f.selected, ",")
+		act := f.props["active_device"]
+		f.mu.Unlock()
+		if act != f.devices[0] {
+			t.Errorf("base %d: the receiver ended as %s (selected: %s)", base, act, got)
 		}
 	}
 	f = newFake(t, 0)
