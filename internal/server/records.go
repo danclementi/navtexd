@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -15,6 +17,7 @@ import (
 	"navtex/internal/autocorr"
 	"navtex/internal/sitor"
 	"navtex/internal/store"
+	"navtex/internal/yand"
 )
 
 func (s *Server) recordRoutes(mux *http.ServeMux, tunnel bool) {
@@ -471,26 +474,92 @@ func (s *Server) dbExport(w http.ResponseWriter, r *http.Request, id Identity) {
 	s.run.Log("info", fmt.Sprintf("log exported: %d records", n))
 }
 
-// dbImport reads a log file from the request body; mode=replace or merge.
+// importReply is what an import says: the result, and for a file of YaND what it was.
+type importReply struct {
+	store.ImportResult
+	Source string `json:"source,omitempty"`  // "YaND database" or "YaND report"
+	NoText int    `json:"no_text,omitempty"` // records of a YaND database whose text is not in it (deleted or overwritten there)
+}
+
+// dbImport reads a log file from the request body; mode=replace or merge. The file is an export of this program, or the messages
+// file of an earlier version, or a log of YaND (YAND_DB.ABS, or a reception report), recognized by its contents.
 func (s *Server) dbImport(w http.ResponseWriter, r *http.Request, id Identity) {
 	replace := r.URL.Query().Get("mode") == "replace"
 	if r.URL.Query().Get("mode") != "replace" && r.URL.Query().Get("mode") != "merge" {
 		fail(w, 400, errors.New("mode must be merge or replace"))
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<30)
-	res, err := s.st.Import(r.Body, replace)
+	body := bufio.NewReaderSize(http.MaxBytesReader(w, r.Body, 1<<30), 64<<10)
+	head, _ := body.Peek(8192)
+	rep := importReply{}
+	var res store.ImportResult
+	var err error
+	switch yand.Kind(head) {
+	case "abs":
+		rep.Source = "YaND database"
+		res, rep.NoText, err = s.importYaND(body, true, replace)
+	case "report":
+		rep.Source = "YaND report"
+		res, _, err = s.importYaND(body, false, replace)
+	default:
+		res, err = s.st.Import(body, replace)
+	}
 	if err != nil {
 		fail(w, 400, err)
 		return
 	}
+	rep.ImportResult = res
+	from := "log"
+	if rep.Source != "" {
+		from = rep.Source
+	}
 	if replace {
-		s.run.Log("info", fmt.Sprintf("log replaced by an import: %d records (the old log of %d records is saved as backups/%s)", res.Added, res.Replaced, res.Backup))
+		s.run.Log("info", fmt.Sprintf("log replaced by an import of a %s: %d records (the old log of %d records is saved as backups/%s)", from, res.Added, res.Replaced, res.Backup))
 	} else {
-		s.run.Log("info", fmt.Sprintf("log import (merge): %d records added, %d already there", res.Added, res.Skipped))
+		s.run.Log("info", fmt.Sprintf("%s import (merge): %d records added, %d already there", from, res.Added, res.Skipped))
 	}
 	s.hub.Publish("record", recordMsg{Action: "restore"}, false, false)
-	writeJSON(w, 200, res)
+	writeJSON(w, 200, rep)
+}
+
+// importYaND converts a YaND database (abs) or reception report from r and puts its records in the log. It returns how many
+// records of a database have no text.
+func (s *Server) importYaND(r io.Reader, abs, replace bool) (store.ImportResult, int, error) {
+	var recs []store.Record
+	noText := 0
+	if abs {
+		tmp, err := os.CreateTemp("", "yand-*.abs") // the database is read page by page: it is not held in memory
+		if err != nil {
+			return store.ImportResult{}, 0, err
+		}
+		defer os.Remove(tmp.Name())
+		defer tmp.Close()
+		n, err := io.Copy(tmp, r)
+		if err != nil {
+			return store.ImportResult{}, 0, err
+		}
+		var st yand.Stats
+		if recs, st, err = yand.ReadABS(tmp, n); err != nil {
+			return store.ImportResult{}, 0, err
+		}
+		noText = st.NoText
+	} else {
+		var err error
+		if recs, err = yand.ReadReport(r); err != nil {
+			return store.ImportResult{}, 0, err
+		}
+	}
+	place := func(*store.Record) {}
+	if s.cat != nil {
+		place = s.cat.Placer()
+	}
+	ptrs := make([]*store.Record, len(recs))
+	for i := range recs {
+		place(&recs[i])
+		ptrs[i] = &recs[i]
+	}
+	res, err := s.st.ImportRecords(ptrs, replace)
+	return res, noText, err
 }
 
 // ---- stations ----

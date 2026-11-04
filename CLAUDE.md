@@ -88,11 +88,12 @@ server and a multi-client browser UI, comparable to YaND. Public GPL v3 project.
   Extra vocabulary: `autocorrect.extra_words_file` (default `vocabulary.txt` in the data dir).
 - Log tab is a virtual list with a frozen view when a record is selected (see SERVER_DESIGN §28–29).
 - Connection messages and the server-closed banner: SERVER_DESIGN §30.
+- YaND logs (`YAND_DB.ABS`, `NDX*.TXT` reports) are imported by the Database dialog and `tools/yandimport`; layout and mapping: SERVER_DESIGN §45 (`internal/yand`).
 
 ## Out of scope for now
 Several channels from one I/Q stream or radio (two channels with separate inputs exist, see rule 12), combining the
 decoded text of two channels, installers/services,
-importing YaND logs, Linux/Raspberry Pi release builds (see `docs/TODO.md`).
+reading YaND's DX-ATLAS `.csv` export, Linux/Raspberry Pi release builds (see `docs/TODO.md`).
 
 ## Working here
 - The owner pushes to GitHub himself: commit only when asked, never push, and never commit executables or data.

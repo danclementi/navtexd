@@ -288,9 +288,10 @@ until the report list changes."><svg class="ic" aria-hidden="true"><use href="#i
       <div><button id="db-export" type="button">Export…</button></div>
     </fieldset>
     <fieldset><legend>Import</legend>
-      <input id="db-file" type="file" accept=".jsonl,.json,.txt" hidden>
+      <input id="db-file" type="file" accept=".jsonl,.json,.txt,.abs,.ABS" hidden>
       <label class="check"><input type="radio" name="db-im" value="merge" checked> Merge: add the records that are not in the log yet (the same time, channel, kind and text counts as the same record)</label>
       <label class="check"><input type="radio" name="db-im" value="replace"> Replace: the log becomes the file's records. The current log is saved to the backups folder first</label>
+      <div class="small">The file can be an export of this program, the message file of an earlier version, or a log of YaND: its database (YAND_DB.ABS) or a reception report (NDX….TXT). It is recognized by what it contains.</div>
       <div><button id="db-import" type="button">Import…</button></div>
     </fieldset>
     <div id="db-msg" class="small"></div>

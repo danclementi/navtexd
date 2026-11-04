@@ -181,10 +181,32 @@ func (s *Store) Import(r io.Reader, replace bool) (ImportResult, error) {
 	if bad > len(recs) {
 		return ImportResult{}, fmt.Errorf("the file does not look like a log: %d unreadable lines", bad)
 	}
+	return s.ImportRecords(recs, replace)
+}
+
+// ImportRecords puts records made elsewhere (read from a file by Import, or converted from the log of another program) in the
+// log: with replace the log becomes exactly these records (the old log is saved to the backups folder first; the records keep
+// their numbers when these are all different, else they are numbered in the order given), otherwise records that are not
+// already in the log (same time, channel, kind and text) are added with new numbers.
+func (s *Store) ImportRecords(recs []*Record, replace bool) (ImportResult, error) {
+	if len(recs) == 0 {
+		return ImportResult{}, errors.New("no records to import")
+	}
+	seen := map[int64]bool{}
+	renumber := false
 	for _, r := range recs {
 		normalize(r)
 		if r.Station == "" {
 			r.Station = "UNID"
+		}
+		if r.ID <= 0 || seen[r.ID] {
+			renumber = true
+		}
+		seen[r.ID] = true
+	}
+	if renumber {
+		for i, r := range recs {
+			r.ID = int64(i + 1)
 		}
 	}
 	res := ImportResult{Read: len(recs)}

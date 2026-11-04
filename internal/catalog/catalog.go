@@ -240,6 +240,35 @@ func (c *Catalog) Enrich(r *store.Record) {
 	place(c.tab.Stations[res.Index], res.Index, res.Method, res.Score)
 }
 
+// Placer returns a function that gives a record made by another program (the log of YaND) its place in this station table: when
+// the record's station label and frequency are those of a station of the table, the station's number, its NAVAREA when the record
+// has none, and the distance and bearing from the operator's position are set. Other records stay as they are.
+func (c *Catalog) Placer() func(r *store.Record) {
+	c.mu.RLock()
+	byLabel := map[string]int{}
+	for i, s := range c.tab.Stations {
+		byLabel[fmt.Sprintf("%d|%s", s.FreqKHz*1000, Label(s))] = i
+	}
+	list := c.tab.Stations
+	c.mu.RUnlock()
+	lat, lon, haveOp := c.opPos()
+	return func(r *store.Record) {
+		i, ok := byLabel[fmt.Sprintf("%d|%s", r.Channel, r.Station)]
+		if !ok {
+			return
+		}
+		s := list[i]
+		r.StationID = i + 1
+		if r.NavArea == 0 {
+			r.NavArea = s.NavArea
+		}
+		if haveOp {
+			r.DistanceKm = math.Round(geo.DistanceKm(lat, lon, s.Lat, s.Lon))
+			r.BearingDeg = math.Round(geo.BearingDeg(lat, lon, s.Lat, s.Lon))
+		}
+	}
+}
+
 func (c *Catalog) opPos() (lat, lon float64, ok bool) {
 	if c.Position == nil {
 		return 0, 0, false

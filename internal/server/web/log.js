@@ -713,7 +713,8 @@
       const r = await fetch("/api/database/import?mode=" + mode, { method: "POST", headers: { "X-Navtex": "1", "Content-Type": "application/octet-stream" }, body: f, credentials: "same-origin" });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || r.statusText);
-      dmsg(mode === "replace" ? `Replaced: ${j.added} records imported (${j.replaced} were in the log; saved as ${j.backup}).` : `Merged: ${j.added} added, ${j.skipped} were already there.`);
+      const from = j.source ? ` from a ${j.source}` : "", nt = j.no_text ? ` ${j.no_text} of them have no text: it is not in the YaND database any more.` : "";
+      dmsg((mode === "replace" ? `Replaced: ${j.added} records imported${from} (${j.replaced} were in the log; saved as ${j.backup}).` : `Merged: ${j.added} records added${from}, ${j.skipped} were already there.`) + nt);
       dbInfo(); loadUndo(); await reload(); indicate();
     } catch (e) { dmsg("Not imported: " + e.message); }
   };

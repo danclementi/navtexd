@@ -46,7 +46,7 @@ Four channels exist (`extra.*`, SERVER_DESIGN section 33); still to do:
 - Packaging: Windows service, systemd unit, installer; code signing against SmartScreen warnings.
 - Linux build and test.
 - Decoder quality: indicator for how well the DX and RX copies of each character agree.
-- Importing a YaND log (left out of the first release on purpose).
+- Reading YaND's DX-ATLAS `.csv` export (not a log; the YaND database and report import is done, SERVER_DESIGN §45).
 
 ## Decided against
 - A vocabulary editor (the current word lists stay).
