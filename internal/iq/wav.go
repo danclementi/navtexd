@@ -82,6 +82,9 @@ func OpenWav(path string, opt WavOptions) (*WavSource, error) {
 	return w, nil
 }
 
+// maxHeaderChunk is the largest fmt or ds64 chunk that is read (real ones are 16 to 40 bytes).
+const maxHeaderChunk = 4096
+
 func (w *WavSource) parseHeader() error {
 	st, err := w.f.Stat()
 	if err != nil {
@@ -107,8 +110,11 @@ func (w *WavSource) parseHeader() error {
 		pos, _ := w.f.Seek(0, io.SeekCurrent)
 		switch id {
 		case "fmt ":
+			if size < 16 || size > maxHeaderChunk || pos+size > fsize { // (the size is the file's word: do not allocate it unchecked)
+				return errors.New("bad fmt chunk")
+			}
 			body := make([]byte, size)
-			if _, err := io.ReadFull(w.f, body); err != nil || size < 16 {
+			if _, err := io.ReadFull(w.f, body); err != nil {
 				return errors.New("bad fmt chunk")
 			}
 			w.tag = binary.LittleEndian.Uint16(body[0:])
@@ -122,9 +128,11 @@ func (w *WavSource) parseHeader() error {
 			haveFmt = true
 			w.f.Seek(pos+size+(size&1), io.SeekStart)
 		case "ds64":
-			body := make([]byte, size)
-			if _, err := io.ReadFull(w.f, body); err == nil && size >= 16 {
-				ds64 = binary.LittleEndian.Uint64(body[8:])
+			if size >= 16 && size <= maxHeaderChunk && pos+size <= fsize {
+				body := make([]byte, size)
+				if _, err := io.ReadFull(w.f, body); err == nil {
+					ds64 = binary.LittleEndian.Uint64(body[8:])
+				}
 			}
 			w.f.Seek(pos+size+(size&1), io.SeekStart)
 		case "data":
@@ -153,6 +161,9 @@ func (w *WavSource) parseHeader() error {
 	}
 	if w.align == 0 {
 		w.align = w.channels * w.bits / 8
+	}
+	if w.align < w.channels*w.bits/8 { // a frame cannot be smaller than its samples
+		return fmt.Errorf("bad WAV block alignment %d for %d channel(s) of %d bits", w.align, w.channels, w.bits)
 	}
 	w.frames = dataSize / int64(w.align)
 	_, err = w.f.Seek(dataStart, io.SeekStart)

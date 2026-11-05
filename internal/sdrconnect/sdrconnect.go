@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"strconv"
 	"strings"
 	"sync"
@@ -138,8 +139,15 @@ func Open(ctx context.Context, o Options) (*Source, error) {
 func (s *Source) reader(c *ws.Conn) {
 	var cbuf []complex128
 	for {
+		// A server that stops sending but keeps the connection open (SDRconnect hung, its PC asleep, a network link gone) would
+		// otherwise leave this read waiting for ever; the stream delivers samples all the time, so silence means a dead link.
+		c.SetReadDeadline(time.Now().Add(silenceLimit))
 		typ, p, err := c.Read()
 		if err != nil {
+			var ne net.Error
+			if errors.As(err, &ne) && ne.Timeout() {
+				err = fmt.Errorf("nothing received for %s", silenceLimit)
+			}
 			select {
 			case <-s.done: // closed by us
 			default:
@@ -265,6 +273,9 @@ func centreErr(now, was float64) error {
 }
 
 var retryEvery = 5 * time.Second
+
+// silenceLimit is how long the connection may stay silent before it is taken as lost (the I/Q stream never pauses).
+var silenceLimit = 10 * time.Second
 
 // reconnect runs after the connection was lost: it dials and sets the receiver up again until it works or the source is
 // closed. If SDRconnect's centre frequency is not the one the channel was set up with, the stream ends with an error.

@@ -101,8 +101,9 @@ func u32(b []byte, o int) int { return int(binary.LittleEndian.Uint32(b[o:])) }
 // The first text of a page (q = 380) has a header 2 bytes longer than the others. A text that does not fit in the page goes on at
 // the start of the following pages (which are full until its last); if it is the first of its page, its header also names the
 // last page. A page that has the end of such a text before q numbers its own texts from where that group goes on: the log record
-// says "text n of the page where the group began".
-func parse(s, ext []byte, q, pg, idx, limit int) []blob {
+// says "text n of the page where the group began". room is the number of bytes in the pages after this one: a text cannot be longer
+// than the rest of the file, whatever its header says.
+func parse(s, ext []byte, q, pg, idx, limit, room int) []blob {
 	var out []blob
 	v := s
 	if len(ext) > 0 {
@@ -115,7 +116,7 @@ func parse(s, ext []byte, q, pg, idx, limit int) []blob {
 				continue
 			}
 			l := u32(v, q+kk)
-			if l > 0 && l < 1<<28 && u32(v, q+kk+4) == 0 && u32(v, q+kk+8) == l && u32(v, q+kk+12) == 0 {
+			if l > 0 && l <= len(s)+room && u32(v, q+kk+4) == 0 && u32(v, q+kk+8) == l && u32(v, q+kk+12) == 0 {
 				k, n = kk, l
 				break
 			}
@@ -186,13 +187,14 @@ func (f *file) scan() error {
 				ext = data(np)
 			}
 		}
-		own := parse(s, ext, hdrAt, pg, 0, len(s)) // a page that is full of the end of a long text has text, not a header, here
+		room := (f.pages - pg - 1) * dataLen
+		own := parse(s, ext, hdrAt, pg, 0, len(s), room) // a page that is full of the end of a long text has text, not a header, here
 		if t, ok := tails[pg]; ok && t.at < dataLen-24 {
 			limit := len(s)
 			if len(own) > 0 {
 				limit = hdrAt
 			}
-			if bl := parse(s, ext, t.at, pg, t.next, limit); len(bl) > 0 {
+			if bl := parse(s, ext, t.at, pg, t.next, limit, room); len(bl) > 0 {
 				f.blobs[t.group] = append(f.blobs[t.group], bl...)
 				note(t.group, bl[len(bl)-1])
 			}
@@ -328,6 +330,7 @@ func ReadABS(r io.ReaderAt, size int64) ([]store.Record, Stats, error) {
 		return nil, st, errors.New("no log records found in the database (is it a YaND database of a version this program knows?)")
 	}
 	st.Rows = len(rows)
+	cache := linesCache{}
 	recs := make([]store.Record, 0, len(rows))
 	for _, b := range rows {
 		date, ms, fq := u32(b, 1), u32(b, 5), u32(b, 9)
@@ -358,25 +361,24 @@ func ReadABS(r io.ReaderAt, size int64) ([]store.Record, Stats, error) {
 		var lines []store.Line
 		found := false
 		if bl := f.blobsIn(pg); len(bl) > 0 {
-			var cand []blob
-			for _, x := range bl {
+			var cand []int // the text with the number in the row first, then the others
+			for i, x := range bl {
 				if x.idx == idx {
-					cand = append(cand, x)
+					cand = append(cand, i)
 				}
 			}
-			for _, x := range bl {
+			for i, x := range bl {
 				if x.idx != idx {
-					cand = append(cand, x)
+					cand = append(cand, i)
 				}
 			}
-			for ci, c := range cand {
-				txt, err := f.text(c)
+			for ci, i := range cand {
+				ls, err := cache.lines(f, pg, i, bl[i])
 				if err != nil {
 					return nil, st, err
 				}
-				ls := parseLines(string(txt))
 				if len(ls) > 0 && ls[0].Time.Equal(rx.Truncate(time.Second)) {
-					lines, found = ls, true
+					lines, found = append([]store.Line(nil), ls...), true
 					break
 				}
 				if ci == 0 {
@@ -399,6 +401,24 @@ func ReadABS(r io.ReaderAt, size int64) ([]store.Record, Stats, error) {
 	}
 	finish(recs)
 	return recs, st, nil
+}
+
+// linesCache keeps the lines of the texts that were read, so that many rows pointing at the same page (or a damaged file
+// pointing all its rows at one long text) do not read and split it again for each row.
+type linesCache map[[2]int][]store.Line
+
+func (c linesCache) lines(f *file, pg, i int, b blob) ([]store.Line, error) {
+	k := [2]int{pg, i}
+	if ls, ok := c[k]; ok {
+		return ls, nil
+	}
+	txt, err := f.text(b)
+	if err != nil {
+		return nil, err
+	}
+	ls := parseLines(string(txt))
+	c[k] = ls
+	return ls, nil
 }
 
 // letter is the ID letter in a 2-byte field; "?" (unknown) is empty.

@@ -2,6 +2,7 @@ package store
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -40,6 +41,11 @@ func (s *Store) Backup(what string, keep int) (string, error) {
 }
 
 func (s *Store) backup(what string, keep int) (string, error) {
+	return s.backupWith(what, keep, func(full string) error { _, err := s.bdb.Exec(`VACUUM INTO ?`, full); return err })
+}
+
+// backupWith makes the copy with vacuum, which writes the database to the file it is given.
+func (s *Store) backupWith(what string, keep int, vacuum func(full string) error) (string, error) {
 	dir := filepath.Join(s.dir, backupDir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
@@ -47,7 +53,7 @@ func (s *Store) backup(what string, keep int) (string, error) {
 	name := fmt.Sprintf("messages-%s-%s.db", what, time.Now().UTC().Format("20060102T150405Z"))
 	full := filepath.Join(dir, name)
 	os.Remove(full)
-	if _, err := s.bdb.Exec(`VACUUM INTO ?`, full); err != nil {
+	if err := vacuum(full); err != nil {
 		os.Remove(full)
 		return "", err
 	}
@@ -211,12 +217,24 @@ func (s *Store) ImportRecords(recs []*Record, replace bool) (ImportResult, error
 	}
 	res := ImportResult{Read: len(recs)}
 	if replace {
-		name, err := s.backup("before-import", 0)
+		// The backup and the replacement are made on the one write connection (see openDB), taken first: records that the
+		// decoder stores meanwhile wait until the replacement is done, so the backup holds every record that is deleted below
+		// and nothing is stored between the backup and the delete.
+		ctx := context.Background()
+		conn, err := s.wdb.Conn(ctx)
+		if err != nil {
+			return res, err
+		}
+		defer conn.Close()
+		name, err := s.backupWith("before-import", 0, func(full string) error {
+			_, err := conn.ExecContext(ctx, `VACUUM INTO ?`, full)
+			return err
+		})
 		if err != nil {
 			return res, fmt.Errorf("could not save the current log first: %w", err)
 		}
 		res.Backup = name
-		tx, err := s.wdb.Begin()
+		tx, err := conn.BeginTx(ctx, nil)
 		if err != nil {
 			return res, err
 		}

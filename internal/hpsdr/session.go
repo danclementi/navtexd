@@ -299,6 +299,10 @@ func (s *session) isDone() bool {
 	}
 }
 
+// maxLate is how far behind the expected number a packet can be and still count as a late or duplicate one; a packet further
+// behind means that the radio's counter started again.
+const maxLate = 64
+
 // notice sends a message to the first channel that uses the radio (the loss is the radio's, not a channel's).
 func (s *session) notice(format string, a ...any) {
 	s.mu.Lock()
@@ -399,11 +403,20 @@ func (s *session) receive() {
 		lastData = time.Now()
 		s.st.packets.Add(1)
 		var fill int
+		restart := false
 		if started && p.Seq != next {
-			if int32(p.Seq-next) < 0 { // late or duplicate
-				s.st.reordered.Add(1)
-				continue
+			if d := int32(p.Seq - next); d < 0 {
+				if d >= -maxLate { // late or duplicate
+					s.st.reordered.Add(1)
+					continue
+				}
+				// far behind what was expected: the radio's counter started again (its server was restarted, its
+				// firmware reloaded, or the counter wrapped), so this is not a late packet; carry on from here
+				restart = true
+				s.notice("radio: the packet counter started again (expected %d, got %d); continuing from here", next, p.Seq)
 			}
+		}
+		if started && p.Seq != next && !restart {
 			gap := p.Seq - next
 			s.st.lost.Add(uint64(gap))
 			lostSince += uint64(gap)

@@ -103,6 +103,7 @@ type Runner struct {
 	cmpCfg config.Compare
 
 	mu     sync.Mutex
+	life   sync.Mutex // serializes Start, Stop and Restart, so that a channel is never stopped and started by two callers at once
 	cfg    config.Config
 	chains [config.Channels]*chain
 	hist   map[int][]histEntry   // earlier settings per channel (history.go)
@@ -199,6 +200,8 @@ func (r *Runner) setState(ch int, s State) {
 // Failures (no such file, no such audio device) are reported in the state and the system log, not returned, so that
 // the server can still be used to fix the settings.
 func (r *Runner) Start() {
+	r.life.Lock()
+	defer r.life.Unlock()
 	go r.compareLoop()
 	for i := range r.chains {
 		if r.Config().ChannelEnabled(i) {
@@ -257,6 +260,8 @@ func (r *Runner) runGuarded(ctx context.Context, c *chain, cfg config.Config, cm
 
 // Stop ends all decoding and waits for it to finish.
 func (r *Runner) Stop() {
+	r.life.Lock()
+	defer r.life.Unlock()
 	for i := range r.chains {
 		r.stopChain(i)
 	}
@@ -277,6 +282,8 @@ func (r *Runner) stopChain(i int) {
 // Restart applies the current configuration to the channels whose settings need it (see Modify), by stopping and
 // starting them; with no such channel marked it restarts all. A channel that has been switched off stays stopped.
 func (r *Runner) Restart() {
+	r.life.Lock()
+	defer r.life.Unlock()
 	r.mu.Lock()
 	need := r.need
 	r.need = [config.Channels]bool{}
@@ -487,7 +494,7 @@ func (r *Runner) run(ctx context.Context, c *chain, cfg config.Config, cmds chan
 	if others := r.Config().SharedWith(c.idx); len(others) > 0 && cfg.Input.SharedFrom == 0 {
 		tap := source.NewTap(src)
 		c.tap.Store(tap)
-		defer func() { c.tap.Store(nil); tap.Close() }()
+		defer func() { c.tap.CompareAndSwap(tap, nil); tap.Close() }()
 		tap.WaitSubscribers(ctx, len(others), 5*time.Second)
 		log("info", fmt.Sprintf("input shared with %d other channel(s)", len(others)))
 	}
@@ -592,7 +599,7 @@ func (r *Runner) run(ctx context.Context, c *chain, cfg config.Config, cmds chan
 			log("warn", fmt.Sprintf("audio clips: memory limit, the clip will be %.0f s long instead of %.0f s", got, cl.BeforeS+cl.AfterS))
 		}
 		c.ring.Store(ring)
-		defer c.ring.Store(nil)
+		defer c.ring.CompareAndSwap(ring, nil)
 	}
 	inWall := func(frames int64) time.Time {
 		if src.Live || src.Start.IsZero() {

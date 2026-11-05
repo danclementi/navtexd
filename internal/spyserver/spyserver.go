@@ -51,6 +51,9 @@ const TargetRateHz = 250000
 
 var retryEvery = 5 * time.Second
 
+// silenceLimit is how long the connection may stay silent before it is taken as lost (the stream never pauses).
+var silenceLimit = 10 * time.Second
+
 // Options says what to ask the SpyServer for.
 type Options struct {
 	Addr    string
@@ -323,8 +326,13 @@ func (s *Source) reader(c net.Conn, br *bufio.Reader) {
 	var last uint32
 	have := false
 	for {
+		c.SetReadDeadline(time.Now().Add(silenceLimit)) // the stream never pauses: silence means a dead link
 		typ, _, seq, b, err := readMsg(br)
 		if err != nil {
+			var ne net.Error
+			if errors.As(err, &ne) && ne.Timeout() {
+				err = fmt.Errorf("nothing received for %s", silenceLimit)
+			}
 			select {
 			case <-s.done: // closed by us
 			default:
