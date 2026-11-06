@@ -192,7 +192,7 @@ func (s *Store) Import(r io.Reader, replace bool) (ImportResult, error) {
 
 // ImportRecords puts records made elsewhere (read from a file by Import, or converted from the log of another program) in the
 // log: with replace the log becomes exactly these records (the old log is saved to the backups folder first; the records keep
-// their numbers when these are all different, else they are numbered in the order given), otherwise records that are not
+// their numbers when these are all different and none was used by the log before, else they get new numbers in the order given), otherwise records that are not
 // already in the log (same time, channel, kind and text) are added with new numbers.
 func (s *Store) ImportRecords(recs []*Record, replace bool) (ImportResult, error) {
 	if len(recs) == 0 {
@@ -247,7 +247,22 @@ func (s *Store) ImportRecords(recs []*Record, replace bool) (ImportResult, error
 				return res, err
 			}
 		}
+		// A number the log has used before (they are never reused) must not come back for another record: a client that
+		// still shows the old log could otherwise find one of its records under that number, with a version that fits.
+		// So the records keep their numbers only when all of them are new; else they are numbered from the next free one.
+		next, err := nextID(tx)
+		if err != nil {
+			return res, err
+		}
+		fresh := true
 		for _, r := range recs {
+			fresh = fresh && r.ID >= next
+		}
+		for i, r := range recs {
+			if !fresh {
+				r.ID = next + int64(i)
+			}
+			r.Version = 1
 			if err := insertRec(tx, r); err != nil {
 				return res, err
 			}

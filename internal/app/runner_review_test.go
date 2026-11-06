@@ -221,3 +221,34 @@ func TestReview_ClipBufferFollowsFreeMemory(t *testing.T) {
 		t.Fatalf("grant %d used %d", grant, r.clipUsed)
 	}
 }
+
+func TestReview_DoReportsWhetherTheCommandRan(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	cfg := config.Default()
+	cfg.Input.Source = "file"
+	cfg.Input.File.Path = reviewWAV(t, dir, 120)
+	cfg.Input.File.Realtime = true
+	r := New(dir, cfg, st, Hooks{})
+	if r.Do(0, func(*engine.Engine) { t.Error("ran on a channel that is not running") }) {
+		t.Fatal("Do reported success for a channel that is not running")
+	}
+	r.Start()
+	defer r.Stop()
+	deadline := time.Now().Add(20 * time.Second)
+	for !r.State(0).Running && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	ran := false
+	if !r.Do(0, func(e *engine.Engine) { ran = e != nil }) || !ran {
+		t.Fatal("a command on a running channel did not run")
+	}
+	r.Stop()
+	if r.Do(0, func(*engine.Engine) { t.Error("ran after the channel stopped") }) {
+		t.Fatal("Do reported success after the channel stopped")
+	}
+}

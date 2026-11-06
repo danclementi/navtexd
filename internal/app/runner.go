@@ -74,6 +74,7 @@ type chain struct {
 	shift  atomic.Uint64              // center of the running engine's receiver window (float64 bits)
 	isIQ   atomic.Bool                // the running source delivers I/Q (not real audio)
 	tap    atomic.Pointer[source.Tap] // set while other channels take this channel's input
+	up     atomic.Bool                // the engine is running and takes commands (see Do)
 	panics atomic.Int64               // how many times the channel stopped on an internal error (see ownerRestarted)
 
 	// guarded by Runner.mu
@@ -359,16 +360,40 @@ func (r *Runner) Restart() {
 	}
 }
 
-// Do runs fn in the decoding goroutine of channel ch with its engine. It reports whether the channel is running.
+// Do runs fn in the decoding goroutine of channel ch with its engine and waits for it (at most 2 s). It reports whether
+// fn ran: false when the channel is not running, was stopped before the command came to the front, or is stuck.
 func (r *Runner) Do(ch int, fn func(*engine.Engine)) bool {
-	r.mu.Lock()
-	c := r.chains[ch].cmds
-	r.mu.Unlock()
-	if c == nil {
+	ran := make(chan bool, 1)
+	if !r.post(ch, func(e *engine.Engine) {
+		ok := false
+		defer func() { ran <- ok }()
+		if e != nil {
+			fn(e)
+			ok = true
+		}
+	}) {
 		return false
 	}
 	select {
-	case c <- fn:
+	case ok := <-ran:
+		return ok
+	case <-time.After(2 * time.Second):
+		return false
+	}
+}
+
+// post queues fn for the decoding goroutine of channel ch and reports whether the channel was running and had room. It
+// does not wait. When the channel stops first, fn is called with a nil engine (a command must check for that).
+func (r *Runner) post(ch int, fn func(*engine.Engine)) bool {
+	r.mu.Lock()
+	c := r.chains[ch]
+	cmds := c.cmds
+	r.mu.Unlock()
+	if cmds == nil || !c.up.Load() {
+		return false
+	}
+	select {
+	case cmds <- fn:
 		return true
 	default:
 		return false
@@ -409,7 +434,11 @@ func (r *Runner) Modify(change func(*config.Config) error) (restart bool, err er
 	for i, l := range live {
 		if l { // whatever can change while running is applied to the engine (the latest configuration, whenever it runs)
 			i := i
-			r.Do(i, func(e *engine.Engine) { e.Reconfigure(r.ChanConfig(i)) })
+			r.post(i, func(e *engine.Engine) {
+				if e != nil {
+					e.Reconfigure(r.ChanConfig(i))
+				}
+			})
 		}
 	}
 	return restart, r.Save()
@@ -604,6 +633,18 @@ func (r *Runner) run(ctx context.Context, c *chain, cfg config.Config, cmds chan
 	}
 	c.scope.Store(eng.Scope())
 	c.rate.Store(math.Float64bits(src.SampleRate()))
+	c.up.Store(true)
+	defer func() { // commands still waiting will never run: tell their senders
+		c.up.Store(false)
+		for {
+			select {
+			case fn := <-cmds:
+				fn(nil)
+			default:
+				return
+			}
+		}
+	}()
 	c.isIQ.Store(src.Kind() != iq.Real)
 	c.shift.Store(math.Float64bits(eng.ShiftHz()))
 	form := "audio"

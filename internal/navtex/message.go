@@ -27,17 +27,25 @@ const maxBuf = 64 << 10
 // SplitHeader splits the text that follows ZCZC into the B1 station letter, the B2 subject letter, the B3B4 serial
 // number and the rest of the text. Short or damaged headers give empty fields.
 func SplitHeader(raw string) (station, subject, serial, body string) {
-	raw = strings.TrimLeft(raw, " \t\r\n")
-	id := raw
-	if i := strings.IndexAny(raw, " \t\r\n"); i >= 0 && i <= 4 {
-		id, body = raw[:i], raw[i:]
-	} else if len(raw) > 4 {
-		id, body = raw[:4], raw[4:]
-	} else {
-		id = raw
+	rs := []rune(strings.TrimLeft(raw, " \t\r\n")) // runes, so that a header with non-ASCII letters is never cut in the middle of one
+	n := len(rs)
+	for i, r := range rs {
+		if i > 4 {
+			break
+		}
+		if r == ' ' || r == '\t' || r == '\r' || r == '\n' {
+			n = i
+			break
+		}
 	}
-	pad := id + "    "
-	return strings.TrimSpace(pad[0:1]), strings.TrimSpace(pad[1:2]), strings.TrimSpace(pad[2:4]), body
+	if n > 4 {
+		n = 4
+	}
+	id, body := rs[:n], string(rs[n:])
+	for len(id) < 4 {
+		id = append(id[:len(id):len(id)], ' ')
+	}
+	return strings.TrimSpace(string(id[0:1])), strings.TrimSpace(string(id[1:2])), strings.TrimSpace(string(id[2:4])), body
 }
 
 func build(raw string, complete bool) Message {

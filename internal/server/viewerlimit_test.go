@@ -199,3 +199,21 @@ func TestViewerLimitsApply(t *testing.T) {
 		}
 	}
 }
+
+func TestClientAddrIgnoresJunkHeaders(t *testing.T) {
+	r := httptest.NewRequest("GET", "/", nil)
+	r.RemoteAddr = "192.0.2.7:5555"
+	r.Header.Set("X-Real-Ip", "1.2.3.4/../../x?\nforged line")
+	r.Header.Set("X-Forwarded-For", "not an address, 5.6.7.8")
+	if ip, proxied := clientAddr(r); ip != "192.0.2.7" || proxied {
+		t.Errorf("junk headers were taken: %q %v", ip, proxied)
+	}
+	r.Header.Set("Cf-Connecting-Ip", "2001:db8::1")
+	if ip, proxied := clientAddr(r); ip != "2001:db8::1" || !proxied {
+		t.Errorf("%q %v", ip, proxied)
+	}
+	g := newPlacer()
+	if g.lookup(context.Background(), "10.0.0.1") != "" || g.lookup(context.Background(), "x/../y") != "" {
+		t.Error("lookup of a local or invalid address")
+	}
+}

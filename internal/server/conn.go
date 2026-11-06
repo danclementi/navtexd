@@ -20,18 +20,28 @@ import (
 // the peer address. proxied says that a proxy header was used (the value is then only as trustworthy as the proxy).
 func clientAddr(r *http.Request) (ip string, proxied bool) {
 	for _, h := range []string{"Cf-Connecting-Ip", "True-Client-Ip", "X-Real-Ip"} {
-		if v := strings.TrimSpace(r.Header.Get(h)); v != "" {
+		if v, ok := headerIP(r.Header.Get(h)); ok {
 			return v, true
 		}
 	}
-	if v := r.Header.Get("X-Forwarded-For"); v != "" {
-		return strings.TrimSpace(strings.Split(v, ",")[0]), true
+	if v, ok := headerIP(strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0]); ok {
+		return v, true
 	}
 	h, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr, false
 	}
 	return h, false
+}
+
+// headerIP takes the address from a proxy header: only a real IP address counts (the header can be written by anyone who
+// reaches the server, and its text ends up in the console and in a URL).
+func headerIP(v string) (string, bool) {
+	a, err := netip.ParseAddr(strings.TrimSpace(v))
+	if err != nil {
+		return "", false
+	}
+	return a.Unmap().String(), true
 }
 
 func isLocalAddr(ip string) bool {
@@ -114,6 +124,9 @@ func firstNonEmpty(v ...string) string {
 	return ""
 }
 
+// maxPlaceCache bounds the places remembered (the addresses come from outside).
+const maxPlaceCache = 2048
+
 // placer looks places up for the console messages and remembers them.
 type placer struct {
 	mu    sync.Mutex
@@ -127,6 +140,9 @@ func newPlacer() *placer {
 
 // lookup asks ipwho.is for the place of a public address; "" if it cannot be found.
 func (g *placer) lookup(ctx context.Context, ip string) string {
+	if a, err := netip.ParseAddr(ip); err != nil || isLocalAddr(ip) || !a.IsValid() {
+		return "" // not an address, or not a public one
+	}
 	g.mu.Lock()
 	v, ok := g.cache[ip]
 	g.mu.Unlock()
@@ -154,6 +170,9 @@ func (g *placer) lookup(ctx context.Context, ip string) string {
 	}
 	v = placeText(j.City, j.Region, firstNonEmpty(j.Country, j.CountryCode))
 	g.mu.Lock()
+	if len(g.cache) >= maxPlaceCache {
+		clear(g.cache)
+	}
 	g.cache[ip] = v
 	g.mu.Unlock()
 	return v

@@ -69,6 +69,8 @@ func (t *Tap) Publish(ctx context.Context, b []complex64, block bool) {
 			select {
 			case s.ch <- cp:
 			case <-s.done:
+			case <-t.done:
+				return
 			case <-ctx.Done():
 				return
 			}
@@ -90,10 +92,7 @@ func (t *Tap) Close() {
 		return
 	}
 	t.closed = true
-	close(t.done)
-	for s := range t.subs {
-		close(s.ch)
-	}
+	close(t.done) // (the subscribers' channels are not closed: Publish may be sending on them; Read stops at done)
 	t.subs = map[*Sub]struct{}{}
 	t.mu.Unlock()
 }
@@ -130,13 +129,17 @@ func (s *Sub) Read(dst []complex64) (int, error) {
 	}
 	for len(s.cur) == 0 {
 		select {
-		case b, ok := <-s.ch:
-			if !ok {
-				return 0, io.EOF
-			}
+		case b := <-s.ch:
 			s.cur = b
 		case <-s.done:
 			return 0, io.EOF
+		case <-s.t.done: // the input has ended: what is already queued is still read
+			select {
+			case b := <-s.ch:
+				s.cur = b
+			default:
+				return 0, io.EOF
+			}
 		}
 	}
 	n := copy(dst, s.cur)

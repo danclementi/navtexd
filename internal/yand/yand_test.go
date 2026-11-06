@@ -286,3 +286,22 @@ func TestReadReport(t *testing.T) {
 		t.Fatal("a file that is not a report was read")
 	}
 }
+
+func TestReportSizeLimits(t *testing.T) {
+	defer func(a, b, c int) { maxReportRecords, maxReportLines, maxReportLinesPerRec = a, b, c }(maxReportRecords, maxReportLines, maxReportLinesPerRec)
+	if _, err := ReadReport(strings.NewReader(sampleReport)); err != nil {
+		t.Fatal(err)
+	}
+	maxReportRecords = 1
+	if _, err := ReadReport(strings.NewReader(sampleReport)); err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Errorf("record limit: %v", err)
+	}
+	maxReportRecords, maxReportLines = 200_000, 3
+	if _, err := ReadReport(strings.NewReader(sampleReport)); err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Errorf("line limit: %v", err)
+	}
+	maxReportLines, maxReportLinesPerRec = 4_000_000, 2
+	if _, err := ReadReport(strings.NewReader(sampleReport)); err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Errorf("lines per record limit: %v", err)
+	}
+}

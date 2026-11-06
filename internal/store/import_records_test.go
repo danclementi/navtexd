@@ -43,3 +43,31 @@ func TestImportRecords(t *testing.T) {
 		t.Fatal("nothing to import was accepted")
 	}
 }
+
+func TestImportReplaceNeverReusesNumbers(t *testing.T) {
+	st, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	at := time.Date(2026, 10, 3, 5, 0, 0, 0, time.UTC)
+	mk := func(text string) *Record {
+		return &Record{Channel: 490000, Kind: "message", Received: at, End: at, Lines: []Line{{Time: at, Text: text}}}
+	}
+	if _, err := st.ImportRecords([]*Record{mk("A"), mk("B")}, false); err != nil {
+		t.Fatal(err)
+	}
+	a, b := mk("X"), mk("Y")
+	a.ID, b.ID = 1, 2 // numbers the log used before, now for other records
+	if _, err := st.ImportRecords([]*Record{a, b}, true); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []int64{1, 2} {
+		if _, ok := st.Get(id); ok {
+			t.Errorf("number %d came back for another record", id)
+		}
+	}
+	if got, ok := st.Get(3); !ok || got.Lines[0].Text != "X" || got.Version != 1 {
+		t.Errorf("record 3: %+v %v", got, ok)
+	}
+}

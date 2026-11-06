@@ -3,6 +3,7 @@ package navtex
 import (
 	"reflect"
 	"testing"
+	"unicode/utf8"
 )
 
 func feedAll(chunks ...string) []Message {
@@ -43,5 +44,25 @@ func TestParser(t *testing.T) {
 	}
 	if got := feedAll("ZCZC AB12\n"); len(got) != 1 || got[0].ID() != "AB12" || got[0].Body != "" || got[0].Complete {
 		t.Errorf("header-only message at end of stream: %+v", got)
+	}
+}
+
+func TestSplitHeaderNonASCII(t *testing.T) {
+	for _, raw := range []string{"Ä1Ö7 text", "AÄ7ÖX", "ÄÖÜ", "é", "\xff\xfeAB text"} {
+		st, sj, sr, body := SplitHeader(raw)
+		for _, f := range []string{st, sj, sr, body} {
+			if !utf8.ValidString(f) {
+				t.Errorf("%q: invalid UTF-8 in %q", raw, f)
+			}
+		}
+	}
+	if st, sj, sr, body := SplitHeader(" EA78 BODY"); st != "E" || sj != "A" || sr != "78" || body != " BODY" {
+		t.Errorf("ordinary header: %q %q %q %q", st, sj, sr, body)
+	}
+	if st, sj, sr, body := SplitHeader("EA78BODY"); st != "E" || sj != "A" || sr != "78" || body != "BODY" {
+		t.Errorf("no space: %q %q %q %q", st, sj, sr, body)
+	}
+	if st, sj, sr, _ := SplitHeader("E"); st != "E" || sj != "" || sr != "" {
+		t.Errorf("short: %q %q %q", st, sj, sr)
 	}
 }

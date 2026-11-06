@@ -53,3 +53,25 @@ func TestTapFanOut(t *testing.T) {
 		t.Error("subscribing to a closed tap should fail")
 	}
 }
+
+func TestTapCloseWhilePublishing(t *testing.T) {
+	for round := 0; round < 50; round++ {
+		tap := NewTap(&Opened{Source: stub{}, Close: func() error { return nil }})
+		a, _ := Shared(tap, "channel 1", 490000)
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			for i := 0; i < 1000; i++ {
+				tap.Publish(context.Background(), make([]complex64, 10), i%2 == 0) // must not panic when Close comes in between
+			}
+		}()
+		tap.Close()
+		<-done
+		buf := make([]complex64, 64)
+		for { // whatever was queued is read, then EOF
+			if _, err := a.Read(buf); err == io.EOF {
+				break
+			}
+		}
+	}
+}

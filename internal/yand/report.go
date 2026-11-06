@@ -22,9 +22,18 @@ var (
 	zczc     = regexp.MustCompile(`^ZCZC +([A-Z])([A-Z])(\d\d)\s*$`)
 )
 
+// Limits on what one report may hold, so that a huge or crafted file cannot use all the memory (a normal report has a few
+// thousand messages of some dozens of lines).
+var (
+	maxReportRecords     = 200_000
+	maxReportLines       = 4_000_000
+	maxReportLinesPerRec = 20_000
+)
+
 // ReadReport reads the messages of a YaND reception report.
 func ReadReport(r io.Reader) ([]store.Record, error) {
 	var recs []store.Record
+	totalLines := 0
 	var cur *store.Record
 	var hdrTime time.Time
 	flush := func() {
@@ -52,9 +61,13 @@ func ReadReport(r io.Reader) ([]store.Record, error) {
 		}
 		cur = nil
 	}
+	tooMany := func() bool { return len(recs) > maxReportRecords }
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 1<<20), 64<<20)
 	for sc.Scan() {
+		if tooMany() {
+			return nil, errors.New("the report is too large (too many messages)")
+		}
 		ln := strings.TrimRight(sc.Text(), "\r")
 		if m := reportHead.FindStringSubmatch(ln); m != nil {
 			flush()
@@ -94,6 +107,9 @@ func ReadReport(r io.Reader) ([]store.Record, error) {
 			continue
 		}
 		if ls := parseLines(ln); len(ls) == 1 && lineRe.MatchString(ln) {
+			if totalLines++; totalLines > maxReportLines || len(cur.Lines) >= maxReportLinesPerRec {
+				return nil, errors.New("the report is too large (too many text lines)")
+			}
 			cur.Lines = append(cur.Lines, ls[0])
 		} else if strings.TrimSpace(ln) == "---" {
 			flush()

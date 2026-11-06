@@ -51,6 +51,17 @@ const TargetRateHz = 250000
 
 var retryEvery = 5 * time.Second
 
+// seqGap compares the sequence number of a block with that of the block before it: how many blocks are missing in
+// between, or back = true when the number went back (or repeated), which is a restarted count and no loss. The count
+// wraps at 2^32, which is not a gap.
+func seqGap(last, seq uint32) (lost uint32, back bool) {
+	d := seq - last - 1 // 0 for the next block
+	if d >= 1<<31 {
+		return 0, true
+	}
+	return d, false
+}
+
 // silenceLimit is how long the connection may stay silent before it is taken as lost (the stream never pauses).
 var silenceLimit = 10 * time.Second
 
@@ -371,11 +382,16 @@ func (s *Source) reader(c net.Conn, br *bufio.Reader) {
 				s.finish(centreErr(float64(sy.iqCentre), lo))
 			}
 		case msgUint8IQ, msgInt16IQ, msgFloatIQ:
-			if have && seq != last+1 {
-				s.lost += seq - last - 1
+			if lost, back := seqGap(last, seq); have && (lost > 0 || back) {
+				s.lost += lost
 				if time.Since(s.lastL) > 10*time.Second {
 					s.lastL = time.Now()
-					s.say("warn", fmt.Sprintf("SpyServer input: %d blocks of samples were lost on the way (sequence gap)", s.lost))
+					if back {
+						s.say("warn", "SpyServer input: the block sequence number went back (the server restarted its count)")
+					}
+					if s.lost > 0 {
+						s.say("warn", fmt.Sprintf("SpyServer input: %d blocks of samples were lost on the way (sequence gap)", s.lost))
+					}
 					s.lost = 0
 				}
 			}

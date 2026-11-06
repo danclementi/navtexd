@@ -359,3 +359,17 @@ func TestServerClosesAndReturnsOnce(t *testing.T) {
 	}
 	readN(t, s, 5000)
 }
+
+func TestSeqGap(t *testing.T) {
+	for _, c := range []struct {
+		last, seq, lost uint32
+		back            bool
+	}{
+		{10, 11, 0, false}, {10, 16, 5, false}, {0xFFFFFFFF, 0, 0, false}, {0xFFFFFFFE, 1, 2, false},
+		{100, 5, 0, true}, {100, 100, 0, true}, {100, 0, 0, true},
+	} {
+		if l, b := seqGap(c.last, c.seq); l != c.lost || b != c.back {
+			t.Errorf("seqGap(%d,%d) = %d,%v; want %d,%v", c.last, c.seq, l, b, c.lost, c.back)
+		}
+	}
+}
