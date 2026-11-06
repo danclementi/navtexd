@@ -118,17 +118,36 @@ func (c *Conn) writeFrame(op byte, p []byte) error {
 	return err
 }
 
+// ErrProtocol is wrapped by the errors Read returns for a server that broke the protocol (RFC 6455).
+var ErrProtocol = errors.New("websocket: protocol error")
+
+// fail sends a close frame (status 1002, protocol error) and returns the error.
+func (c *Conn) fail(format string, a ...any) error {
+	c.writeFrame(0x8, []byte{0x03, 0xEA})
+	return fmt.Errorf("%w: %s", ErrProtocol, fmt.Sprintf(format, a...))
+}
+
 // Read returns the next text or binary message. Pings are answered and pongs ignored. The returned slice is the caller's.
+// A server that breaks the protocol (RFC 6455 section 5) makes Read fail and close the connection: reserved bits set, a
+// masked frame, a control frame that is fragmented or longer than 125 bytes, a continuation with nothing to continue, or a
+// new message in the middle of a fragmented one.
 func (c *Conn) Read() (typ int, msg []byte, err error) {
 	var buf []byte
 	first := 0
+	open := false // a fragmented message is in progress
 	for {
 		var h [2]byte
 		if _, err = io.ReadFull(c.br, h[:]); err != nil {
 			return 0, nil, err
 		}
 		fin, op := h[0]&0x80 != 0, int(h[0]&0x0f)
+		if h[0]&0x70 != 0 {
+			return 0, nil, c.fail("reserved bits set")
+		}
 		masked := h[1]&0x80 != 0
+		if masked {
+			return 0, nil, c.fail("a frame from the server is masked")
+		}
 		n := uint64(h[1] & 0x7f)
 		switch n {
 		case 126:
@@ -144,23 +163,15 @@ func (c *Conn) Read() (typ int, msg []byte, err error) {
 			}
 			n = binary.BigEndian.Uint64(b[:])
 		}
+		if op >= 0x8 && (!fin || n > 125) {
+			return 0, nil, c.fail("control frame %d is fragmented or longer than 125 bytes", op)
+		}
 		if n > MaxMessage || uint64(len(buf))+n > MaxMessage {
 			return 0, nil, fmt.Errorf("websocket: message longer than %d bytes", MaxMessage)
-		}
-		var mask [4]byte
-		if masked {
-			if _, err = io.ReadFull(c.br, mask[:]); err != nil {
-				return 0, nil, err
-			}
 		}
 		p := make([]byte, n)
 		if _, err = io.ReadFull(c.br, p); err != nil {
 			return 0, nil, err
-		}
-		if masked {
-			for i := range p {
-				p[i] ^= mask[i&3]
-			}
 		}
 		switch op {
 		case 0x8:
@@ -172,15 +183,22 @@ func (c *Conn) Read() (typ int, msg []byte, err error) {
 		case 0xA:
 			continue
 		case 0x1, 0x2:
+			if open {
+				return 0, nil, c.fail("a new message began inside a fragmented one")
+			}
 			first = op
 			buf = p
 		case 0x0:
+			if !open {
+				return 0, nil, c.fail("continuation frame without a message to continue")
+			}
 			buf = append(buf, p...)
 		default:
-			return 0, nil, fmt.Errorf("websocket: unknown frame type %d", op)
+			return 0, nil, c.fail("unknown frame type %d", op)
 		}
 		if fin {
 			return first, buf, nil
 		}
+		open = true
 	}
 }

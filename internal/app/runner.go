@@ -66,14 +66,15 @@ type State struct {
 
 // chain is the running part of one decoding channel: its source, engine and the things the server asks of them.
 type chain struct {
-	idx   int
-	scope atomic.Pointer[engine.Scope]
-	ring  atomic.Pointer[clip.Ring]
-	carr  atomic.Uint64              // last carrier position (audio Hz, float64 bits), for the clip description
-	rate  atomic.Uint64              // sample rate of the running source (float64 bits; 0 = not running)
-	shift atomic.Uint64              // center of the running engine's receiver window (float64 bits)
-	isIQ  atomic.Bool                // the running source delivers I/Q (not real audio)
-	tap   atomic.Pointer[source.Tap] // set while other channels take this channel's input
+	idx    int
+	scope  atomic.Pointer[engine.Scope]
+	ring   atomic.Pointer[clip.Ring]
+	carr   atomic.Uint64              // last carrier position (audio Hz, float64 bits), for the clip description
+	rate   atomic.Uint64              // sample rate of the running source (float64 bits; 0 = not running)
+	shift  atomic.Uint64              // center of the running engine's receiver window (float64 bits)
+	isIQ   atomic.Bool                // the running source delivers I/Q (not real audio)
+	tap    atomic.Pointer[source.Tap] // set while other channels take this channel's input
+	panics atomic.Int64               // how many times the channel stopped on an internal error (see ownerRestarted)
 
 	// guarded by Runner.mu
 	state State
@@ -225,8 +226,24 @@ func (r *Runner) startChain(i int) {
 	go func() {
 		defer close(done)
 		for {
-			if !r.runGuarded(ctx, c, r.ChanConfig(i), cmds) {
-				return
+			cfg := r.ChanConfig(i)
+			owner, seen := cfg.Input.SharedFrom-1, int64(0) // a channel that takes the input of another one (owner >= 0)
+			if owner >= 0 {
+				seen = r.chains[owner].panics.Load()
+			}
+			if !r.runGuarded(ctx, c, cfg, cmds) {
+				if owner < 0 || !r.ownerRestarted(ctx, owner, seen) {
+					return
+				}
+				// the channel that owns the input stopped on an internal error and starts again: so do we, or we would stay
+				// stopped for good
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(3 * time.Second):
+				}
+				r.logc(i, "warn", fmt.Sprintf("restarting the channel: channel %d, whose input it uses, restarted after an internal error", owner+1))
+				continue
 			}
 			// the decoder hit an internal error: it was logged; start the channel again after a pause
 			select {
@@ -245,6 +262,7 @@ func (r *Runner) runGuarded(ctx context.Context, c *chain, cfg config.Config, cm
 	defer func() {
 		if v := recover(); v != nil {
 			panicked = true
+			c.panics.Add(1)
 			stack := string(debug.Stack())
 			if lines := strings.Split(stack, "\n"); len(lines) > 14 {
 				stack = strings.Join(lines[5:14], " | ")
@@ -256,6 +274,22 @@ func (r *Runner) runGuarded(ctx context.Context, c *chain, cfg config.Config, cm
 	}()
 	r.run(ctx, c, cfg, cmds)
 	return false
+}
+
+// ownerRestarted tells whether the channel that owns a shared input stopped on an internal error (it then starts again by itself)
+// just before; seen is the owner's count of such errors when the run of the channel that shares the input began. The owner's
+// input ends while it is still unwinding from the error, so the count may rise a moment after we noticed the end: wait a little.
+func (r *Runner) ownerRestarted(ctx context.Context, owner int, seen int64) bool {
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for {
+		if r.chains[owner].panics.Load() != seen {
+			return true
+		}
+		if ctx.Err() != nil || time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 // Stop ends all decoding and waits for it to finish.

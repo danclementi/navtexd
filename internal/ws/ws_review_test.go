@@ -5,6 +5,7 @@ package ws
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net"
 	"testing"
@@ -96,5 +97,30 @@ func TestReview_MaskedServerFrameAccepted(t *testing.T) {
 	defer c.Close()
 	if _, p, err := c.Read(); err == nil {
 		t.Fatalf("masked server frame accepted: %q", p)
+	}
+}
+
+// A fragmented message may have a ping between its fragments (RFC 6455 5.4), and reserved bits must fail the connection.
+func TestReview_FragmentsWithPingAndReservedBits(t *testing.T) {
+	addr := serve(t, func(c net.Conn) {
+		c.Write(frame(0x1, false, []byte("AAA")))
+		c.Write(frame(0x9, true, []byte("p")))
+		c.Write(frame(0x0, true, []byte("BBB")))
+		bad := frame(0x1, true, []byte("x"))
+		bad[0] |= 0x40 // RSV1
+		c.Write(bad)
+		time.Sleep(300 * time.Millisecond)
+	})
+	c, err := Dial(context.Background(), addr, "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	typ, p, err := c.Read()
+	if err != nil || typ != Text || string(p) != "AAABBB" {
+		t.Fatalf("fragments with a ping between: %d %q %v", typ, p, err)
+	}
+	if _, _, err := c.Read(); !errors.Is(err, ErrProtocol) {
+		t.Fatalf("reserved bit: %v, want a protocol error", err)
 	}
 }

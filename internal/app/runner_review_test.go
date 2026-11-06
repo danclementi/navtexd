@@ -147,3 +147,44 @@ func TestReview_ConcurrentRestartLeavesWrongState(t *testing.T) {
 		}
 	}
 }
+
+// Finding (suspected in the report): when the channel that owns a shared input stops on an internal error it starts again by
+// itself after 3 s, but a channel that shares its input saw the end of the input, finished normally and stayed stopped.
+// A panic is provoked on the owner (through a command, which runs in its decoding goroutine).
+func TestReview_SharedChannelRestartsWithItsOwner(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	cfg := config.Default()
+	cfg.Input.Source = "file"
+	cfg.Input.File.Path = reviewWAV(t, dir, 120)
+	cfg.Input.File.Realtime = true
+	cfg.Extra[0].Enabled = true
+	cfg.EditChannel(1, func(c *config.Config) {
+		c.Input.Source = "file"
+		c.Input.SharedFrom = 1
+		c.Channel.FrequencyHz = 518000
+	})
+	r := New(dir, cfg, st, Hooks{})
+	r.Start()
+	defer r.Stop()
+	waitRunning := func(since time.Time, what string) {
+		t.Helper()
+		deadline := time.Now().Add(20 * time.Second)
+		for time.Now().Before(deadline) {
+			a, b := r.State(0), r.State(1)
+			if a.Running && b.Running && a.Since.After(since) && b.Since.After(since) {
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		t.Fatalf("%s: channel 1 %+v, channel 2 %+v", what, r.State(0), r.State(1))
+	}
+	waitRunning(time.Time{}, "start")
+	panicAt := time.Now()
+	r.Do(0, func(e *engine.Engine) { panic("provoked by the test") })
+	waitRunning(panicAt, "after the owner's internal error both channels should run again")
+}

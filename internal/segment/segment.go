@@ -73,10 +73,11 @@ type Config struct {
 	FragWordsCorrect bool    `json:"fragment_words_after_autocorrect" doc:"Count the words after autocorrection, so that words repaired from the vocabulary count; off = count the received text as it is"`
 	IdleCloseS       float64 `json:"idle_close_s" unit:"s" doc:"A message or fragment with no new character for this long is closed"`
 	MaxLineChars     int     `json:"max_line_chars" unit:"characters" doc:"Force a line break after this many characters without one"`
+	MaxRecordS       float64 `json:"max_record_s" unit:"s" doc:"A message or fragment is closed when it has lasted this long, even if text keeps arriving (text that never pauses, such as another kind of signal or interference that decodes as characters, would otherwise make one endless record). The text that follows starts a new record. 0 = no limit"`
 }
 
 func DefaultConfig() Config {
-	return Config{MinFragmentChars: 16, FragWordLetters: 4, FragVocab: "auto", FragWordsCorrect: true, IdleCloseS: 60, MaxLineChars: 200}
+	return Config{MinFragmentChars: 16, FragWordLetters: 4, FragVocab: "auto", FragWordsCorrect: true, IdleCloseS: 60, MaxLineChars: 200, MaxRecordS: 900}
 }
 
 // Segmenter builds records from text chunks. quality(a, b) returns the signal quality between two stream times.
@@ -129,6 +130,11 @@ func (s *Segmenter) Feed(text string, t float64) {
 			if r == ' ' {
 				continue
 			}
+			s.cur = &Record{Kind: Fragment, StartS: t}
+		}
+		if s.cfg.MaxRecordS > 0 && t-s.cur.StartS >= s.cfg.MaxRecordS { // never a pause: close this record, go on in a new one
+			s.endLine(s.lastS)
+			s.close(s.lastS, false)
 			s.cur = &Record{Kind: Fragment, StartS: t}
 		}
 		s.buf = append(s.buf, r)

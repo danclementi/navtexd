@@ -92,3 +92,39 @@ func TestReview_SegmenterUnboundedRecord(t *testing.T) {
 		t.Fatalf("one record for %.0f minutes of uninterrupted text (%d lines): records have no upper bound", tm/60, len(got[0].Lines))
 	}
 }
+
+// The limit is a time (Config.MaxRecordS), not a number of characters: a long record of ordinary speed is kept whole, and
+// 0 switches the limit off.
+func TestReview_SegmenterRecordTimeLimit(t *testing.T) {
+	feed := func(cfg Config, minutes float64) []Record {
+		var got []Record
+		s := New(cfg, nil, func(r Record) { got = append(got, r) })
+		tm := 0.0
+		for tm < minutes*60 {
+			s.Feed("ABCD ", tm)
+			tm += 0.7
+		}
+		s.Flush(tm)
+		return got
+	}
+	cfg := DefaultConfig()
+	if cfg.MaxRecordS != 900 {
+		t.Fatalf("default limit %v s, want 900", cfg.MaxRecordS)
+	}
+	if got := feed(cfg, 14); len(got) != 1 {
+		t.Fatalf("14 minutes of text made %d records, want 1", len(got))
+	}
+	got := feed(cfg, 50)
+	if len(got) < 3 || len(got) > 4 {
+		t.Fatalf("50 minutes of text made %d records, want 3 or 4 (15 minutes each)", len(got))
+	}
+	for i, r := range got {
+		if r.EndS-r.StartS > 905 {
+			t.Fatalf("record %d lasts %.0f s", i, r.EndS-r.StartS)
+		}
+	}
+	cfg.MaxRecordS = 0
+	if got := feed(cfg, 50); len(got) != 1 {
+		t.Fatalf("limit off: %d records, want 1", len(got))
+	}
+}
