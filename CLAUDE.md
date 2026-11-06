@@ -12,8 +12,10 @@ server and a multi-client browser UI, comparable to YaND. Public GPL v3 project.
 3. Never block the audio callback; copy to a ring buffer and drain in a worker.
 4. Raw received text is never altered. Corrections are stored separately.
 5. All displayed and stored times are UTC.
-6. The operator position exists only in server settings. Viewers never see distance, bearing or sun data unless
-   `operator.public_location_info` is set.
+6. The operator position exists only in server settings. Viewers never see the position itself, and see distance, bearing
+   or sun data only if `operator.public_location_info` is set. The identification scores that viewers see include a distance
+   term, so a viewer could work out a rough distance to a station from them; this is accepted (operators commonly publish
+   their logs with distances).
 7. Keep the YaND station-file format (`YAND_STATIONS.txt`) exactly.
 8. Never commit executables, user data (`data/`, `navtex-data/`, settings, messages) or recordings.
 9. Deviations from the standard algorithms go in `docs/DEVIATIONS.md` with the reason.

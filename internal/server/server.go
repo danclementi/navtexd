@@ -43,6 +43,7 @@ type Server struct {
 	OnListen func(wanted, actual string)
 
 	st     *store.Store
+	logins loginLimiter // wrong access tokens from clients that are not on the local network
 	cat    *catalog.Catalog
 	run    *app.Runner
 	hub    *Hub
@@ -963,10 +964,31 @@ func (s *Server) login(tunnel bool) http.HandlerFunc {
 			fail(w, 400, err)
 			return
 		}
+		// Clients on the local network are not limited (a mistyped token costs nothing there); everybody else is.
+		id := s.acc.Classify(r, tunnel)
+		local := !tunnel && (id.Role == Admin || id.NeedToken)
+		key := loginKey(r)
+		if !local {
+			if blocked, wait := s.logins.blocked(key); blocked {
+				w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
+				fail(w, http.StatusTooManyRequests, fmt.Errorf("%s: try again in %d minutes", loginBlockMsg, int(wait.Minutes())+1))
+				return
+			}
+		}
 		tok := s.run.Config().Server.Token
 		if tok == "" || !tokenOK(&http.Request{Header: http.Header{"X-Navtex-Token": {body.Token}}}, tok) {
+			if !local {
+				if locked, global := s.logins.failed(key); global {
+					s.run.Log("warn", "access token: many wrong tokens from remote clients; remote logins are refused for a while")
+				} else if locked {
+					s.run.Log("warn", "access token: too many wrong tokens from "+key+"; that client is refused for a while")
+				}
+			}
 			fail(w, 403, errors.New("wrong token"))
 			return
+		}
+		if !local {
+			s.logins.ok(key)
 		}
 		http.SetCookie(w, &http.Cookie{Name: "navtex_token", Value: body.Token, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode,
 			Secure: r.TLS != nil, MaxAge: 90 * 24 * 3600})
