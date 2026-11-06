@@ -365,3 +365,29 @@ func TestViewOffsetMovesOnlyTheView(t *testing.T) {
 		t.Fatalf("after Reconfigure: window %v view %v, want 14000 and 13600", e.ShiftHz(), e.ViewHz())
 	}
 }
+
+// A manual carrier that is far from the receiver window (the default 1000 Hz of a channel whose carrier is elsewhere in
+// a shared stream) must not put the filter off the signal: the window centre is used.
+func TestManualCarrierOutsideWindowUsesCentre(t *testing.T) {
+	src := open(t, "usb_real", 514000) // the carrier is expected at 4000 Hz
+	var r result
+	c := cfg518()
+	c.Input.Device.Autotune = false
+	c.Input.Device.ManualCarrierHz = 1000
+	e := newEngine(t, src, c, &r)
+	if got := e.CarrierAudioHz(); math.Abs(got-4000) > 1 {
+		t.Errorf("carrier at %.0f Hz, want the window centre 4000", got)
+	}
+	found := false
+	for _, s := range r.status {
+		found = found || strings.Contains(s, "too far from the receiver window")
+	}
+	if !found {
+		t.Error("no notice")
+	}
+	c.Input.Device.ManualCarrierHz = 4500 // within reach: kept
+	e2 := newEngine(t, open(t, "usb_real", 514000), c, &result{})
+	if got := e2.CarrierAudioHz(); math.Abs(got-4500) > 1 {
+		t.Errorf("carrier at %.0f Hz, want 4500", got)
+	}
+}

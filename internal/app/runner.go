@@ -413,6 +413,7 @@ func (r *Runner) Modify(change func(*config.Config) error) (restart bool, err er
 	r.mu.Lock()
 	next := r.cfg
 	if err = change(&next); err == nil {
+		config.SyncSharedCarriers(r.cfg, &next) // (a manual carrier follows its channel's nominal position in a shared stream)
 		err = next.Validate()
 	}
 	if err != nil {
@@ -465,8 +466,17 @@ func (r *Runner) SetUnshiftOnSpace(ch int, on bool) error {
 }
 
 func (r *Runner) SetAutotune(ch int, on bool) error {
+	var held float64 // switching to manual keeps the carrier where it is now, not where an old manual setting was
+	haveHeld := !on && r.Do(ch, func(e *engine.Engine) { held = e.CarrierAudioHz() })
 	_, err := r.Modify(func(c *config.Config) error {
-		c.EditChannel(ch, func(d *config.Config) { t := d.Tuning(); t.Autotune = on; d.SetTuning(t) })
+		c.EditChannel(ch, func(d *config.Config) {
+			t := d.Tuning()
+			t.Autotune = on
+			if haveHeld {
+				t.ManualCarrierHz = math.Round(held*10) / 10
+			}
+			d.SetTuning(t)
+		})
 		return nil
 	})
 	return err

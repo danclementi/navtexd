@@ -180,11 +180,25 @@ func New(fs, centreHz float64, kind iq.Kind, cfg config.Config, h Handlers) (*En
 	e.spec = newSpec(fs, kind, e.viewCentre(cfg.Channel.ViewOffset), cfg.Meters)
 	e.chs = newChanSpec(e.front.OutputRate(), e.spec.step, e.spec.n, cfg.Meters.SpectrumSmooth)
 	if !cfg.Autotune() {
+		manual := cfg.ManualCarrierHz()
+		if math.Abs(manual-shift) > CarrierReachHz { // a stale value (e.g. the default of 1000 Hz for a channel whose carrier is elsewhere in the stream)
+			if h.Status != nil {
+				h.Status(fmt.Sprintf("manual carrier %.0f Hz is too far from the receiver window (centre %.0f Hz): using the window centre", manual, shift))
+			}
+			manual = shift
+		}
 		e.rx.SetAutotune(false)
-		e.rx.SetCarrier(cfg.ManualCarrierHz() - shift)
+		e.rx.SetCarrier(manual - shift)
 	}
 	return e, nil
 }
+
+// CarrierReachHz is how far from the centre of the receiver window the carrier can be (the receiver's baseband is about
+// +-1800 Hz wide).
+const CarrierReachHz = 1800.0
+
+// CarrierAudioHz is where the receiver has the carrier now (the frequency on the spectrum's axis).
+func (e *Engine) CarrierAudioHz() float64 { return e.shift + e.rx.F0() }
 
 // viewCentre is the centre of the spectrum slice: the window centre moved by the view offset, kept inside the band.
 func (e *Engine) viewCentre(off float64) float64 {

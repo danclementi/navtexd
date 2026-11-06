@@ -4,6 +4,7 @@ package app
 
 import (
 	"encoding/binary"
+	"math"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -250,5 +251,64 @@ func TestReview_DoReportsWhetherTheCommandRan(t *testing.T) {
 	r.Stop()
 	if r.Do(0, func(*engine.Engine) { t.Error("ran after the channel stopped") }) {
 		t.Fatal("Do reported success after the channel stopped")
+	}
+}
+
+func TestReview_SwitchingToManualKeepsTheCarrier(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	cfg := config.Default()
+	cfg.Input.Source = "file"
+	cfg.Input.File.Path = reviewWAV(t, dir, 120)
+	cfg.Input.File.Realtime = true
+	cfg.Input.File.ManualCarrierHz = 2500 // an old manual value, far from where the carrier is
+	r := New(dir, cfg, st, Hooks{})
+	r.Start()
+	defer r.Stop()
+	deadline := time.Now().Add(20 * time.Second)
+	for !r.State(0).Running && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	time.Sleep(500 * time.Millisecond)
+	if err := r.SetAutotune(0, false); err != nil {
+		t.Fatal(err)
+	}
+	win, _ := r.WindowCenter(0)
+	got := r.Config().ManualCarrierHz()
+	if got == 2500 || math.Abs(got-win) > 300 {
+		t.Fatalf("manual carrier %.1f Hz after switching to manual; the window is at %.1f Hz", got, win)
+	}
+}
+
+func TestReview_ModifyKeepsSharedManualCarrierNominal(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	cfg := config.Default()
+	cfg.Input.Source = "hpsdr"
+	cfg.Input.HPSDR.LoBelowHz = 3000
+	cfg.Extra[0].Enabled = false
+	r := New(dir, cfg, st, Hooks{})
+	if _, err := r.Modify(func(c *config.Config) error {
+		c.Extra[0].Enabled = true
+		c.EditChannel(1, func(d *config.Config) {
+			d.Channel.FrequencyHz = 490000
+			d.Input.Source = "hpsdr"
+			d.Input.SharedFrom = 1
+		})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	want := 490000 - (r.Config().Channel.FrequencyHz - 3000)
+	if got := r.Config().ForChannel(1).ManualCarrierHz(); got != want {
+		t.Fatalf("manual carrier %v, want %v", got, want)
 	}
 }

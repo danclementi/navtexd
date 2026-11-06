@@ -1132,3 +1132,44 @@ func migrateMirror(b []byte) []byte {
 	}
 	return out
 }
+
+// SharedCarrierHz is where the carrier of channel ch is expected in the stream it takes from another channel: its
+// channel frequency minus the centre of that stream. ok is false when ch does not share an input, or the centre is not
+// known from the configuration (a recording whose centre comes from its file name).
+func (c Config) SharedCarrierHz(ch int) (hz float64, ok bool) {
+	d := c.ForChannel(ch)
+	o := d.Input.SharedFrom - 1
+	if o < 0 || o >= Channels || o == ch || !c.ChannelEnabled(o) {
+		return 0, false
+	}
+	own := c.ForChannel(o)
+	centre := own.LiveCentreHz()
+	if own.Input.Source == "file" {
+		if own.Input.File.CentreHz == 0 {
+			return 0, false
+		}
+		centre = own.Input.File.CentreHz
+	}
+	return d.Channel.FrequencyHz - centre, true
+}
+
+// SyncSharedCarriers sets the manual carrier of every channel that shares an input to the nominal position of its
+// carrier in that stream, when that position is new: the channel has just been set to share, or its channel frequency,
+// or the centre of the stream it uses (the owner's channel frequency or lo_below_hz), has changed. prev is the
+// configuration before the change that produced next.
+func SyncSharedCarriers(prev Config, next *Config) {
+	for ch := 0; ch < Channels; ch++ {
+		hz, ok := next.SharedCarrierHz(ch)
+		if !ok {
+			continue
+		}
+		if was, had := prev.SharedCarrierHz(ch); had && was == hz {
+			continue
+		}
+		next.EditChannel(ch, func(d *Config) {
+			t := d.Tuning()
+			t.ManualCarrierHz = math.Round(hz*10) / 10
+			d.SetTuning(t)
+		})
+	}
+}

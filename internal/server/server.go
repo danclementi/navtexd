@@ -25,6 +25,7 @@ import (
 	"navtex/internal/capture"
 	"navtex/internal/catalog"
 	"navtex/internal/config"
+	"navtex/internal/engine"
 	"navtex/internal/sitor"
 	"navtex/internal/store"
 )
@@ -1139,6 +1140,5 @@ func (s *Server) smoothLevel(ch int, peak, rms float64, t time.Time) (float64, f
 	return math.Pow(10, s.lPeak[ch]/20), math.Pow(10, s.lRMS[ch]/20)
 }
 
-// carrierReachHz: how far from the center of the receiver window a manual carrier may be set (the receiver's baseband
-// is about +-1800 Hz wide).
-const carrierReachHz = 1800.0
+// carrierReachHz: how far from the center of the receiver window a manual carrier may be set.
+const carrierReachHz = engine.CarrierReachHz
