@@ -21,7 +21,8 @@ import (
 // while, and then not even the right token is accepted from it.
 func TestReview_LoginNoRateLimit(t *testing.T) {
 	cfg := config.Default()
-	cfg.Server.Token = "s3cret"
+	cfg.Server.Token = "s3cret-s3cret-s3cret"
+	cfg.Server.RemoteAdmin = true
 	s, _, _, _ := setup(t, cfg)
 	tunnel := httptest.NewServer(s.handler(true))
 	defer tunnel.Close()
@@ -48,7 +49,7 @@ func TestReview_LoginNoRateLimit(t *testing.T) {
 	if refused < 250 {
 		t.Fatalf("only %d of 300 wrong tokens were refused for trying too often", refused)
 	}
-	if c := post("s3cret"); c != 429 {
+	if c := post("s3cret-s3cret-s3cret"); c != 429 {
 		t.Fatalf("the right token after a burst of wrong ones: %d, want 429 (locked out)", c)
 	}
 }

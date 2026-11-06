@@ -1,6 +1,7 @@
 package server
 
 import (
+	"crypto/sha256"
 	"net"
 	"net/http"
 	"strings"
@@ -23,6 +24,8 @@ type loginFails struct {
 	n     int       // wrong tokens since first
 	first time.Time // the first of them
 	until time.Time // refused until this time (zero = not locked)
+	last  [8]byte   // fingerprint of the latest wrong token (see failedToken)
+	seen  bool
 }
 
 // loginLimiter counts wrong tokens per client and in total. Its zero value is ready to use.
@@ -113,4 +116,32 @@ func (l *loginLimiter) ok(key string) {
 	l.mu.Lock()
 	delete(l.by, key)
 	l.mu.Unlock()
+}
+
+// failedToken records a wrong token like failed, except that the same wrong token twice in a row counts once: a browser that
+// still holds the cookie of an old token sends it with every request, which must not lock its owner out. Repeating a guess
+// gets an attacker nothing, so this costs no protection.
+func (l *loginLimiter) failedToken(key, tok string) (locked, global bool) {
+	sum := sha256.Sum256([]byte(tok))
+	var fp [8]byte
+	copy(fp[:], sum[:])
+	l.mu.Lock()
+	if l.by == nil {
+		l.by = map[string]*loginFails{}
+	}
+	if f := l.by[key]; f != nil {
+		if f.seen && f.last == fp {
+			l.mu.Unlock()
+			return false, false
+		}
+		f.last, f.seen = fp, true
+	}
+	l.mu.Unlock()
+	locked, global = l.failed(key)
+	l.mu.Lock()
+	if f := l.by[key]; f != nil {
+		f.last, f.seen = fp, true
+	}
+	l.mu.Unlock()
+	return locked, global
 }

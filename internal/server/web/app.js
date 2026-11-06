@@ -185,14 +185,18 @@
     $("sun").textContent = s ? `Sunrise: ${s.rise} / Sunset: ${s.set}` : "Sunrise: --:-- / Sunset: --:--";
   }
 
-  function showRole(role, needToken) {
+  function showRole(role, needToken, h) {
     state.role = role;
     const admin = role === "admin";
     const r = $("role");
-    r.textContent = admin ? "admin" : "view only";
+    r.textContent = admin ? (h && h.remote ? "admin (remote)" : "admin") : "view only";
     r.className = "pill " + (admin ? "ok" : "");
     document.querySelectorAll("#chlines select, #chlines input, #chlines .b-resync, .specgrp input, .m-lock, .m-sync, #b-clip").forEach((el) => { el.disabled = !admin; });
-    $("login").hidden = !needToken;
+    // a viewer outside the local network may be offered a login (server.remote_admin); an administrator who logged in that way can log out
+    const canLogin = !!(h && h.can_login);
+    $("b-showlogin").hidden = !canLogin;
+    $("b-logout").hidden = !(h && h.remote);
+    $("login").hidden = !(needToken || (canLogin && state.loginOpen));
     if (state.tab === "options") loadOptions(true);
     if (state.tab === "syslog") loadLog();
     renderLines();
@@ -507,7 +511,7 @@
       state.loc = !!h.loc;
       document.body.classList.toggle("noloc", !state.loc);
       document.querySelector("#tabs button[data-tab=ephemeris]").hidden = !state.loc;
-      showRole(h.role, h.need_token);
+      showRole(h.role, h.need_token, h);
       showSun(h.sun);
       const hc = h.chans || [{ controls: h.controls, run: h.run, meters: h.meters, text: h.text, lines: h.lines }];
       hc.forEach((c, i) => {
@@ -615,6 +619,9 @@
     });
   }
   $("b-addchan").onclick = () => { const k = activeList().length, free = []; for (let i = 1; i < N; i++) if (!enabledCh(i)) free.push(i); optPage = "channel" + ((free[0] || 1) + 1); document.querySelector("#tabs button[data-tab=options]").click(); };
+  $("b-showlogin").onclick = () => { state.loginOpen = !state.loginOpen; $("login").hidden = !state.loginOpen; if (state.loginOpen) $("tok").focus(); };
+  $("b-logout").onclick = async () => { try { await api("POST", "/api/logout"); } catch (e) { /* the page is reloaded anyway */ } location.reload(); };
+  $("tok").addEventListener("keydown", (e) => { if (e.key === "Enter") $("b-login").click(); });
   $("b-login").onclick = async () => {
     try { await api("POST", "/api/login", { token: $("tok").value }); location.reload(); } catch (e) { alert(e.message); }
   };
@@ -786,6 +793,16 @@
             const hint = document.createElement("span"); hint.className = "lohint"; doc.append(document.createElement("br"), hint);
             const upd = () => { const v = Number(inp.value); hint.textContent = fq && inp.value !== "" && isFinite(v) ? `Resulting LO: ${((Number(fq.value) - v) / 1000).toFixed(3)} kHz (channel ${(Number(fq.value) / 1000).toFixed(3)} kHz).` : ""; };
             inp.addEventListener("input", upd); upd();
+          }
+          if (f.path === "server.token") { // a long random token for remote administration (server.remote_admin)
+            const gb = document.createElement("button"); gb.type = "button"; gb.textContent = "Generate"; gb.className = "reset";
+            gb.title = "Fill the box with a random token of 24 characters. Save it, then enter it once in each browser that should get full access from outside the local network.";
+            gb.onclick = () => {
+              const abc = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789", a = new Uint32Array(24); crypto.getRandomValues(a);
+              inp.value = Array.from(a, (v) => abc[v % abc.length]).join(""); inp.dispatchEvent(new Event("input"));
+              setMsg("A new token was filled in. Press Save to use it, and note it down: other browsers must enter it once.", 12000);
+            };
+            doc.append(document.createElement("br"), gb);
           }
           if (/(^|\.)input\.hpsdr\.address$/.test(f.path)) { // free a radio that stays "in use" after its program was killed
             const rb = document.createElement("button"); rb.type = "button"; rb.textContent = "Release radio\u2026"; rb.className = "reset";

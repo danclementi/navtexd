@@ -38,6 +38,17 @@ decoder; all records carry the channel frequency. The first milestone runs one c
   they never receive the operator's coordinates (distance and bearing are shown, position is not).
 - State-changing requests also require a matching `Origin`/`Host` (defends against a web page attacking a LAN server) and,
   optionally, a token (`server.token`) for setups behind a proxy where every client looks local.
+- Viewers from outside the local network can be given full access with the access token: `server.remote_admin` (off by default;
+  needs a token of at least 16 characters, which Options can generate). A viewer then sees a "Log in" link; the login sets a
+  30-day cookie (`HttpOnly`, `SameSite=Strict`, `Secure` when the page came in over https, seen from `X-Forwarded-Proto` or
+  `Cf-Visitor`), or the token may be sent in an `X-Navtex-Token` header. Such a session ("admin (remote)", with a Log out link)
+  may not change `server.*` settings, folders, file names or radio addresses, and never sees the token. Wrong tokens, from the
+  login box, a header or a cookie, are counted (`loginlimit.go`): 5 per client in 10 minutes lock that client out for 15 minutes,
+  40 in total lock every remote client out; the same wrong token twice in a row counts once, so a stale cookie after a token
+  change cannot lock its owner out. Clients on the local network are never limited.
+- Viewers are also limited in what they may use up (`viewerlimit.go`): `server.max_viewers` (50) and `server.max_per_viewer`
+  (6) live connections, and `server.viewer_rate` (10) requests per second with a burst of 6 seconds' worth (searches and
+  reports cost 5). The client address is the one Cloudflare reports (`Cf-Connecting-Ip`), else the peer address.
 - Listens on `127.0.0.1` by default; `server.listen` opens it to the LAN. No TLS in the server; use a VPN or reverse proxy for
   remote viewing.
 - Concurrent edits: every editable record carries a version; a stale update is refused and the client reloads (last-writer

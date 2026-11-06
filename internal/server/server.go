@@ -44,6 +44,9 @@ type Server struct {
 
 	st     *store.Store
 	logins loginLimiter // wrong access tokens from clients that are not on the local network
+	conns  connLimiter  // live connections of viewers
+	rate   rateLimiter  // requests of viewers
+	warnAt atomic.Int64 // when the system log was last told about a refused viewer (unix seconds)
 	cat    *catalog.Catalog
 	run    *app.Runner
 	hub    *Hub
@@ -73,6 +76,7 @@ func New(st *store.Store) *Server { return &Server{st: st, hub: NewHub(), places
 func (s *Server) Attach(r *app.Runner, cat *catalog.Catalog) {
 	s.run, s.cat = r, cat
 	s.acc = NewAccess(func() config.Server { return r.Config().Server })
+	s.acc.Limiter = &s.logins
 }
 
 // Hub returns the event hub.
@@ -192,6 +196,8 @@ type chanHello struct {
 type hello struct {
 	Role      string      `json:"role"`
 	NeedToken bool        `json:"need_token"`
+	CanLogin  bool        `json:"can_login"` // a viewer who is not on the local network may log in with the access token (server.remote_admin)
+	Remote    bool        `json:"remote"`    // an administrator who got in with the access token, not from the local network
 	Version   string      `json:"version"`
 	Now       int64       `json:"now"`
 	Run       app.State   `json:"run"`      // the first channel (see Chans)
@@ -218,7 +224,9 @@ func (s *Server) hello(id Identity) hello {
 	for i := range chans {
 		chans[i] = chanHello{Controls: s.controls(i, id.Role == Admin), Run: s.run.State(i), Meters: last[i], Text: s.hub.Recent(i), Lines: s.hub.Lines(i)}
 	}
-	return hello{Role: id.Role.String(), NeedToken: id.NeedToken, Version: Version, Now: time.Now().UnixMilli(), Run: chans[0].Run,
+	set := s.run.Config().Server
+	canLogin := id.Role == Viewer && !id.NeedToken && set.RemoteAdmin && set.Token != ""
+	return hello{Role: id.Role.String(), NeedToken: id.NeedToken, CanLogin: canLogin, Remote: id.Remote, Version: Version, Now: time.Now().UnixMilli(), Run: chans[0].Run,
 		Controls: chans[0].Controls, Meters: last[0], Sun: sun, Text: chans[0].Text, Lines: chans[0].Lines, Chans: chans,
 		Clients: s.hub.Clients(), Net: s.netLast.Load(), Records: s.st.Count(), Loc: s.withDist(id)}
 }
@@ -419,6 +427,7 @@ func (s *Server) handler(tunnel bool) http.Handler {
 	mux.HandleFunc("POST /api/control/{name}", s.admin(tunnel, s.control))
 	mux.HandleFunc("GET /api/syslog", s.admin(tunnel, s.syslog))
 	mux.HandleFunc("POST /api/login", s.login(tunnel))
+	mux.HandleFunc("POST /api/logout", s.logout)
 	s.netOnce.Do(func() { go s.netLoop() })
 	return s.secure(gzipAPI(mux))
 }
@@ -466,7 +475,26 @@ func (s *Server) secure(h http.Handler) http.Handler {
 type handler func(w http.ResponseWriter, r *http.Request, id Identity)
 
 func (s *Server) viewer(tunnel bool, h handler) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) { h(w, r, s.acc.Classify(r, tunnel)) }
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := s.acc.Classify(r, tunnel)
+		if isRemote(id, tunnel) {
+			if ok, wait, first := s.rate.allow(loginKey(r), s.run.Config().Server.ViewerRate, requestCost(r.URL.Path, r.URL.RawQuery)); !ok {
+				if first {
+					s.run.Log("warn", "viewer "+loginKey(r)+" is sending requests too fast; slowing it down")
+				}
+				w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
+				fail(w, http.StatusTooManyRequests, errors.New("too many requests: slow down"))
+				return
+			}
+		}
+		h(w, r, id)
+	}
+}
+
+// isRemote tells a client that is not on the local network (a viewer, usually from the internet) from one that is, whether or
+// not that one has given the access token yet. The limits for viewers apply only to the first.
+func isRemote(id Identity, tunnel bool) bool {
+	return tunnel || !(id.Role == Admin || id.NeedToken)
 }
 
 func (s *Server) admin(tunnel bool, h handler) http.HandlerFunc {
@@ -511,6 +539,20 @@ func readBody(r *http.Request, v any) error {
 func (s *Server) events(tunnel bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := s.acc.Classify(r, tunnel)
+		if isRemote(id, tunnel) {
+			set := s.run.Config().Server
+			release := s.conns.acquire(loginKey(r), set.MaxViewers, set.MaxPerViewer)
+			if release == nil {
+				if now := time.Now().Unix(); now-s.warnAt.Load() >= 60 {
+					s.warnAt.Store(now)
+					s.run.Log("warn", "viewer "+loginKey(r)+" refused: too many live viewer connections (server.max_viewers / max_per_viewer)")
+				}
+				w.Header().Set("Retry-After", "30")
+				fail(w, http.StatusServiceUnavailable, errors.New("too many viewers: try again later"))
+				return
+			}
+			defer release()
+		}
 		rc := http.NewResponseController(w)
 		gap := time.Duration(0)
 		if id.Role != Admin {
@@ -556,6 +598,14 @@ func (s *Server) events(tunnel bool) http.HandlerFunc {
 	}
 }
 
+// localOnlySetting tells the settings that an administrator who logged in from outside the local network may not change: those of
+// the server itself (who may connect, the token) and those that name a folder, a file or a radio's address (the server would be made to connect to it).
+func localOnlySetting(path string) bool {
+	return strings.HasPrefix(path, "server.") || localPathSetting.MatchString(path)
+}
+
+var localPathSetting = regexp.MustCompile(`(^|\.)(dir|path|address|extra_words_file)$`)
+
 // ---- settings and controls (administrators) ----
 
 type fieldMsg struct {
@@ -581,6 +631,9 @@ func applyKind(path string) string {
 func (s *Server) getSettings(w http.ResponseWriter, r *http.Request, id Identity) {
 	var out []fieldMsg
 	for _, f := range config.Fields(s.run.Config()) {
+		if id.Remote && f.Path == "server.token" {
+			f.Value = "(hidden in a remote session)"
+		}
 		out = append(out, fieldMsg{f.Path, f.Kind, f.Value, f.Doc, f.Unit, f.Choices, applyKind(f.Path)})
 	}
 	hist := make([]int, config.Channels)
@@ -601,6 +654,14 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request, id Identity
 	if len(body.Changes) == 0 {
 		fail(w, 400, errors.New("no changes"))
 		return
+	}
+	if id.Remote {
+		for path := range body.Changes {
+			if localOnlySetting(path) {
+				fail(w, 403, errors.New(path+" can only be changed from the local network"))
+				return
+			}
+		}
 	}
 	before := s.run.Config()
 	oldServer := before.Server
@@ -964,21 +1025,26 @@ func (s *Server) login(tunnel bool) http.HandlerFunc {
 			fail(w, 400, err)
 			return
 		}
-		// Clients on the local network are not limited (a mistyped token costs nothing there); everybody else is.
+		// Clients on the local network are not limited (a mistyped token costs nothing there); everybody else is, and may log
+		// in only when remote administration is switched on.
 		id := s.acc.Classify(r, tunnel)
-		local := !tunnel && (id.Role == Admin || id.NeedToken)
+		local := !tunnel && (id.Role == Admin || id.NeedToken) && !id.Remote
 		key := loginKey(r)
+		set := s.run.Config().Server
 		if !local {
+			if !set.RemoteAdmin || set.Token == "" {
+				fail(w, 403, errors.New("logging in from outside the local network is switched off (server.remote_admin)"))
+				return
+			}
 			if blocked, wait := s.logins.blocked(key); blocked {
 				w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
 				fail(w, http.StatusTooManyRequests, fmt.Errorf("%s: try again in %d minutes", loginBlockMsg, int(wait.Minutes())+1))
 				return
 			}
 		}
-		tok := s.run.Config().Server.Token
-		if tok == "" || !tokenOK(&http.Request{Header: http.Header{"X-Navtex-Token": {body.Token}}}, tok) {
+		if set.Token == "" || !tokenOK(&http.Request{Header: http.Header{"X-Navtex-Token": {body.Token}}}, set.Token) {
 			if !local {
-				if locked, global := s.logins.failed(key); global {
+				if locked, global := s.logins.failedToken(key, body.Token); global {
 					s.run.Log("warn", "access token: many wrong tokens from remote clients; remote logins are refused for a while")
 				} else if locked {
 					s.run.Log("warn", "access token: too many wrong tokens from "+key+"; that client is refused for a while")
@@ -987,13 +1053,27 @@ func (s *Server) login(tunnel bool) http.HandlerFunc {
 			fail(w, 403, errors.New("wrong token"))
 			return
 		}
+		days := 90
 		if !local {
 			s.logins.ok(key)
+			s.run.Log("info", "remote administrator logged in from "+key)
+			days = 30
 		}
 		http.SetCookie(w, &http.Cookie{Name: "navtex_token", Value: body.Token, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode,
-			Secure: r.TLS != nil, MaxAge: 90 * 24 * 3600})
+			Secure: isHTTPS(r), MaxAge: days * 24 * 3600})
 		writeJSON(w, 200, map[string]any{"ok": true})
 	}
+}
+
+// logout forgets the access token in this browser.
+func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
+	if err := CheckWrite(r); err != nil {
+		fail(w, 403, err)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{Name: "navtex_token", Value: "", Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode,
+		Secure: isHTTPS(r), MaxAge: -1})
+	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
 // netMsg is the network load shown in the header.

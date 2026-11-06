@@ -177,16 +177,23 @@ type Autocorrect struct {
 }
 
 // Server configures the network server (changes need a restart of navtexd).
+// MinRemoteToken is the shortest access token that server.remote_admin accepts.
+const MinRemoteToken = 16
+
 type Server struct {
 	Listen        string `json:"listen" doc:"Address of the web server, e.g. 127.0.0.1:8080 (this computer only) or :8080 (all interfaces). off = no web server"`
 	OpenBrowser   bool   `json:"open_browser" doc:"Open the web interface in the default browser when the program starts (takes effect at the next start)"`
 	TunnelListen  string `json:"tunnel_listen" doc:"Extra address for a reverse tunnel (e.g. cloudflared). Everything arriving here is a viewer, whatever its address. Empty = none"`
 	AdminNetworks string `json:"admin_networks" doc:"Extra networks, comma separated (e.g. 100.64.0.0/10), whose clients may change settings. Loopback and private LAN ranges always may"`
 	Hosts         string `json:"hosts" doc:"Extra host names, comma separated, under which the server is reached from the local network (settings are refused for unknown host names)"`
-	Token         string `json:"token" doc:"If set, changing settings also needs this access token (entered once in the browser)"`
+	Token         string `json:"token" doc:"If set, changing settings also needs this access token (entered once in the browser). With remote_admin on it is also what a browser outside the local network logs in with. At least 16 characters then; the Generate button makes one"`
 	ViewerHints   bool   `json:"viewer_position_hints" hidden:"true" doc:"Obsolete: now operator.public_location_info (an old setting is carried over when the file is loaded)"`
 	GeoLookup     bool   `json:"geo_lookup" doc:"Console messages about connecting browsers include a location. Behind a Cloudflare tunnel its country (and city, if enabled) headers are used; for other public addresses the city is looked up on the internet (ipwho.is), which sends that address to that service. Off = no lookup, and local addresses are only labelled as local"`
 	PublicHosts   string `json:"public_hosts" doc:"Host names of the public (tunnel) address, comma separated; requests for them are always viewers"`
+	RemoteAdmin   bool   `json:"remote_admin" doc:"A browser that logs in with the access token gets full access even through a tunnel or proxy (a \"Log in\" link appears for viewers). Needs a token of at least 16 characters. Server settings, folders, file names and radio addresses cannot be changed from such a session, only from the local network"`
+	MaxViewers    int    `json:"max_viewers" doc:"Most live connections from viewers (clients that may not change settings) at one time; further ones are refused until another leaves. 0 = no limit. Administrators on the local network are never limited"`
+	MaxPerViewer  int    `json:"max_per_viewer" doc:"Most live connections from one viewer address (browser tabs); 0 = no limit. Behind a Cloudflare tunnel the address Cloudflare reports is used"`
+	ViewerRate    int    `json:"viewer_rate" unit:"requests/s" doc:"Most requests per second a viewer may send on average (short bursts of 6 times as many are allowed; searches and reports count 5 each). Beyond that the server answers 429. 0 = no limit"`
 }
 
 // Input describes where the samples come from. Each kind of source has its own group of options (rate, tuning,
@@ -419,7 +426,7 @@ func defaultConfig() Config {
 		Logging: Logging{LineQuality: true},
 		Clips:   Clips{BeforeS: 60, AfterS: 10, Dir: "clips"},
 		Compare: Compare{ChannelA: 1, ChannelB: 2, MinDiffs: 1, WaitS: 30, PairS: 60},
-		Server:  Server{Listen: "127.0.0.1:8080", OpenBrowser: true},
+		Server:  Server{Listen: "127.0.0.1:8080", OpenBrowser: true, MaxViewers: 50, MaxPerViewer: 6, ViewerRate: 10},
 		Output:  Output{Format: "text", IncompleteMessages: true},
 	}
 }
@@ -431,6 +438,12 @@ func (c Config) Validate() error { return c.validate(true) }
 func (c Config) validate(top bool) error {
 	var errs []error
 	bad := func(format string, a ...any) { errs = append(errs, fmt.Errorf(format, a...)) }
+	if top && c.Server.RemoteAdmin && len(c.Server.Token) < MinRemoteToken {
+		bad("server.remote_admin needs server.token to be at least %d characters (use Generate in Options)", MinRemoteToken)
+	}
+	if top && (c.Server.MaxViewers < 0 || c.Server.MaxPerViewer < 0 || c.Server.ViewerRate < 0) {
+		bad("server.max_viewers, max_per_viewer and viewer_rate cannot be negative (0 = no limit)")
+	}
 	if cp := c.Compare; top && cp.Enabled {
 		if cp.ChannelA < 1 || cp.ChannelA > Channels || cp.ChannelB < 1 || cp.ChannelB > Channels || cp.ChannelA == cp.ChannelB {
 			bad("compare.channel_a and compare.channel_b must be two different channels from 1 to %d", Channels)

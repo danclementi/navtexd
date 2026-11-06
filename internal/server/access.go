@@ -30,6 +30,7 @@ type Identity struct {
 	Role      Role
 	NeedToken bool   // would be admin but has not presented the access token
 	Why       string // for the log / tests: why the role was chosen
+	Remote    bool   // an administrator who is not on the local network: got in with the access token (server.remote_admin)
 }
 
 // proxyHeaders mark a request that passed through a proxy or tunnel. Such a request looks local (it comes from the
@@ -40,6 +41,7 @@ var proxyHeaders = []string{"Cf-Connecting-Ip", "Cf-Ray", "Cf-Visitor", "Cf-Ipco
 // Access decides roles. Settings are read on every request so that changes apply at once.
 type Access struct {
 	Settings func() config.Server
+	Limiter  *loginLimiter // counts wrong tokens presented by remote clients (nil in tests that do not need it)
 	hostname string
 }
 
@@ -60,37 +62,69 @@ func splitList(s string) []string {
 }
 
 // Classify decides the role of a request. tunnel is true for requests arriving on the dedicated tunnel listener.
+//
+// A client that is not on the local network is a viewer, unless server.remote_admin is on and the request carries the access
+// token: then it is an administrator ("remote"). Wrong tokens from such clients are counted and, after a few, refused for a
+// while, whichever way they arrive (the login box, a header, a cookie), so that the token cannot be guessed.
 func (a *Access) Classify(r *http.Request, tunnel bool) Identity {
+	id := a.classify(r, tunnel)
+	if id.Role != Viewer || id.NeedToken {
+		return id
+	}
+	set := a.Settings()
+	if !set.RemoteAdmin || set.Token == "" {
+		return id
+	}
+	got := presentedToken(r)
+	if got == "" {
+		return id
+	}
+	key := loginKey(r)
+	if a.Limiter != nil {
+		if blocked, _ := a.Limiter.blocked(key); blocked {
+			return id
+		}
+	}
+	if subtle.ConstantTimeCompare([]byte(got), []byte(set.Token)) == 1 {
+		return Identity{Admin, false, "remote administrator (access token)", true}
+	}
+	if a.Limiter != nil {
+		a.Limiter.failedToken(key, got)
+	}
+	return id
+}
+
+func (a *Access) classify(r *http.Request, tunnel bool) Identity {
 	set := a.Settings()
 	if tunnel {
-		return Identity{Viewer, false, "tunnel listener"}
+		return Identity{Viewer, false, "tunnel listener", false}
 	}
 	for _, h := range proxyHeaders {
 		if r.Header.Get(h) != "" {
-			return Identity{Viewer, false, "proxy header " + h}
+			return Identity{Viewer, false, "proxy header " + h, false}
 		}
 	}
 	host := strings.ToLower(hostOnly(r.Host))
 	for _, p := range splitList(set.PublicHosts) {
 		if strings.EqualFold(p, host) {
-			return Identity{Viewer, false, "public host name"}
+			return Identity{Viewer, false, "public host name", false}
 		}
 	}
 	ap, err := netip.ParseAddrPort(r.RemoteAddr)
 	if err != nil {
-		return Identity{Viewer, false, "unparsable peer address"}
+		return Identity{Viewer, false, "unparsable peer address", false}
 	}
 	ip := ap.Addr().Unmap()
 	if !a.trustedNet(ip, set) {
-		return Identity{Viewer, false, "remote address"}
+		return Identity{Viewer, false, "remote address", false}
 	}
 	if !a.knownHost(host, set) {
-		return Identity{Viewer, false, "unknown host name (possible DNS rebinding)"}
+		return Identity{Viewer, false, "unknown host name (possible DNS rebinding)", false}
 	}
 	if set.Token != "" && !tokenOK(r, set.Token) {
-		return Identity{Viewer, true, "token needed"}
+		return Identity{Viewer, true, "token needed", false}
 	}
-	return Identity{Admin, false, "local network"}
+	return Identity{Admin, false, "local network", false}
 }
 
 func (a *Access) trustedNet(ip netip.Addr, set config.Server) bool {
@@ -135,14 +169,31 @@ func hostOnly(hostport string) string {
 	return strings.Trim(hostport, "[]")
 }
 
-func tokenOK(r *http.Request, token string) bool {
+// presentedToken is the access token a request carries: the header, else the cookie.
+func presentedToken(r *http.Request) string {
 	got := r.Header.Get("X-Navtex-Token")
 	if got == "" {
 		if c, err := r.Cookie("navtex_token"); err == nil {
 			got = c.Value
 		}
 	}
+	return got
+}
+
+func tokenOK(r *http.Request, token string) bool {
+	got := presentedToken(r)
 	return got != "" && subtle.ConstantTimeCompare([]byte(got), []byte(token)) == 1
+}
+
+// isHTTPS tells whether the browser reached us over HTTPS: directly, or through a proxy or tunnel that says so.
+func isHTTPS(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	if strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+		return true
+	}
+	return strings.Contains(strings.ReplaceAll(r.Header.Get("Cf-Visitor"), " ", ""), `"scheme":"https"`)
 }
 
 // CheckWrite validates a state-changing request: it must come from our own page (same origin), which defends against
