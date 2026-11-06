@@ -209,3 +209,15 @@ func TestReview_ClipMemoryBudgetIsShared(t *testing.T) {
 		t.Fatalf("used %d", r.clipUsed)
 	}
 }
+
+func TestReview_ClipBufferFollowsFreeMemory(t *testing.T) {
+	old := availableMemory
+	defer func() { availableMemory = old }()
+	availableMemory = func() (int64, bool) { return 200 << 20, true }
+	r := &Runner{}
+	var warned bool
+	grant := r.clipGrant(300<<20, 500<<20, func(level, msg string) { warned = level == "warn" })
+	if grant != 50<<20 || r.clipUsed != 50<<20 || !warned {
+		t.Fatalf("grant %d used %d", grant, r.clipUsed)
+	}
+}

@@ -631,7 +631,7 @@ func (r *Runner) run(ctx context.Context, c *chain, cfg config.Config, cmds chan
 	var ring *clip.Ring
 	if cl := cfg.Clips; cl.BeforeS+cl.AfterS > 0 && cfg.Input.SharedFrom == 0 { // a channel that shares an input uses the owner's buffer
 		want := clip.BytesFor(src.SampleRate(), src.Kind(), cl.BeforeS, cl.AfterS)
-		grant := r.clipReserve(want, int64(cl.MaxMemoryMB)<<20)
+		grant := r.clipGrant(want, int64(cl.MaxMemoryMB)<<20, log)
 		if need := clip.BytesFor(src.SampleRate(), src.Kind(), 1, 0); grant < need {
 			r.clipRelease(grant)
 			log("warn", fmt.Sprintf("audio clips are off for this input: clips.max_memory_mb (%d MB, all channels together) is used up", cl.MaxMemoryMB))
@@ -899,6 +899,25 @@ func (r *Runner) SaveClip(ch int) (float64, error) {
 	}
 	r.logc(ch, "info", fmt.Sprintf("audio clip requested: %s, the last %.0f s are kept, saving in %.0f s", what, cfg.Clips.BeforeS, wait))
 	return wait, nil
+}
+
+// availableMemory tells how much memory is free (a variable so that tests can change it).
+var availableMemory = clip.Available
+
+// clipFreeShare: a clip buffer may take 1/clipFreeShare of the free memory. Saving a clip copies the buffer once, and
+// the rest of the program and the computer need room too.
+const clipFreeShare = 4
+
+// clipGrant reserves the memory for a clip buffer of want bytes: within limit (shared by all channels) and within a share
+// of the memory that is free now.
+func (r *Runner) clipGrant(want, limit int64, log func(level, msg string)) int64 {
+	grant := r.clipReserve(want, limit)
+	if av, ok := availableMemory(); ok && grant > av/clipFreeShare {
+		r.clipRelease(grant - av/clipFreeShare)
+		grant = av / clipFreeShare
+		log("warn", fmt.Sprintf("audio clips: only %d MB of memory are free, the clip buffer is limited to %d MB", av>>20, grant>>20))
+	}
+	return grant
 }
 
 // clipReserve takes up to want bytes from what is left of limit for a clip buffer and reports how much it got.

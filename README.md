@@ -127,6 +127,12 @@ differ by at least `min_differences` characters, or one channel has no copy of a
 The Compare clip holds the audio of both channels (one file if they share an input). With `clips.all_channels` on, every manual and automatic clip holds the audio of every active input, one WAV per input (`..._ch1.wav`, `..._ch2.wav`, same `group` in the .json), which helps when channels listen to different signals. Whatever the option, each .json lists the settings of all active channels under `all_channels`.
 `detail` (each difference with its position and surrounding text). Replay the clip with different settings to find out which channel was right.
 
+### Audio clips and memory
+The clip function keeps the last `clips.before_s` seconds of each input in memory (plus `after_s` seconds after the button press). The buffers of all channels together may use at most
+`clips.max_memory_mb` (Options, Clips and comparison; default 500 MB; 70 s of 192 kHz I/Q is about 108 MB, 70 s of 48 kHz audio about 13 MB). A buffer that does not fit is shortened, and
+when nothing is left the clip function is off for that input; the System Log says so. On a small computer the buffer is also limited to a quarter of the memory that is free when the channel starts,
+because saving a clip needs a second copy of it for a moment. The limit is read when a channel starts: change it, then restart the channel.
+
 ### Bandwidth over the internet
 The page files and the JSON answers of the API are compressed (gzip), and page files carry an ETag so that a reload costs a few bytes. View-only clients (anything arriving through a proxy or
 tunnel) get a compact live feed: the spectrum of every channel as 8-bit values in 1 dB steps, sent as the change from the previous frame (deflated, with a full frame every 10 s), at most

@@ -120,7 +120,7 @@ type Clips struct {
 	BeforeS     float64 `json:"before_s" unit:"s" doc:"Input kept in memory and saved when the clip button is pressed: this many seconds before the press (0 = clip function off)"`
 	AfterS      float64 `json:"after_s" unit:"s" doc:"The clip continues this many seconds after the press, so that the end of an event is included"`
 	Dir         string  `json:"dir" doc:"Folder for saved clips (WAV plus a .json file with the settings in force); relative to the data folder"`
-	MaxMemoryMB int     `json:"max_memory_mb" unit:"MB" doc:"Most memory all channels together may use for the clip buffers (4 bytes per sample, twice that for I/Q: 70 s of 192 kHz I/Q is 108 MB). A buffer that does not fit is shortened, with a warning. Saving a clip needs about the same amount again, briefly. Takes effect when a channel restarts"`
+	MaxMemoryMB int     `json:"max_memory_mb" unit:"MB" doc:"Most memory all channels together may use for the clip buffers (4 bytes per sample, twice that for I/Q: 70 s of 192 kHz I/Q is 108 MB). A buffer that does not fit is shortened, with a warning; it also never takes more than a quarter of the memory that is free when the channel starts. Saving a clip needs about the same amount again, briefly. Takes effect when a channel restarts"`
 	AllChannels bool    `json:"all_channels" doc:"A clip (the button, or a difference found by compare) also saves the audio of every other active channel, one WAV per distinct input (channels that share an input share a file), all with the same group in their .json file. Off: only the audio of the channel you pressed it on (the settings of all channels are stored either way)"`
 }
 

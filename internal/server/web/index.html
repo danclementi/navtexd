@@ -162,7 +162,7 @@
         <div id="st-msg" class="small"></div>
       </fieldset>
       <fieldset class="col" id="clipbox"><legend>Saved audio clips</legend>
-        <div class="row small">The "Save clip" button in the header saves the input just before and after the press as a WAV file with a .json file describing it. A clip can be played back as an input file (-in).</div>
+        <div class="row small">The "Save clip" button in the header saves the input just before and after the press as a WAV file with a .json file describing it. A clip can be played back as an input file (-in). The clip buffers of all channels together use at most the memory set by max_memory_mb in Options, Clips and comparison (500 MB by default), and never more than a quarter of the memory that is free when the channel starts; a longer clip than that fits is shortened, and the System Log says so.</div>
         <div class="tablewrap"><table id="clip-table"><thead><tr><th>UTC start</th><th>Length</th><th>Size</th><th></th></tr></thead><tbody></tbody></table></div>
         <div id="clip-msg" class="small"></div>
       </fieldset>
