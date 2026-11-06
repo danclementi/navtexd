@@ -188,3 +188,24 @@ func TestReview_SharedChannelRestartsWithItsOwner(t *testing.T) {
 	r.Do(0, func(e *engine.Engine) { panic("provoked by the test") })
 	waitRunning(panicAt, "after the owner's internal error both channels should run again")
 }
+
+func TestReview_ClipMemoryBudgetIsShared(t *testing.T) {
+	r := &Runner{}
+	if got := r.clipReserve(300<<20, 500<<20); got != 300<<20 {
+		t.Fatalf("first reservation %d", got)
+	}
+	if got := r.clipReserve(300<<20, 500<<20); got != 200<<20 {
+		t.Fatalf("second reservation must be cut to what is left, got %d", got)
+	}
+	if got := r.clipReserve(1, 500<<20); got != 0 {
+		t.Fatalf("nothing is left, got %d", got)
+	}
+	r.clipRelease(300 << 20)
+	if got := r.clipReserve(100<<20, 500<<20); got != 100<<20 {
+		t.Fatalf("after a release %d", got)
+	}
+	r.clipRelease(1 << 40) // never negative
+	if r.clipUsed != 0 {
+		t.Fatalf("used %d", r.clipUsed)
+	}
+}

@@ -120,6 +120,7 @@ type Clips struct {
 	BeforeS     float64 `json:"before_s" unit:"s" doc:"Input kept in memory and saved when the clip button is pressed: this many seconds before the press (0 = clip function off)"`
 	AfterS      float64 `json:"after_s" unit:"s" doc:"The clip continues this many seconds after the press, so that the end of an event is included"`
 	Dir         string  `json:"dir" doc:"Folder for saved clips (WAV plus a .json file with the settings in force); relative to the data folder"`
+	MaxMemoryMB int     `json:"max_memory_mb" unit:"MB" doc:"Most memory all channels together may use for the clip buffers (4 bytes per sample, twice that for I/Q: 70 s of 192 kHz I/Q is 108 MB). A buffer that does not fit is shortened, with a warning. Saving a clip needs about the same amount again, briefly. Takes effect when a channel restarts"`
 	AllChannels bool    `json:"all_channels" doc:"A clip (the button, or a difference found by compare) also saves the audio of every other active channel, one WAV per distinct input (channels that share an input share a file), all with the same group in their .json file. Off: only the audio of the channel you pressed it on (the settings of all channels are stored either way)"`
 }
 
@@ -424,7 +425,7 @@ func defaultConfig() Config {
 		Meters: Meters{RateHz: 10, SpectrumMaxHz: 2700, SpectrumSmooth: 0.85, SpectrumRaw: true, SpectrumChannel: true, LevelTauS: 0.5, QualityWindowS: 0.5,
 			QualityNoiseCF: 5.0, QualityGoodCF: 2.83, QualityTauS: 1, QualityEyeWeight: 0.8, QualityEyeLowDB: 3, QualityEyeHighDB: 15},
 		Logging: Logging{LineQuality: true},
-		Clips:   Clips{BeforeS: 60, AfterS: 10, Dir: "clips"},
+		Clips:   Clips{BeforeS: 60, AfterS: 10, Dir: "clips", MaxMemoryMB: 500},
 		Compare: Compare{ChannelA: 1, ChannelB: 2, MinDiffs: 1, WaitS: 30, PairS: 60},
 		Server:  Server{Listen: "127.0.0.1:8080", OpenBrowser: true, MaxViewers: 50, MaxPerViewer: 6, ViewerRate: 10},
 		Output:  Output{Format: "text", IncompleteMessages: true},
@@ -443,6 +444,9 @@ func (c Config) validate(top bool) error {
 	}
 	if top && (c.Server.MaxViewers < 0 || c.Server.MaxPerViewer < 0 || c.Server.ViewerRate < 0) {
 		bad("server.max_viewers, max_per_viewer and viewer_rate cannot be negative (0 = no limit)")
+	}
+	if top && c.Clips.MaxMemoryMB < 1 {
+		bad("clips.max_memory_mb must be at least 1")
 	}
 	if cp := c.Compare; top && cp.Enabled {
 		if cp.ChannelA < 1 || cp.ChannelA > Channels || cp.ChannelB < 1 || cp.ChannelB > Channels || cp.ChannelA == cp.ChannelB {

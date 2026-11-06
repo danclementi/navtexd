@@ -3,6 +3,7 @@
 package clip
 
 import (
+	"bufio"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -60,17 +61,27 @@ type Ring struct {
 	tmpl      Meta // what the request wants stored in the clip's .json (note, detail, group, channel)
 }
 
-// MaxBytes limits the memory used by the ring.
-const MaxBytes = 256 << 20
+// Bytes is the memory the ring occupies.
+func (r *Ring) Bytes() int64 { return int64(len(r.buf)) * 4 }
 
-// New creates a ring for the given source. It reports the capacity actually obtained (the request is cut to MaxBytes).
-func New(rate float64, kind iq.Kind, pre, post float64) (*Ring, float64) {
+// BytesFor is the memory a ring for pre+post seconds of input needs.
+func BytesFor(rate float64, kind iq.Kind, pre, post float64) int64 {
+	ch := int64(1)
+	if kind == iq.IQ {
+		ch = 2
+	}
+	return int64((pre+post)*rate) * ch * 4
+}
+
+// New creates a ring for the given source. It reports the capacity actually obtained in seconds (the request is cut so
+// that the ring takes at most maxBytes).
+func New(rate float64, kind iq.Kind, pre, post float64, maxBytes int64) (*Ring, float64) {
 	ch := 1
 	if kind == iq.IQ {
 		ch = 2
 	}
 	fr := int((pre + post) * rate)
-	if limit := MaxBytes / (4 * ch); fr > limit {
+	if limit := int(maxBytes / int64(4*ch)); fr > limit {
 		fr = limit
 	}
 	fr = max(fr, 1)
@@ -180,15 +191,8 @@ func Write(dir string, frames []float32, m Meta) (string, error) {
 	binary.LittleEndian.PutUint16(hdr[34:], 32)
 	copy(hdr[36:], "data")
 	binary.LittleEndian.PutUint32(hdr[40:], uint32(data))
-	body := make([]byte, data)
-	for i, v := range frames {
-		binary.LittleEndian.PutUint32(body[4*i:], math.Float32bits(v))
-	}
 	wav := filepath.Join(dir, base+".wav")
-	if err := os.WriteFile(wav+".tmp", append(hdr, body...), 0o644); err != nil {
-		return "", err
-	}
-	if err := os.Rename(wav+".tmp", wav); err != nil {
+	if err := writeWAV(wav, hdr, frames); err != nil {
 		return "", err
 	}
 	js, _ := json.MarshalIndent(m, "", "  ")
@@ -196,6 +200,38 @@ func Write(dir string, frames []float32, m Meta) (string, error) {
 		return base + ".wav", err
 	}
 	return base + ".wav", nil
+}
+
+// writeWAV writes the header and the samples to path (through a temporary file) without making another copy of the
+// samples in memory.
+func writeWAV(path string, hdr []byte, frames []float32) error {
+	f, err := os.Create(path + ".tmp")
+	if err != nil {
+		return err
+	}
+	w := bufio.NewWriterSize(f, 256<<10)
+	_, err = w.Write(hdr)
+	var b [4]byte
+	for _, v := range frames {
+		if err != nil {
+			break
+		}
+		binary.LittleEndian.PutUint32(b[:], math.Float32bits(v))
+		_, err = w.Write(b[:])
+	}
+	if err == nil {
+		err = w.Flush()
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Rename(path+".tmp", path)
+	}
+	if err != nil {
+		os.Remove(path + ".tmp")
+	}
+	return err
 }
 
 // ReadMeta reads the sidecar of a WAV file, if there is one.

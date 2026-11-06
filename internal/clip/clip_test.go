@@ -11,7 +11,7 @@ import (
 )
 
 func TestRingWrapAndFile(t *testing.T) {
-	r, got := New(1000, iq.Real, 4, 1) // 5 s ring
+	r, got := New(1000, iq.Real, 4, 1, 256<<20) // 5 s ring
 	if got != 5 {
 		t.Fatalf("capacity %v", got)
 	}
@@ -70,7 +70,7 @@ func TestRingWrapAndFile(t *testing.T) {
 }
 
 func TestRequestWithGroupAndSuffix(t *testing.T) {
-	r, _ := New(1000, iq.Real, 4, 1)
+	r, _ := New(1000, iq.Real, 4, 1, 256<<20)
 	t0 := time.Date(2026, 10, 3, 5, 0, 0, 0, time.UTC)
 	r.Write(make([]complex64, 6000), t0)
 	if _, err := r.RequestWith(Meta{Note: "n", Group: "g1", Channel: 2, Served: []int{2, 4}}); err != nil {
@@ -84,5 +84,15 @@ func TestRequestWithGroupAndSuffix(t *testing.T) {
 	m.Suffix = "_ch2"
 	if n := Name(m); n[len(n)-len("_ch2.wav"):] != "_ch2.wav" && n[len(n)-len("_ch2"):] != "_ch2" {
 		t.Errorf("name %s", n)
+	}
+}
+
+func TestRingMemoryCap(t *testing.T) {
+	r, got := New(192000, iq.IQ, 60, 10, 100<<20) // 70 s of I/Q would be 107 MB
+	if r.Bytes() > 100<<20 || got >= 70 || got < 60 {
+		t.Fatalf("bytes %d, seconds %v", r.Bytes(), got)
+	}
+	if BytesFor(192000, iq.IQ, 60, 10) != int64(70*192000*2*4) {
+		t.Fatal("BytesFor")
 	}
 }

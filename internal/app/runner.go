@@ -103,6 +103,9 @@ type Runner struct {
 	cmp    *compare.Comparer
 	cmpCfg config.Compare
 
+	clipMu   sync.Mutex
+	clipUsed int64 // bytes held by the clip buffers of all channels
+
 	mu     sync.Mutex
 	life   sync.Mutex // serializes Start, Stop and Restart, so that a channel is never stopped and started by two callers at once
 	cfg    config.Config
@@ -627,13 +630,22 @@ func (r *Runner) run(ctx context.Context, c *chain, cfg config.Config, cmds chan
 	buf := make([]complex64, block)
 	var ring *clip.Ring
 	if cl := cfg.Clips; cl.BeforeS+cl.AfterS > 0 && cfg.Input.SharedFrom == 0 { // a channel that shares an input uses the owner's buffer
-		var got float64
-		ring, got = clip.New(src.SampleRate(), src.Kind(), cl.BeforeS, cl.AfterS)
-		if got < cl.BeforeS+cl.AfterS {
-			log("warn", fmt.Sprintf("audio clips: memory limit, the clip will be %.0f s long instead of %.0f s", got, cl.BeforeS+cl.AfterS))
+		want := clip.BytesFor(src.SampleRate(), src.Kind(), cl.BeforeS, cl.AfterS)
+		grant := r.clipReserve(want, int64(cl.MaxMemoryMB)<<20)
+		if need := clip.BytesFor(src.SampleRate(), src.Kind(), 1, 0); grant < need {
+			r.clipRelease(grant)
+			log("warn", fmt.Sprintf("audio clips are off for this input: clips.max_memory_mb (%d MB, all channels together) is used up", cl.MaxMemoryMB))
+		} else {
+			var got float64
+			ring, got = clip.New(src.SampleRate(), src.Kind(), cl.BeforeS, cl.AfterS, grant)
+			r.clipRelease(grant - ring.Bytes()) // normally nothing
+			defer r.clipRelease(ring.Bytes())
+			if got < cl.BeforeS+cl.AfterS {
+				log("warn", fmt.Sprintf("audio clips: memory limit (clips.max_memory_mb = %d MB), the clip will be %.0f s long instead of %.0f s", cl.MaxMemoryMB, got, cl.BeforeS+cl.AfterS))
+			}
+			c.ring.Store(ring)
+			defer c.ring.CompareAndSwap(ring, nil)
 		}
-		c.ring.Store(ring)
-		defer c.ring.CompareAndSwap(ring, nil)
 	}
 	inWall := func(frames int64) time.Time {
 		if src.Live || src.Start.IsZero() {
@@ -887,6 +899,22 @@ func (r *Runner) SaveClip(ch int) (float64, error) {
 	}
 	r.logc(ch, "info", fmt.Sprintf("audio clip requested: %s, the last %.0f s are kept, saving in %.0f s", what, cfg.Clips.BeforeS, wait))
 	return wait, nil
+}
+
+// clipReserve takes up to want bytes from what is left of limit for a clip buffer and reports how much it got.
+func (r *Runner) clipReserve(want, limit int64) int64 {
+	r.clipMu.Lock()
+	defer r.clipMu.Unlock()
+	got := max(0, min(want, limit-r.clipUsed))
+	r.clipUsed += got
+	return got
+}
+
+// clipRelease gives bytes back.
+func (r *Runner) clipRelease(n int64) {
+	r.clipMu.Lock()
+	r.clipUsed = max(0, r.clipUsed-n)
+	r.clipMu.Unlock()
 }
 
 // ClipDir is the folder of saved clips.
