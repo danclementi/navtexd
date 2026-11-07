@@ -265,7 +265,7 @@ func main() {
 		go func() {
 			srv.Fallback = !explicitFlags["listen"]
 			srv.OnListen = func(wanted, actual string) {
-				if srv.Fallback && wanted != actual {
+				if srv.Fallback && portMoved(wanted, actual) {
 					fmt.Printf("%s is in use (another navtexd running?); using %s instead\n", wanted, actual)
 				}
 				url := "http://" + displayAddr(actual) + "/"
@@ -452,4 +452,12 @@ func rememberInput(base, cfg config.Config, explicit map[string]bool, settings s
 		return
 	}
 	fmt.Println("remembered the input choice in", settings, "(change it later on the Options page)")
+}
+
+// portMoved tells whether the web server got another port than the one asked for. The address text cannot be compared:
+// ":8080" (all interfaces) is reported by the system as "[::]:8080", which is the same listener.
+func portMoved(wanted, actual string) bool {
+	_, wp, err1 := net.SplitHostPort(wanted)
+	_, ap, err2 := net.SplitHostPort(actual)
+	return err1 != nil || err2 != nil || wp != ap
 }
