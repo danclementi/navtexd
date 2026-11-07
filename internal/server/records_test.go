@@ -625,3 +625,53 @@ func TestTrashListAndRestore(t *testing.T) {
 		t.Errorf("no ids: %d", code)
 	}
 }
+
+// A selection over several lines is put in as several revisions in one step: all or none, and one Undo.
+func TestRevisionsOverSeveralLines(t *testing.T) {
+	cfg := config.Default()
+	cfg.Input.File.Path = "/nonexistent.wav"
+	cfg.Input.Source = "file"
+	s, _, st, _ := setup(t, cfg)
+	admin := httptest.NewServer(s.handler(false))
+	defer admin.Close()
+	at := time.Date(2026, 9, 28, 0, 50, 0, 0, time.UTC)
+	rec := addMsg(t, st, s.cat, "F", at, "AB CD", "EF GH")
+	url := fmt.Sprintf("/api/messages/%d", rec.ID)
+	bad := []map[string]any{{"op": "add", "l": 1, "find": "AB", "t": "12"}, {"op": "add", "l": 2, "find": "NOPE", "t": "34"}}
+	if code, _ := do(t, admin, "PATCH", url, map[string]any{"v": rec.Version, "revs": bad}, nil); code != 400 {
+		t.Fatalf("a bad revision among several was accepted: %d", code)
+	}
+	if _, d := do(t, admin, "GET", url, nil, nil); d["eff"] != nil {
+		t.Fatalf("the first revision was kept although the second failed: %v", d["eff"])
+	}
+	good := []map[string]any{{"op": "add", "l": 1, "find": "CD", "t": "34"}, {"op": "add", "l": 2, "find": "EF", "t": "56"}}
+	if code, p := do(t, admin, "PATCH", url, map[string]any{"v": rec.Version, "revs": good}, nil); code != 200 {
+		t.Fatalf("revisions over two lines: %d %v", code, p)
+	}
+	_, d := do(t, admin, "GET", url, nil, nil)
+	if eff := d["eff"].([]any); eff[1] != "AB <34>" || eff[2] != "<56> GH" {
+		t.Errorf("effective text %v", eff)
+	}
+}
+
+// The pound sign is a NAVTEX character (the reverser makes it of an H): a revision may hold it; other non-ASCII may not.
+func TestRevisionMayHoldThePoundSign(t *testing.T) {
+	cfg := config.Default()
+	cfg.Input.File.Path = "/nonexistent.wav"
+	cfg.Input.Source = "file"
+	s, _, st, _ := setup(t, cfg)
+	admin := httptest.NewServer(s.handler(false))
+	defer admin.Close()
+	rec := addMsg(t, st, s.cat, "F", time.Date(2026, 9, 28, 0, 50, 0, 0, time.UTC), "WEATHER HIGH")
+	url := fmt.Sprintf("/api/messages/%d", rec.ID)
+	if code, _ := do(t, admin, "PATCH", url, map[string]any{"v": rec.Version, "rev": map[string]any{"op": "add", "l": 1, "find": "HIGH", "t": "é"}}, nil); code != 400 {
+		t.Errorf("other non-ASCII accepted: %d", code)
+	}
+	code, p := do(t, admin, "PATCH", url, map[string]any{"v": rec.Version, "rev": map[string]any{"op": "add", "l": 1, "find": "HIGH", "t": "£IG£"}}, nil)
+	if code != 200 {
+		t.Fatalf("pound sign refused: %d %v", code, p)
+	}
+	if _, d := do(t, admin, "GET", url, nil, nil); d["eff"].([]any)[1] != "WEATHER <£IG£>" {
+		t.Errorf("effective %v", d["eff"])
+	}
+}

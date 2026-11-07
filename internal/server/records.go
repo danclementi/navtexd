@@ -191,6 +191,7 @@ func (s *Server) patchMessage(w http.ResponseWriter, r *http.Request, id Identit
 		NavArea *int    `json:"area"`
 		Comment *string `json:"cmt"`
 		Rev     *revOp  `json:"rev"`
+		Revs    []revOp `json:"revs"`    // several revisions in one step (a selection over several lines), all or none
 		Station *int    `json:"station"` // choose this station (ID); sets B1 and NAVAREA to its own; 0 = no choice
 	}
 	if err := readBody(r, &body); err != nil {
@@ -242,14 +243,26 @@ func (s *Server) patchMessage(w http.ResponseWriter, r *http.Request, id Identit
 	if body.B1 != nil || body.NavArea != nil || body.Station != nil {
 		s.cat.Enrich(&rec)
 	}
+	ops := body.Revs
 	if body.Rev != nil {
-		note, err := applyRevision(&rec, body.Rev)
-		if err != nil {
-			fail(w, 400, err)
-			return
+		ops = append([]revOp{*body.Rev}, ops...)
+	}
+	if len(ops) > 200 {
+		fail(w, 400, errors.New("too many revisions at once"))
+		return
+	}
+	if len(ops) > 0 {
+		var notes []string
+		for i := range ops {
+			note, err := applyRevision(&rec, &ops[i])
+			if err != nil {
+				fail(w, 400, err)
+				return
+			}
+			notes = append(notes, note)
 		}
 		s.run.Correct(&rec) // the autocorrection works on the revised text
-		s.run.Log("info", fmt.Sprintf("record %s revised: %s", hexID(rec.ID), note))
+		s.run.Log("info", fmt.Sprintf("record %s revised: %s", hexID(rec.ID), strings.Join(notes, "; ")))
 	}
 	var parts []string // what the operator did, for the Undo button
 	if body.B1 != nil {
@@ -264,7 +277,7 @@ func (s *Server) patchMessage(w http.ResponseWriter, r *http.Request, id Identit
 	if body.Comment != nil {
 		parts = append(parts, "comment change")
 	}
-	if body.Rev != nil {
+	if len(ops) > 0 {
 		parts = append(parts, "text revision")
 	}
 	if len(parts) == 0 {
@@ -715,9 +728,9 @@ func applyRevision(rec *store.Record, o *revOp) (string, error) {
 		if t == "" || len(t) > 400 {
 			return "", errors.New("the replacement must be 1 to 400 characters")
 		}
-		for _, c := range []byte(t) {
-			if c < 32 || c > 126 || c == '<' || c == '>' {
-				return "", errors.New("the replacement may only contain printable ASCII characters, without < and >")
+		for _, c := range t {
+			if (c < 32 || c > 126) && c != '£' || c == '<' || c == '>' { // (the pound sign is a NAVTEX character: the reverser makes it of an H)
+				return "", errors.New("the replacement may only contain printable ASCII characters and the pound sign, without < and >")
 			}
 		}
 		for _, v := range rec.Revs {

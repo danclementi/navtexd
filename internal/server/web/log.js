@@ -272,8 +272,8 @@
     if (sug.length) {
       box.append("Possibly decoded in the wrong shift: ");
       for (const { s, i } of sug.slice(0, 8)) {
-        const b = el("button", { type: "button", class: "linkbtn", title: "Put it into the shift reverser", text: `${r.lines[i].x.slice(s.s, s.e)} \u2192 ${s.t}` });
-        b.onclick = () => { setRevSource({ l: i, s: s.s, e: s.e }); $("rev-in").value = r.lines[i].x.slice(s.s, s.e); $("rev-go").click(); };
+        const b = el("button", { type: "button", class: "linkbtn", title: "Put it into the shift reverser", text: `${byteSlice(r.lines[i].x, s.s, s.e)} \u2192 ${s.t}` });
+        b.onclick = () => { setRevSource({ l: i, s: s.s, e: s.e }); $("rev-in").value = byteSlice(r.lines[i].x, s.s, s.e); $("rev-go").click(); };
         box.append(b, " ");
       }
     }
@@ -738,31 +738,56 @@
   // ---- shift reverser: reverse a stretch of the message and, if it reads right, put it into the message ----
   // revSrc says where the text in the reverser came from: {l, s, e} (a suggestion) or {l, find, occ} (a selection)
   let revSrc = null;
+  // (the server counts bytes, and the pound sign is two of them)
+  const byteSlice = (x, a, b) => new TextDecoder().decode(new TextEncoder().encode(x).slice(a, b));
   function setRevSource(src) { revSrc = src; updateApply(); }
+  // With a selection over several lines the reversed text must have the same lines as the selection: one replacement per line.
+  const outLines = () => (revSrc && revSrc.parts ? $("rev-out").value.split("\n").map((x) => x.trim()) : null);
   function updateApply() {
-    const ok = admin() && L.rec && revSrc && $("rev-out").value.trim() !== "";
+    let ok = admin() && L.rec && revSrc && $("rev-out").value.trim() !== "", why = "";
+    const ol = outLines();
+    if (ok && ol && (ol.length !== revSrc.parts.length || ol.some((x) => x === ""))) { ok = false; why = ` The selection has ${revSrc.parts.length} line${revSrc.parts.length > 1 ? "s" : ""}: the text to put in must have the same number of lines, none empty.`; }
+    // the server accepts printable ASCII and the pound sign (NAVTEX has it; the reverser makes it of an H), without < and >
+    const odd = ($("rev-out").value.match(/[^\x20-\x7e\n£]|[<>]/) || [])[0];
+    if (ok && odd) { ok = false; why = ` The text to put in has a character that cannot be put into a message: ${odd === "\r" ? "a line end" : `"${odd}"`}. Only printable ASCII characters and the pound sign, without < and >, are allowed.`; }
     $("rev-apply").disabled = !ok;
-    $("rev-apply").title = ok ? "Replace the received text in the message by this text. The received text is kept (undo is possible)." : "Select text in the message (then \"Use selection\") or click a suggestion above, press Reverse, correct the result if needed, then use this.";
+    $("rev-apply").title = ok ? "Replace the received text in the message by this text. The received text is kept (undo is possible)." : "Select text in the message (then \"Use selection\") or click a suggestion above, press Reverse, correct the result if needed, then use this." + why;
   }
   $("rev-in").addEventListener("input", () => setRevSource(null));
   $("rev-out").addEventListener("input", updateApply);
   $("rev-sel").addEventListener("mousedown", (e) => e.preventDefault()); // (a click must not clear the selection in the message)
+  // The message text inside a selection, one part per line: the time stamps, the quality numbers and the line ends that the
+  // selection also holds are left out. Each part says its line, its text and which occurrence of the text in the line it is.
+  function selectedParts(sel) {
+    const box = $("rec-text");
+    if (!sel.rangeCount || !box.contains(sel.getRangeAt(0).commonAncestorContainer)) return [];
+    const r = sel.getRangeAt(0), parts = [];
+    box.querySelectorAll(".ln").forEach((ln) => {
+      if (!r.intersectsNode(ln)) return;
+      const tx = ln.querySelector(".tx"), rr = document.createRange();
+      rr.selectNodeContents(tx);
+      if (r.compareBoundaryPoints(Range.START_TO_START, rr) > 0) rr.setStart(r.startContainer, r.startOffset);
+      if (r.compareBoundaryPoints(Range.END_TO_END, rr) < 0) rr.setEnd(r.endContainer, r.endOffset);
+      const t = rr.toString();
+      if (t.trim() === "") return;
+      const pre = document.createRange();
+      pre.selectNodeContents(tx); pre.setEnd(rr.startContainer, rr.startOffset);
+      const before = pre.toString();
+      let occ = 0; // the ones before the selection (the server counts them without overlap)
+      for (let i = before.indexOf(t); i >= 0 && i + t.length <= before.length; i = before.indexOf(t, i + t.length)) occ++;
+      parts.push({ l: Number(ln.dataset.i), text: t, occ });
+    });
+    return parts;
+  }
   $("rev-sel").onclick = () => {
     const sel = window.getSelection(), t = String(sel);
     if (!t) return;
-    const node = (n) => (n && n.nodeType === 3 ? n.parentElement : n);
-    const a = node(sel.anchorNode) && node(sel.anchorNode).closest(".ln"), b = node(sel.focusNode) && node(sel.focusNode).closest(".ln");
-    $("rev-in").value = t;
+    const parts = selectedParts(sel);
     revSrc = null;
-    if (a && a === b && $("rec-text").contains(a) && !t.includes("\n")) {
-      // which occurrence of the text in its line: count the ones before the selection
-      const tx = a.querySelector(".tx"), r0 = sel.getRangeAt(0), pre = document.createRange();
-      pre.setStart(tx, 0); pre.setEnd(r0.startContainer, r0.startOffset);
-      const before = pre.toString();
-      let occ = 0;
-      for (let i = before.indexOf(t); i >= 0 && i + t.length <= before.length; i = before.indexOf(t, i + 1)) occ++;
-      revSrc = { l: Number(a.dataset.i), find: t, occ };
-    }
+    if (parts.length) { // (Ctrl-C copies the selection as it is)
+      $("rev-in").value = parts.map((p) => p.text).join("\n");
+      revSrc = { parts };
+    } else $("rev-in").value = t; // not in the message text: it can be reversed, not put in
     updateApply();
   };
   $("rev-go").onclick = async () => {
@@ -771,9 +796,15 @@
   };
   $("rev-apply").onclick = async () => {
     if (!revSrc || !L.rec) return;
-    const op = { op: "add", l: revSrc.l, t: $("rev-out").value.trim() };
-    if (revSrc.find !== undefined) { op.find = revSrc.find; op.occ = revSrc.occ; } else { op.s = revSrc.s; op.e = revSrc.e; }
-    await patch({ rev: op });
+    if (revSrc.parts) {
+      const ol = outLines();
+      if (ol.length !== revSrc.parts.length) return;
+      const keep = (re, x) => (x.match(re) || [""])[0]; // blanks at the ends of the selected part stay
+      const revs = revSrc.parts.map((p, i) => ({ op: "add", l: p.l, find: p.text, occ: p.occ, t: keep(/^\s*/, p.text) + ol[i] + keep(/\s*$/, p.text) }));
+      await patch(revs.length === 1 ? { rev: revs[0] } : { revs });
+    } else {
+      await patch({ rev: { op: "add", l: revSrc.l, s: revSrc.s, e: revSrc.e, t: $("rev-out").value.trim() } });
+    }
     revSrc = null; $("rev-in").value = ""; $("rev-out").value = ""; updateApply();
   };
 
