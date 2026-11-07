@@ -1,3 +1,4 @@
-e1c4516413ee016ff373c5ce5ae94a114706d07ab1dd39ba5931f57fc54a44ba  navtexd-v0.8-linux-amd64.tar.gz
-da16d7a7e142230b63e68311202c4454abbca8e4f8d39de1aac9fe32fc55746e  navtexd-v0.8-linux-arm64.tar.gz
-741b04868733af5bb1c70b7906af554ccbe2eba5f5635f5673f2a7e07637e188  navtexd-v0.8-windows.zip
+5d20f8892815bb30a76e2b3023524dcff506b822f4ce6a838c9d89a1ec39e00e  navtexd-v0.8-linux-amd64.tar.gz
+df14bd6fcf190ecd7fb8f3caa81d85adfd419b465902e4783ca059d73b76fb29  navtexd-v0.8-linux-arm64.tar.gz
+9c83c5ed5b343cc0e3f9a65866206f096940176a4a1d1b260dab71b32a8c1978  navtexd-v0.8-linux-armv7.tar.gz
+f688292000cd2fca1f5bab0630988360369e1dd5ea55490930ef28c0d38f5188  navtexd-v0.8-windows.zip

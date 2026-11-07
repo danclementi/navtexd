@@ -136,7 +136,15 @@
     else if (bottom > sc.scrollTop + sc.clientHeight - HDR) sc.scrollTop = bottom - sc.clientHeight + HDR;
     render();
   }
-  const toEnd = (latest) => { sc.scrollTop = latest === "bottom" ? L.total * ROW + HDR : 0; render(); };
+  // the list must already be as tall as the whole log, or the browser clamps the scroll position (first time the tab is
+  // opened, the table is still empty): so a spacer of full height goes in first
+  const toEnd = (latest) => {
+    if (latest === "bottom") {
+      const tr = el("tr", { class: "spacer" }); tr.style.height = L.total * ROW + "px"; tr.append(el("td", { colspan: "10" }));
+      document.querySelector("#log-table tbody").replaceChildren(tr);
+    }
+    sc.scrollTop = latest === "bottom" ? L.total * ROW + HDR : 0; render();
+  };
   const jumpLatest = () => toEnd(newestFirst() ? "top" : "bottom");
 
   // a fresh query (filters or order changed): forget everything and show the latest records

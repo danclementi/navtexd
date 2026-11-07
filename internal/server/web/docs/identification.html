@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>navtexd: how station identification works</title>
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+<main>
+<p class="back"><a href="./">&larr; Help index</a></p>
+<h1>How navtexd identifies the transmitting station</h1>
+<p class="sub">From a decoded message to a station name, or to "UNID", one step at a time. The numbers in this page are the constants of build 0.8; they are compiled into the program and are not options. The examples were run against a station table of 235 stations (VERSION5); your table may differ, and the community updates it.</p>
+
+<div class="flow">
+<span>1 The problem and the table</span><i>→</i><span>2 Candidates</span><i>→</i><span>3 Keyword evidence</span><i>→</i><span>4 Supporting evidence</span><i>→</i><span>5 The decision</span><i>→</i><span>6 What is kept, and the operator</span>
+</div>
+
+<nav class="toc"><strong>Contents</strong>
+<ol class="x">
+<li><a href="#s1">1. The problem, and the station table</a>
+<ol><li><a href="#s1-1">1.1 Why frequency and B1 are not enough</a></li><li><a href="#s1-2">1.2 The station table</a></li><li><a href="#s1-3">1.3 When the scoring runs</a></li></ol>
+</li>
+<li><a href="#s2">2. Choosing the candidates</a></li>
+<li><a href="#s3">3. Keyword evidence</a>
+<ol><li><a href="#s3-1">3.1 Matching a keyword in the text</a></li><li><a href="#s3-2">3.2 UID keywords</a></li><li><a href="#s3-3">3.3 GID keywords</a></li><li><a href="#s3-4">3.4 The keyword total</a></li></ol>
+</li>
+<li><a href="#s4">4. Supporting evidence</a>
+<ol><li><a href="#s4-1">4.1 Time slot</a></li><li><a href="#s4-2">4.2 Distance</a></li><li><a href="#s4-3">4.3 History</a></li></ol>
+</li>
+<li><a href="#s5">5. The decision</a>
+<ol><li><a href="#s5-1">5.1 Total, ranking and margin</a></li><li><a href="#s5-2">5.2 The four rules</a></li></ol>
+</li>
+<li><a href="#s6">6. What is stored, and what the operator can do</a>
+<ol><li><a href="#s6-1">6.1 Stored with the record</a></li><li><a href="#s6-2">6.2 Methods</a></li><li><a href="#s6-3">6.3 The operator's choices</a></li></ol>
+</li>
+<li><a href="#s7">7. Worked examples</a></li>
+<li><a href="#s8">8. Constants</a></li>
+<li><a href="#sum">Summary and known weak spots</a></li>
+</ol></nav>
+
+<h2 id="s1">1. The problem, and the station table</h2>
+<p><strong>What comes in:</strong> a decoded message: its channel (490 or 518 kHz, for example), the B1 letter of its header if it could be read, the time reception started (UTC), the message text, and, optionally, your position and the NAVAREA and station you may have set by hand.</p>
+<p><strong>What comes out:</strong> a station (call sign, name and country, plus the distance and bearing from you), the method that named it and its score, or "UNID" with the best candidates and their scores kept for you to decide.</p>
+
+<h3 id="s1-1">1.1 Why frequency and B1 are not enough</h3>
+<p>A NAVTEX header starts <code>ZCZC B1B2B3B4</code>. B1 is the station letter, but each NAVAREA reuses the same letters, so frequency and B1 together name a <em>set</em> of stations, not one. On 518 kHz, B1 = A is used by eight stations:</p>
+<table>
+<tr><th>NAVAREA</th><th>Call sign</th><th>Station</th><th>Slot (UTC, six per day, four hours apart)</th></tr>
+<tr><td>2</td><td>FRC</td><td>Corsen (Ouessant)</td><td>00:00 &hellip;</td></tr>
+<tr><td>3</td><td>UFN</td><td>Novorossiysk</td><td>00:00 &hellip;</td></tr>
+<tr><td>4</td><td>NMA</td><td>Miami</td><td>00:00 &hellip;</td></tr>
+<tr><td>9</td><td>EQM</td><td>Bushehr</td><td>00:00 &hellip;</td></tr>
+<tr><td>11</td><td>PNK</td><td>Jayapura</td><td>00:00 &hellip;</td></tr>
+<tr><td>13</td><td>UIK</td><td>Vladivostok</td><td>00:00 &hellip;</td></tr>
+<tr><td>15</td><td>CBA</td><td>Antofagasta</td><td>00:00 &hellip;</td></tr>
+<tr><td>19</td><td>LGS</td><td>Svalbard (Isfjord)</td><td>00:00 &hellip;</td></tr>
+</table>
+<p>They also share the time slot, because the schedule is built around the letter. On a good day you hear only one of them, but a sky-wave signal can bring several. Three more things make the problem harder:</p>
+<ul>
+<li><strong>The B1 letter may not be readable.</strong> The header is the first thing damaged by noise or a late start.</li>
+<li><strong>The time slot is no proof.</strong> US stations in particular often transmit early or late.</li>
+<li><strong>The text itself is the best evidence.</strong> Warnings name places and often the station itself. But NAVAREAs overlap, and one station may relay another's warnings, so a place name is evidence, not proof.</li>
+</ul>
+<p>navtexd therefore scores every candidate station on the text and the circumstances, and names a station only when the evidence is clear.</p>
+
+<h3 id="s1-2">1.2 The station table</h3>
+<p>The table is a file in the format of YaND (<code>YAND_STATIONS.txt</code>): a <code>VERSION5</code> line, then one station per line, fields separated by <code>#</code>:</p>
+<p class="eq">navarea # freq_kHz # B1 # callsign # name # country_code # country # lat # lon # t1 &hellip; t6 # GID keywords # UID keywords #</p>
+<ul>
+<li><strong>t1 &hellip; t6</strong> are the six daily transmission start times (UTC). A transmission lasts about ten minutes.</li>
+<li><strong>GID</strong> (geographical) keywords are places that appear in the station's warnings: sea areas, capes, ports. Several stations may list the same place.</li>
+<li><strong>UID</strong> (unique) keywords are words that identify the station itself: its name or call sign, or another word only it uses.</li>
+<li>Keywords are separated by commas and are compared in upper case. A keyword may have significant leading or trailing spaces, such as <code> KARA </code>, which then match only as a whole word (3.1).</li>
+</ul>
+<p>In the table used for this page there are 235 stations: 161 on 518 kHz and 74 on 490 kHz. Each has on average about six GID keywords (the longest list has 35), and 86 stations also have UID keywords. On 518 kHz there are 999 different keywords, of which 144 are listed by more than one station. How many stations share a keyword matters a great deal (3.3).</p>
+<p>The table is read when the program starts. Keywords can be edited per station in the program, and a replacement table can be imported in the Database tab. Both apply to <em>new</em> messages only; stored records keep the station they were given.</p>
+
+<h3 id="s1-3">1.3 When the scoring runs</h3>
+<ul>
+<li>When a message is received and stored.</li>
+<li>Again when you change its B1, its NAVAREA or its station in the review pane (6.3).</li>
+</ul>
+<p>It does not run over stored records when the table, your position or the database changes. A fragment (a piece of a message without a usable header) is never scored: only you can give a fragment a station, and that is marked as a forced ID.</p>
+
+<h2 id="s2">2. Choosing the candidates</h2>
+<p><strong>What the step does:</strong> it makes the list of stations that are allowed to be the answer.</p>
+<ol>
+<li><strong>Frequency.</strong> Only stations that transmit on the channel's frequency.</li>
+<li><strong>B1.</strong> If the B1 letter was read (any letter A to Z), only stations with that letter. If it is empty, "?" or anything else, B1 is treated as unknown and every station of the frequency stays.</li>
+<li><strong>NAVAREA.</strong> If you have set the NAVAREA of the record by hand, only stations of that area.</li>
+</ol>
+<p>If nothing is left, for example a frequency that is not in the table, or a letter and area that no station has, the result is UNID with no candidates.</p>
+<p><strong>Why:</strong> a known B1 cuts 161 stations on 518 kHz to a handful, and a NAVAREA usually to one or two. Anything the filters allow is scored on the same scale (steps 3 and 4).</p>
+<p>Note that B1 is trusted as read. A damaged header that happens to give another valid letter produces a wrong candidate list, and the scoring cannot notice (see the weak spots).</p>
+
+<h2 id="s3">3. Keyword evidence</h2>
+<p>Keyword evidence is the only evidence that can name a station. Slot, distance and history (step 4) can only break ties.</p>
+
+<h3 id="s3-1">3.1 Matching a keyword in the text</h3>
+<p>The message text, without the <code>ZCZC</code> line and <code>NNNN</code>, is put in upper case, with line ends and runs of blanks folded to single spaces, and one space is added at each end. A keyword is then looked for as follows:</p>
+<table>
+<tr><th>Keyword</th><th>Matches</th><th>Example</th></tr>
+<tr><td>Has a leading or trailing space</td><td>As written, exactly</td><td><code> KARA </code> matches "KARA SEA" but not "KARAGINSKIY"</td></tr>
+<tr><td>3 characters or fewer</td><td>Whole words only: the characters on both sides must not be letters or digits</td><td><code>GB</code> matches "GB WARNING", not "GBR"</td></tr>
+<tr><td>4 characters or more</td><td>Anywhere, including inside a longer word</td><td><code>ADAK</code> matches "ADAK ISLAND"; <code>BRISTOL</code> matches "BRISTOL BAY"</td></tr>
+</table>
+<p>A keyword counts once, however many times it appears in the text. The same word in two different keywords counts twice, once for each: "KISKA" and "KISKA ISLAND" are two keywords.</p>
+
+<h3 id="s3-2">3.2 UID keywords</h3>
+<p>The first UID hit gives <strong>10</strong> points, each further UID hit <strong>2</strong> more, up to <strong>14</strong> in all. A station naming itself is much stronger than any place name, and the first UID hit alone outscores the largest possible GID total (8).</p>
+
+<h3 id="s3-3">3.3 GID keywords</h3>
+<p>A place is worth more the fewer stations share it. Each GID hit gives</p>
+<p class="eq">4 &divide; n</p>
+<p>points, where n is the number of stations <em>on the same frequency</em> that have that keyword in their GID or UID list (each station counted once). The sum over all hits is capped at <strong>8</strong>.</p>
+<table>
+<tr><th class="n">Stations sharing the keyword (n)</th><th class="n">1</th><th class="n">2</th><th class="n">3</th><th class="n">4</th><th class="n">5</th><th class="n">6</th></tr>
+<tr><td>Points for one hit</td><td class="n">4.00</td><td class="n">2.00</td><td class="n">1.33</td><td class="n">1.00</td><td class="n">0.80</td><td class="n">0.67</td></tr>
+</table>
+<p>Examples from the table: <code>ADAK</code> is used by one station on 518 kHz (Kodiak West), so one hit is worth 4. <code>BLACK SEA</code> is used by three, so it is worth 1.33. <code>DOVER</code>, <code>THAMES</code> and <code>NORWEGIAN</code> are each used by six, worth 0.67 each.</p>
+<p>Because a keyword shared by three or more stations is worth less than the 2.0 needed to name a station (5.2), common sea-area names can never name a station alone, but several of them together can.</p>
+<p class="note">A keyword that appears twice in <em>one</em> station's own list is counted twice. Five stations of the table used here have such a repeat, among them Kodiak (West) with <code>BRISTOL BAY</code>, so a single mention of Bristol Bay earns it 8 points, not 4.</p>
+
+<h3 id="s3-4">3.4 The keyword total</h3>
+<p>The keyword score of a station is its UID part (at most 14) plus its GID part (at most 8). It is called <code>kw</code> below. The step that decides (5.2) looks at <code>kw</code> separately from the total, so that nothing but the text can name a station.</p>
+
+<h2 id="s4">4. Supporting evidence</h2>
+<p>These three terms are small on purpose. Together they can add at most 3.1 points (2.1 for a US station), and none of them counts towards the keyword evidence needed to name a station. They separate stations the text cannot separate, and nothing more.</p>
+
+<h3 id="s4-1">4.1 Time slot</h3>
+<p>The slot is used <strong>only when B1 is unknown</strong>. When the letter was read, all remaining candidates share the slot by construction, so the slot says nothing. When it was not, the slot says which letter is likely: a message that started at 03:52 fits the stations whose slot starts at 03:50.</p>
+<p>The time used is the start of reception. The difference d is the minutes from the nearest slot start (the day wraps around midnight):</p>
+<table>
+<tr><th>Reception starts</th><th class="n">d</th><th class="n">Points</th></tr>
+<tr><td>Up to 1 minute before the slot, or up to 10 minutes after</td><td class="n">&minus;1 &hellip; +10</td><td class="n">2.0</td></tr>
+<tr><td>10 to 30 minutes after the slot start (late transmitter, or the start was missed)</td><td class="n">+10 &hellip; +30</td><td class="n">1.0</td></tr>
+<tr><td>Otherwise</td><td></td><td class="n">0</td></tr>
+</table>
+<p>The best of the station's six slots counts. For a station whose country code is <code>USA</code> the points are halved (1.0 and 0.5), because US stations often transmit off schedule. The test is on the country code <code>USA</code>, which in the table used here covers eight stations. Alaska (<code>ALS</code>), Hawaii (<code>HWA</code>), Guam (<code>GUM</code>) and Puerto Rico (<code>PTR</code>) have their own country codes and are not halved.</p>
+
+<h3 id="s4-2">4.2 Distance</h3>
+<p>If your position is set, a station gets</p>
+<p class="eq">0.6 &times; e<sup>&minus;d/2000</sup></p>
+<p>points, d being the distance in km. A nearer station is more likely to be the one received by ground wave.</p>
+<table>
+<tr><th>Distance</th><th class="n">0 km</th><th class="n">500</th><th class="n">1000</th><th class="n">2000</th><th class="n">4000</th><th class="n">8000</th></tr>
+<tr><td>Points</td><td class="n">0.60</td><td class="n">0.47</td><td class="n">0.36</td><td class="n">0.22</td><td class="n">0.08</td><td class="n">0.01</td></tr>
+</table>
+
+<h3 id="s4-3">4.3 History</h3>
+<p>A station you have already received in this database gets</p>
+<p class="eq">min(0.5, 0.1 &times; ln(1 + n))</p>
+<p>points, n being the number of non-deleted stored records with that station.</p>
+<table>
+<tr><th>Records already stored</th><th class="n">1</th><th class="n">5</th><th class="n">10</th><th class="n">50</th><th class="n">100</th><th class="n">148 or more</th></tr>
+<tr><td>Points</td><td class="n">0.07</td><td class="n">0.18</td><td class="n">0.24</td><td class="n">0.39</td><td class="n">0.46</td><td class="n">0.50</td></tr>
+</table>
+<p>The term favours the stations of your own region, but only slightly. It also means that the same text can score a little differently in a database that has run for a year, so a score is not something to compare between installations.</p>
+
+<h2 id="s5">5. The decision</h2>
+
+<h3 id="s5-1">5.1 Total, ranking and margin</h3>
+<p class="eq">total = kw + slot + distance + history</p>
+<p>The candidates are sorted by total, best first. The <strong>margin</strong> is the best total minus the second best (infinite when there is only one candidate). Note that the margin is taken on the totals, so supporting evidence can create a margin between two stations the text cannot separate.</p>
+<p>Up to six candidates with a total above zero are kept (the best one always), with their scores.</p>
+
+<h3 id="s5-2">5.2 The four rules</h3>
+<p>The rules are tried in this order; the first that applies decides.</p>
+<table>
+<tr><th>#</th><th>Condition</th><th>Result</th></tr>
+<tr><td>1</td><td>Exactly one candidate is left <em>and</em> the B1 letter was read or you set the NAVAREA</td><td>That station. Method <code>B1</code>, or <code>manual</code> if you set the NAVAREA. No keyword is needed.</td></tr>
+<tr><td>2</td><td>You set the NAVAREA, and <code>kw</code> is below 2.0, and the margin is below 0.75</td><td>No station. Marked ambiguous if several candidates remain: the letter and area still leave more than one and nothing in the text separates them.</td></tr>
+<tr><td>3</td><td><code>kw</code> is at least <strong>2.0</strong> and the margin is at least <strong>0.75</strong></td><td>The best station. Method <code>UID</code> if it had a UID hit, otherwise <code>GID</code>.</td></tr>
+<tr><td>4</td><td>Anything else</td><td>UNID. Marked ambiguous if the best candidate had at least 2.0 of keyword evidence, meaning that two or more stations fit about equally well.</td></tr>
+</table>
+<p>What this means in practice:</p>
+<ul>
+<li><strong>The text has to name the station.</strong> A station can be named with no slot, no position and no history, but never with only those.</li>
+<li><strong>One unique place is enough.</strong> A single hit on a keyword only one station has gives 4.0, twice the requirement. This is what makes identification work with a damaged header, and is also the main way it can be wrong (section 7, example 1).</li>
+<li><strong>A keyword shared by two stations</strong> gives each 2.0, which passes the keyword test, but the margin is then zero unless slot, distance or history favour one by 0.75 or more.</li>
+<li><strong>Keywords shared by three or more</strong> give less than 2.0 from one hit; two or three such hits are needed.</li>
+</ul>
+
+<h2 id="s6">6. What is stored, and what the operator can do</h2>
+
+<h3 id="s6-1">6.1 Stored with the record</h3>
+<ul>
+<li>The station (or "UNID"), its call sign, name and country code, its NAVAREA, and the distance and bearing from your position.</li>
+<li>The method and the score.</li>
+<li>The candidate list (up to six stations with scores), also for records left unidentified.</li>
+</ul>
+<p>When a station is named, the record's NAVAREA becomes the station's, except for a record whose NAVAREA you have set by hand.</p>
+
+<h3 id="s6-2">6.2 Methods</h3>
+<table>
+<tr><th>Method</th><th>Meaning</th></tr>
+<tr><td><code>UID</code></td><td>Named by rule 3, with at least one unique keyword in the text</td></tr>
+<tr><td><code>GID</code></td><td>Named by rule 3, by geographical keywords only</td></tr>
+<tr><td><code>B1</code></td><td>The only station with that frequency and letter (rule 1)</td></tr>
+<tr><td><code>manual</code></td><td>You set the NAVAREA and one station is left; or you chose a station that was among the scored candidates</td></tr>
+<tr><td><code>forced ID</code></td><td>You chose a station that the scoring did not offer, or gave a fragment a station. The score is 0.</td></tr>
+<tr><td><code>YaND import</code></td><td>The record came from a YaND log; it keeps the station YaND gave it</td></tr>
+<tr><td>UNID</td><td>The evidence was not clear. Nothing is guessed.</td></tr>
+</table>
+
+<h3 id="s6-3">6.3 The operator's choices</h3>
+<ul>
+<li><strong>Suggestions.</strong> In the review pane an unidentified or doubtful record offers up to two stations with a score above zero, best first. If there are none and the B1 letter was read, it offers the two nearest stations with that letter (the sender is probably out of its slot). A list of all stations of the frequency is always available, with a note saying in which slot the message started.</li>
+<li><strong>Choosing a station.</strong> This sets the record's B1 and NAVAREA to the station's own and remembers the choice, which is needed when several stations share frequency, letter and NAVAREA. The scoring then runs again with the choice in place.</li>
+<li><strong>Setting the NAVAREA or B1.</strong> This marks the record as edited by hand. The NAVAREA then limits the candidates (step 2), and the record keeps your B1 and NAVAREA when it is scored again.</li>
+</ul>
+
+<h2 id="s7">7. Worked examples</h2>
+<p>All run on 518 kHz with the table described in 1.2, without a position and with an empty database, so that only keywords and slot count.</p>
+
+<h3>1. One place name, unreadable B1 (how a wrong station can be named)</h3>
+<p>Text containing <code>ADAK</code> and nothing else of use; B1 unreadable; reception starts 03:52.</p>
+<table>
+<tr><th>Candidate</th><th class="n">kw</th><th class="n">Slot</th><th class="n">Total</th></tr>
+<tr><td>Kodiak (West), B1 X, slot 03:50</td><td class="n">4.00</td><td class="n">2.00</td><td class="n">6.00</td></tr>
+<tr><td>Every other station with slot 03:50 or 03:40 &hellip; 04:00</td><td class="n">0</td><td class="n">2.00</td><td class="n">2.00</td></tr>
+</table>
+<p>Kodiak (West) is the only station with <code>ADAK</code>, so the hit is worth 4.0. <code>kw</code> = 4.0 &ge; 2.0 and the margin is 4.0 &ge; 0.75, so rule 3 names it, method <code>GID</code>. At 06:10, outside every slot, the total is 4.0 and the result is the same.</p>
+<p>This is what happened with a message that really came from Novorossiysk (UFN, B1 A). Its text contained "ADAK" but none of Novorossiysk's keywords, and its B1 was not read. If the B1 had been read as A, the candidates would have been the eight stations of the table in 1.1, none of which has <code>ADAK</code>; all would have scored 0 and the record would have stayed UNID, which is the correct outcome for a text the table cannot place.</p>
+
+<h3>2. A shared sea name is not enough</h3>
+<p>B1 = A, text <code>BLACK SEA</code>. The phrase is in three stations' lists, so Novorossiysk gets 4 &divide; 3 = 1.33. That is below 2.0: UNID, with Novorossiysk listed as the only candidate with a score above zero. With the B1 unknown, and the message at 00:02, the slot adds 2.0 for Novorossiysk (total 3.33), but that does not count towards the 2.0 and the result is still UNID.</p>
+<p>Add <code>SEVASTOPOL</code>, a keyword only Novorossiysk has: <code>kw</code> = 1.33 + 4.0 = 5.33, total 7.33 with the slot, margin more than 5. Named, method <code>GID</code>.</p>
+
+<h3>3. Substrings and repeated keywords</h3>
+<p>B1 unknown, text <code>BRISTOL BAY</code>, reception starts 03:55.</p>
+<table>
+<tr><th>Candidate</th><th>Why</th><th class="n">Total</th></tr>
+<tr><td>Kodiak (West)</td><td><code>BRISTOL BAY</code> is in its list twice: 2 &times; 4.0, capped at 8.0, plus slot 2.0</td><td class="n">10.00</td></tr>
+<tr><td>Niton (E)</td><td>its keyword <code>BRISTOL</code> (the Bristol Channel) matches inside "BRISTOL BAY": 4.0</td><td class="n">4.00</td></tr>
+</table>
+<p>The answer is right here, but both effects are visible. With B1 = X given, Kodiak (West) is the only candidate and scores 8.00 from the keyword alone.</p>
+
+<h3>4. Same letter, same area, same slot: ambiguous</h3>
+<p>B1 = G, NAVAREA set to 3 by hand, no useful text. Two stations remain: Fereydoonkenar (EQO) and Berdiansk (UKW), both G, area 3, slot 01:00. Rule 1 does not apply (two candidates), rule 2 does: UNID, marked ambiguous. In the review pane you choose one; the choice is stored as <code>manual</code> or <code>forced ID</code>.</p>
+
+<h3>5. The letter alone is not enough</h3>
+<p>B1 = F, text without any keyword: the candidates are all stations with the letter F on the frequency, all with <code>kw</code> = 0. The result is UNID.</p>
+
+<h2 id="s8">8. Constants</h2>
+<p>These are fixed in the program. They are listed because the community may want to discuss them.</p>
+<table>
+<tr><th>Name</th><th class="n">Value</th><th>Meaning</th></tr>
+<tr><td><code>uidScore</code></td><td class="n">10</td><td>First UID hit</td></tr>
+<tr><td><code>uidExtra</code></td><td class="n">2</td><td>Each further UID hit</td></tr>
+<tr><td><code>uidCap</code></td><td class="n">14</td><td>Largest UID total</td></tr>
+<tr><td><code>gidUnit</code></td><td class="n">4</td><td>A GID hit is worth gidUnit &divide; (stations sharing the keyword)</td></tr>
+<tr><td><code>gidCap</code></td><td class="n">8</td><td>Largest GID total</td></tr>
+<tr><td><code>slotMax</code></td><td class="n">2</td><td>Slot points (halved for country code USA); only when B1 is unknown</td></tr>
+<tr><td><code>distMax</code></td><td class="n">0.6</td><td>Distance points at zero distance; scale 2000 km</td></tr>
+<tr><td><code>histMax</code></td><td class="n">0.5</td><td>Largest history term; 0.1 &times; ln(1 + n)</td></tr>
+<tr><td><code>minKeyword</code></td><td class="n">2.0</td><td>Keyword score needed to name a station</td></tr>
+<tr><td><code>minMargin</code></td><td class="n">0.75</td><td>Lead over the second candidate needed to name a station</td></tr>
+<tr><td><code>maxCandidates</code></td><td class="n">6</td><td>Candidates kept with the record</td></tr>
+<tr><td>Slot window</td><td class="n">&minus;1 &hellip; +10 min full, +10 &hellip; +30 half</td><td>Relative to each of the six daily slot starts</td></tr>
+<tr><td>Short keyword</td><td class="n">&le; 3 characters</td><td>Must match as a whole word</td></tr>
+</table>
+
+<h2 id="sum">Summary and known weak spots</h2>
+<ul>
+<li>The candidates are the stations of the frequency, narrowed by the B1 letter and by a NAVAREA you set.</li>
+<li>A station is named only if the message text gives it at least 2.0 points of keyword evidence and it leads the second candidate by at least 0.75 in total. Slot, distance and history can break a tie but cannot name a station.</li>
+<li>Otherwise the record stays UNID with the best candidates and their scores for you to decide. Nothing is guessed.</li>
+</ul>
+<p>Behaviour that the community may want to examine. None of it has been changed; this is a description of the current rules.</p>
+<ul>
+<li><strong>One unique place can name a station.</strong> One hit on a keyword only one station has gives 4.0, twice the requirement. If the B1 is unreadable, a warning that names a place in a neighbouring or relayed area names the wrong station (example 1). The cost of requiring more would be more UNID records.</li>
+<li><strong>A misread B1 is trusted.</strong> Any letter from A to Z counts as a known B1, and the candidates are cut to that letter. If noise turned one letter into another, the right station is no longer among the candidates, and the slot is no longer consulted.</li>
+<li><strong>Keywords of four or more characters match inside words</strong> (<code>BRISTOL</code> in "BRISTOL BAY"). Short ones match whole words only. A keyword damaged by reception errors does not match at all.</li>
+<li><strong>Keywords repeated inside one station's list count twice</strong> (five stations in the table used here).</li>
+<li><strong>How widely a keyword is shared</strong> is counted over the GID and UID lists of the stations of one frequency. A station that lists a place under UID makes it count as shared for the GID users.</li>
+<li><strong>The relaxed US slot</strong> applies to the country code <code>USA</code> only, not to Alaska, Hawaii, Guam or Puerto Rico.</li>
+<li><strong>The slot is compared with the start of reception</strong>, not with a time in the header, and a repeated transmission or a late start is scored as it falls.</li>
+<li><strong>The text is matched as a whole</strong>: where in the message a keyword appears does not matter, nor how many times.</li>
+<li><strong>A table change is not retroactive</strong>: it applies to new messages (1.2, 1.3).</li>
+</ul>
+<p>Ideas that have been noted for discussion, none of them implemented: tolerate one stray character in front of B1 when reading the header; treat the position of a keyword within the message (the first lines usually concern the station's own area) as weak evidence; and a re-identification of stored records, which would take some time on a large log.</p>
+</main>
+</body>
+</html>
