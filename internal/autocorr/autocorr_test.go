@@ -76,6 +76,54 @@ func TestReversals(t *testing.T) {
 	}
 }
 
+func TestReversalsRuns(t *testing.T) {
+	c, cfg := small(), DefaultConfig()
+	rv := sitor.Reverse
+	check := func(line string, want ...string) {
+		t.Helper()
+		got := c.Reversals(line, cfg)
+		var texts []string
+		for _, g := range got {
+			texts = append(texts, g.Text)
+		}
+		if !reflect.DeepEqual(texts, want) && !(len(texts) == 0 && len(want) == 0) {
+			t.Errorf("%q: got %q, want %q", line, texts, want)
+		}
+		for _, g := range got { // the positions must cut out the received text, which reversed (marks kept) is the suggestion
+			if g.Start < 0 || g.End > len(line) || g.Start >= g.End {
+				t.Errorf("%q: bad positions %+v", line, g)
+			}
+		}
+	}
+	// a mark sent after a word is a mark in the wrong shift too: it stays
+	check("X "+rv("WATERS")+", Y", "WATERS,")
+	check(rv("WATERS")+"."+" "+rv("WINDS"), "WATERS. WINDS")
+	// a real number is a number: it ends the stretch
+	check(rv("WATERS")+" 5 "+rv("WINDS"), "WATERS", "WINDS")
+	check(rv("WATERS")+" 10-20 "+rv("WINDS"), "WATERS", "WINDS")
+	// other tokens between two words belong to the stretch (AT is "-5", IN is "8,", TO is the number 59), not more than five
+	check(rv("WATERS")+" "+rv("AT")+" "+rv("WINDS"), "WATERS AT WINDS")
+	check(rv("WATERS")+" 59 "+rv("WINDS"), "WATERS TO WINDS")
+	check(rv("WATERS")+" "+strings.Repeat(rv("AT")+" ", 5)+rv("WINDS"), "WATERS AT AT AT AT AT WINDS")
+	check(rv("WATERS")+" "+strings.Repeat(rv("AT")+" ", 6)+rv("WINDS"), "WATERS", "WINDS")
+	// 59 alone is a number
+	check("59 "+rv("WATERS")+" 59", "WATERS")
+	// a number with unreadable figures is a number too
+	check("12-~~ "+rv("WATERS"), "WATERS")
+	// too many unreadable characters: noise
+	check(rv("WATERS") + " ~~~~~~~~~~~~~~~~~~~~")
+	// a short word at an end is not added (nothing says it was decoded in the wrong shift)
+	check(rv("AT")+" "+rv("WATERS")+" "+rv("AT"), "WATERS")
+	// text that reads as it is is left alone, also numbers that happen to read as words (49753 is TOWER)
+	check("HEAVY WINDS EXPECTED 5 TO 10 KT 12345 49753 (WATERS)")
+	// positions are bytes
+	line := "AB " + rv("WATERS") + " CD"
+	g := c.Reversals(line, cfg)
+	if len(g) != 1 || line[g[0].Start:g[0].End] != rv("WATERS") {
+		t.Errorf("positions: %+v", g)
+	}
+}
+
 func TestBuiltinAndExtra(t *testing.T) {
 	c := New()
 	if c.Size() < 2000 {

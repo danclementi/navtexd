@@ -245,9 +245,50 @@
   // in [brackets] (hover: what was received). Revised stretches get their own background (hover: what was received).
   // Every line is a span.ln with the quality prefix in span.pfx and the text in span.tx, so a selection can be traced
   // back to a line.
+  const enc = new TextEncoder(), dec = new TextDecoder();
+  // The suggestions of the server that are not revised yet (a stretch that overlaps a revision is left out), per line: {s, e, t}
+  const pendingCands = (r) => (r.rv || []).map((list, i) => (list || []).filter((c) => !(r.rev || []).some((v) => v.l === i && c.s < v.e && v.s < c.e)));
+  // A line with stretches that look decoded in the wrong shift, or shown reversed as a whole (rl = the reversed line): built from the
+  // received text, so that a selection still gives the received text. What is shown instead of a word is drawn over it (span.vis,
+  // data-v): the characters are the same in number, and the font has a fixed width.
+  function segmentLine(tx, raw, revs, cands, rl) {
+    const bytes = enc.encode(raw), sub = (a, b) => dec.decode(bytes.subarray(a, b));
+    const rune = (bytePos) => Array.from(sub(0, bytePos)).length;
+    const rch = rl ? Array.from(rl) : null;
+    const words = (into, received, shown) => {
+      const rp = received.split(/(\s+)/), vp = shown === null ? null : shown.split(/(\s+)/);
+      rp.forEach((tok, k) => {
+        if (tok === "") return;
+        if (/^\s+$/.test(tok) || !vp || vp[k] === undefined || vp[k] === tok) { into.append(tok); return; }
+        const sp = el("span", { class: "vis" });
+        sp.dataset.v = vp[k];
+        sp.append(tok);
+        into.append(sp);
+      });
+    };
+    const gap = (a, b) => { if (b > a) words(tx, sub(a, b), rch ? rch.slice(rune(a), rune(b)).join("") : null); };
+    const items = [...revs.map((v) => ({ s: v.s, e: v.e, rev: v })), ...cands.map((c) => ({ s: c.s, e: c.e, cand: c }))].sort((x, y) => x.s - y.s);
+    let at = 0;
+    for (const it of items) {
+      if (it.s < at) continue;
+      gap(at, it.s);
+      if (it.rev) tx.append(el("span", { class: "revd", title: "replaced by the operator; received: " + it.rev.o, text: "<" + it.rev.n + ">" }));
+      else {
+        const rec = sub(it.s, it.e);
+        const sp = el("span", { class: "cand", "data-s": String(it.s), "data-e": String(it.e), "data-t": it.cand.t,
+          title: "Looks as if it was decoded in the wrong shift. Received: " + rec + (admin() ? "\nClick to put the reversed text into the message (undo is possible)." : "\nLog in as administrator to change the message.") });
+        words(sp, rec, it.cand.t);
+        tx.append(sp);
+      }
+      at = it.e;
+    }
+    gap(at, bytes.length);
+  }
+
   NX.fillRecordText = (pre, r, opt) => {
     const cor = opt.cor && r.cor ? r.cor.split("\n") : null;
     pre.replaceChildren();
+    pre.classList.toggle("showrev", !!opt.rl);
     r.lines.forEach((l, i) => {
       if (i) pre.append("\n");
       const base = r.eff ? r.eff[i] : l.x;
@@ -255,6 +296,13 @@
       const revs = (r.rev || []).filter((v) => v.l === i).sort((a, b) => a.s - b.s);
       const ln = el("span", { class: "ln", "data-i": i }), tx = el("span", { class: "tx" });
       ln.append(el("span", { class: "pfx", text: NX.lineText({ t: Date.parse(l.t), q: l.q, x: "" }) }), tx);
+      const cands = (opt.cands && opt.cands[i]) || [];
+      if (cands.length || opt.rl) {
+        segmentLine(tx, l.x, revs, cands, opt.rl ? opt.rl[i] : null);
+        for (const sp of tx.querySelectorAll(".cand")) sp.dataset.l = String(i);
+        pre.append(ln);
+        return;
+      }
       const baseTok = base.split(/(\s+)/);
       let into = tx, rv = 0, open = null;
       c.split(/(\s+)/).forEach((tok, k) => {
@@ -268,22 +316,34 @@
     });
   };
 
+  // the whole record's lines through the shift reverser (for "show shift-reversed"), kept for the record
+  let rvKey = "", rvLines = null;
+  async function reversedLines(r) {
+    const key = r.id + ":" + r.v;
+    if (rvKey !== key) {
+      const t = (await api("POST", "/api/reverse", { text: r.lines.map((l) => l.x).join("\n") })).text.split("\n");
+      rvKey = key; rvLines = t;
+    }
+    return rvLines;
+  }
   function showText() {
     const r = L.rec;
-    NX.fillRecordText($("rec-text"), r, { cor: $("rec-cor").checked });
-    // stretches that look as if they were decoded in the wrong shift
+    const cands = pendingCands(r), n = cands.reduce((a, l) => a + l.length, 0);
+    const paint = (rl) => { if (L.rec === r) NX.fillRecordText($("rec-text"), r, { cor: $("rec-cor").checked, cands, rl }); };
+    if ($("rec-showrev").checked) reversedLines(r).then(paint, () => paint(null)); else paint(null);
+    // stretches that look as if they were decoded in the wrong shift are marked in the text; one click accepts one, or all
     const box = $("rev-sug");
     box.replaceChildren();
-    const sug = [];
-    (r.rv || []).forEach((list, i) => (list || []).forEach((s) => sug.push({ s, i })));
-    box.hidden = !sug.length;
-    if (sug.length) {
-      box.append("Possibly decoded in the wrong shift: ");
-      for (const { s, i } of sug.slice(0, 8)) {
-        const b = el("button", { type: "button", class: "linkbtn", title: "Put it into the shift reverser", text: `${byteSlice(r.lines[i].x, s.s, s.e)} \u2192 ${s.t}` });
-        b.onclick = () => { setRevSource({ l: i, s: s.s, e: s.e }); $("rev-in").value = byteSlice(r.lines[i].x, s.s, s.e); $("rev-go").click(); };
-        box.append(b, " ");
-      }
+    box.hidden = !n;
+    if (n) {
+      box.append(`${n} stretch${n > 1 ? "es look" : " looks"} as if decoded in the wrong shift: marked in the text, click one to put the reversed text in. `);
+      const b = el("button", { type: "button", class: "linkbtn", disabled: !admin(), text: `Accept all (${n})`, title: "Put the reversed text of all of them into the message (one step: undo puts them back)" });
+      b.onclick = () => {
+        const ops = [];
+        cands.forEach((list, i) => list.forEach((c) => ops.push({ op: "add", l: i, s: c.s, e: c.e, t: c.t })));
+        patch(ops.length === 1 ? { rev: ops[0] } : { revs: ops.slice(0, 200) });
+      };
+      box.append(b);
     }
     // the operator's revisions, with a way back
     const rl = $("rev-list");
@@ -299,6 +359,13 @@
       if (r.rev.length > 1) { const b = el("button", { type: "button", class: "linkbtn", disabled: !admin(), text: "undo all" }); b.onclick = () => patch({ rev: { op: "clear" } }); rl.append(b); }
     }
   }
+  $("rec-showrev").onchange = () => { if (L.rec) showText(); };
+  // a click on a marked stretch accepts it (not when text is being selected)
+  $("rec-text").addEventListener("click", (e) => {
+    const c = e.target.closest(".cand");
+    if (!c || !admin() || String(window.getSelection())) return;
+    patch({ rev: { op: "add", l: Number(c.dataset.l), s: Number(c.dataset.s), e: Number(c.dataset.e), t: c.dataset.t } });
+  });
   $("rec-cor").checked = (() => { try { return localStorage.getItem("nx-cor") !== "0"; } catch { return true; } })();
   $("rec-cor").onchange = () => { try { localStorage.setItem("nx-cor", $("rec-cor").checked ? "1" : "0"); } catch {} if (L.rec) showText(); };
 
