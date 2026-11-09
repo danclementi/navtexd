@@ -235,7 +235,7 @@ func (s *Server) patchMessage(w http.ResponseWriter, r *http.Request, id Identit
 			rec.Picked = 0
 		} else {
 			st, ok := s.cat.Station(*body.Station)
-			if !ok || st.FreqKHz*1000 != rec.Channel {
+			if !ok || st.Hz() != rec.Channel {
 				fail(w, 400, errors.New("that station does not transmit on this channel"))
 				return
 			}
@@ -674,11 +674,18 @@ func (s *Server) dbImport(w http.ResponseWriter, r *http.Request, id Identity) {
 		rep.Source = "YaND report"
 		res, _, err = s.importYaND(body, false, replace)
 	default:
-		res, err = s.st.Import(body, replace)
+		var place func(*store.Record)
+		if s.cat != nil {
+			place = s.cat.Placer()
+		}
+		res, err = s.st.ImportWith(body, replace, place)
 	}
 	if err != nil {
 		fail(w, 400, err)
 		return
+	}
+	if s.cat != nil {
+		s.cat.Resync() // (the records' places in the table follow their stations' keys)
 	}
 	rep.ImportResult = res
 	from := "log"
@@ -739,7 +746,7 @@ func (s *Server) importYaND(r io.Reader, abs, replace bool) (store.ImportResult,
 type stationMsg struct {
 	ID       int       `json:"id"`
 	NavArea  int       `json:"area"`
-	Freq     int       `json:"freq"`
+	Freq     float64   `json:"freq"`
 	B1       string    `json:"b1"`
 	Callsign string    `json:"call"`
 	Name     string    `json:"name"`

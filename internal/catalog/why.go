@@ -65,7 +65,7 @@ func (c *Catalog) Explain(r store.Record, loc bool) *Why {
 	}
 	c.mu.Lock() // the identifier's History hook is shared
 	defer c.mu.Unlock()
-	in := ident.Input{FreqKHz: r.Channel / 1000, B1: r.B1, When: r.Received, Text: bodyText(&r)}
+	in := ident.Input{FreqKHz: float64(r.Channel) / 1000, B1: r.B1, When: r.Received, Text: bodyText(&r)}
 	if r.Manual {
 		in.NavArea = r.NavArea
 	}

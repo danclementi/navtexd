@@ -73,3 +73,37 @@ func TestParseErrors(t *testing.T) {
 		}
 	}
 }
+
+// 4209.5 kHz is a channel of the table, and a station may have fewer than six transmissions a day.
+func TestDecimalFrequencyAndFewTimes(t *testing.T) {
+	in := "VERSION5\r\n" +
+		"9#4209.5#X#SUZ#Ismailia#EGY#Egypt#30.467#32.367#07:50#11:50#####KEY#UNIQUE#\r\n" +
+		"11#486#B#XSQ#Guangzhou#CHN#China#23.159#113.513#00:10#04:10#08:10#12:10#16:10#20:10###\r\n"
+	tab, err := Parse(strings.NewReader(in))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := tab.Stations[0]
+	if s.FreqKHz != 4209.5 || s.Hz() != 4209500 || s.Times[0] != "07:50" || s.Times[2] != "" || len(s.GID) != 0 && s.GID[0] != "KEY" {
+		t.Fatalf("station: %+v", s)
+	}
+	if tab.Stations[1].Hz() != 486000 || FreqString(486) != "486" || FreqString(4209.5) != "4209.5" {
+		t.Fatalf("frequencies: %d %s %s", tab.Stations[1].Hz(), FreqString(486), FreqString(4209.5))
+	}
+	var out bytes.Buffer
+	if err := tab.Write(&out); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != in {
+		t.Fatalf("written differently:\n%q\n%q", out.String(), in)
+	}
+	for _, bad := range []string{
+		"9#4209#X#SUZ#I#EGY#Egypt#30.467#32.367#07:50#####\r\n",   // not a channel
+		"9#4209.5#X#SUZ#I#EGY#Egypt#30.467#32.367#######\r\n",     // no time at all
+		"9#4209.5#X#SUZ#I#EGY#Egypt#30.467#32.367#7:50######\r\n", // not hh:mm
+	} {
+		if _, err := Parse(strings.NewReader("VERSION5\r\n" + bad)); err == nil {
+			t.Errorf("accepted %q", bad)
+		}
+	}
+}

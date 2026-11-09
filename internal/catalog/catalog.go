@@ -84,7 +84,7 @@ const LoggingFile = "selective_logging.json"
 
 // key identifies a station across table updates.
 func key(s stations.Station) string {
-	return fmt.Sprintf("%d#%d#%s#%s", s.FreqKHz, s.NavArea, s.ID, s.Callsign)
+	return fmt.Sprintf("%s#%d#%s#%s", stations.FreqString(s.FreqKHz), s.NavArea, s.ID, s.Callsign)
 }
 
 func (c *Catalog) loggingPath() string { return filepath.Join(filepath.Dir(c.path), LoggingFile) }
@@ -220,7 +220,7 @@ func (c *Catalog) keyOf(id int) string {
 // label (when given) and channel agree, else the station of the table with that label on the channel ("" when there is none).
 func (c *Catalog) keyFor(id int, label string, channel int) string {
 	if id >= 1 && id <= len(c.tab.Stations) {
-		if s := c.tab.Stations[id-1]; s.FreqKHz*1000 == channel && (label == "" || Label(s) == label) {
+		if s := c.tab.Stations[id-1]; s.Hz() == channel && (label == "" || Label(s) == label) {
 			return c.keys[id-1]
 		}
 	}
@@ -228,7 +228,7 @@ func (c *Catalog) keyFor(id int, label string, channel int) string {
 		return ""
 	}
 	for i, s := range c.tab.Stations {
-		if s.FreqKHz*1000 == channel && Label(s) == label {
+		if s.Hz() == channel && Label(s) == label {
 			return c.keys[i]
 		}
 	}
@@ -241,6 +241,9 @@ func (c *Catalog) Warnings() []string {
 	defer c.mu.RUnlock()
 	return append([]string(nil), c.warns...)
 }
+
+// Resync brings the records' places in the table in line with their stations' keys (after an import, say).
+func (c *Catalog) Resync() (int, error) { return c.resync() }
 
 // resync brings the records' places in line with the table (call it after the table changed, without holding c.mu).
 func (c *Catalog) resync() (int, error) {
@@ -312,12 +315,12 @@ func (c *Catalog) Enrich(r *store.Record) {
 	}
 	if r.Kind == "fragment" {
 		// only the operator can give a fragment a station: a "forced ID"
-		if r.Picked >= 1 && r.Picked <= len(c.tab.Stations) && c.tab.Stations[r.Picked-1].FreqKHz*1000 == r.Channel {
+		if r.Picked >= 1 && r.Picked <= len(c.tab.Stations) && c.tab.Stations[r.Picked-1].Hz() == r.Channel {
 			place(c.tab.Stations[r.Picked-1], r.Picked-1, "forced ID", 0)
 		}
 		return
 	}
-	in := ident.Input{FreqKHz: r.Channel / 1000, B1: r.B1, When: r.Received, Text: bodyText(r)}
+	in := ident.Input{FreqKHz: float64(r.Channel) / 1000, B1: r.B1, When: r.Received, Text: bodyText(r)}
 	if r.Manual {
 		in.NavArea = r.NavArea
 	}
@@ -329,7 +332,7 @@ func (c *Catalog) Enrich(r *store.Record) {
 	for _, cd := range res.Candidates {
 		r.Candidates = append(r.Candidates, store.Candidate{StationID: cd.Index + 1, Key: c.keyOf(cd.Index + 1), Label: Label(c.tab.Stations[cd.Index]), Score: store.F2(cd.Score)})
 	}
-	if r.Picked >= 1 && r.Picked <= len(c.tab.Stations) && c.tab.Stations[r.Picked-1].FreqKHz*1000 == r.Channel {
+	if r.Picked >= 1 && r.Picked <= len(c.tab.Stations) && c.tab.Stations[r.Picked-1].Hz() == r.Channel {
 		// the operator chose this station among the candidates (needed when several share frequency, B1 and NAVAREA)
 		res.Index, res.Method, res.Score = r.Picked-1, "forced ID", 0 // not among the candidates: a forced ID
 		for _, cd := range res.Candidates {
@@ -351,7 +354,7 @@ func (c *Catalog) Placer() func(r *store.Record) {
 	c.mu.RLock()
 	byLabel := map[string]int{}
 	for i, s := range c.tab.Stations {
-		byLabel[fmt.Sprintf("%d|%s", s.FreqKHz*1000, Label(s))] = i
+		byLabel[fmt.Sprintf("%d|%s", s.Hz(), Label(s))] = i
 	}
 	list := c.tab.Stations
 	keys := append([]string(nil), c.keys...)
@@ -360,6 +363,9 @@ func (c *Catalog) Placer() func(r *store.Record) {
 	return func(r *store.Record) {
 		i, ok := byLabel[fmt.Sprintf("%d|%s", r.Channel, r.Station)]
 		if !ok {
+			if r.StationKey == "" {
+				r.StationID = 0 // (a place in the table of another program or version means nothing here)
+			}
 			return
 		}
 		s := list[i]

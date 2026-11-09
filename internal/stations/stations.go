@@ -13,6 +13,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -20,8 +21,8 @@ import (
 // Station is one line of the table.
 type Station struct {
 	NavArea     int
-	FreqKHz     int
-	ID          string // B1 station identification letter
+	FreqKHz     float64 // 490, 518, 486, 424 or 4209.5
+	ID          string  // B1 station identification letter
 	Callsign    string
 	Name        string
 	CountryCode string
@@ -71,8 +72,8 @@ func Parse(r io.Reader) (*Table, error) {
 		if s.NavArea, err = strconv.Atoi(f[0]); err != nil {
 			return nil, fmt.Errorf("line %d: navarea %q", line, f[0])
 		}
-		if s.FreqKHz, err = strconv.Atoi(f[1]); err != nil || (s.FreqKHz != 490 && s.FreqKHz != 518 && s.FreqKHz != 486 && s.FreqKHz != 424) {
-			return nil, fmt.Errorf("line %d: frequency %q (want 490, 518, 486 or 424)", line, f[1])
+		if s.FreqKHz, err = strconv.ParseFloat(strings.TrimSpace(f[1]), 64); err != nil || !validFreq(s.FreqKHz) {
+			return nil, fmt.Errorf("line %d: frequency %q (want 490, 518, 486, 424 or 4209.5)", line, f[1])
 		}
 		if s.Lat, err = strconv.ParseFloat(f[7], 64); err != nil || s.Lat < -90 || s.Lat > 90 {
 			return nil, fmt.Errorf("line %d: latitude %q", line, f[7])
@@ -80,11 +81,19 @@ func Parse(r io.Reader) (*Table, error) {
 		if s.Lon, err = strconv.ParseFloat(f[8], 64); err != nil || s.Lon < -180 || s.Lon > 180 {
 			return nil, fmt.Errorf("line %d: longitude %q", line, f[8])
 		}
+		slots := 0
 		for i := 0; i < 6; i++ {
-			s.Times[i] = f[9+i]
+			s.Times[i] = strings.TrimSpace(f[9+i])
+			if s.Times[i] == "" { // (a station with fewer than six transmissions a day leaves the rest empty)
+				continue
+			}
 			if _, ok := ParseClock(s.Times[i]); !ok {
 				return nil, fmt.Errorf("line %d: time %q", line, s.Times[i])
 			}
+			slots++
+		}
+		if slots == 0 {
+			return nil, fmt.Errorf("line %d: no transmission time", line)
 		}
 		s.GID = splitKeywords(f[15])
 		s.UID = splitKeywords(f[16])
@@ -104,7 +113,7 @@ func (t *Table) Write(w io.Writer) error {
 	bw := bufio.NewWriter(w)
 	fmt.Fprintf(bw, "%s\r\n", t.Version)
 	for _, s := range t.Stations {
-		fmt.Fprintf(bw, "%d#%d#%s#%s#%s#%s#%s#%s#%s#%s#%s#%s#\r\n", s.NavArea, s.FreqKHz, s.ID, s.Callsign, s.Name,
+		fmt.Fprintf(bw, "%d#%s#%s#%s#%s#%s#%s#%s#%s#%s#%s#%s#\r\n", s.NavArea, FreqString(s.FreqKHz), s.ID, s.Callsign, s.Name,
 			s.CountryCode, s.Country, strconv.FormatFloat(s.Lat, 'f', 3, 64), strconv.FormatFloat(s.Lon, 'f', 3, 64),
 			strings.Join(s.Times[:], "#"), strings.Join(s.GID, ","), strings.Join(s.UID, ","))
 	}
@@ -117,6 +126,17 @@ func splitKeywords(s string) []string {
 	}
 	return strings.Split(s, ",")
 }
+
+// validFreq says whether f (kHz) is a NAVTEX channel of the program.
+func validFreq(f float64) bool {
+	return f == 490 || f == 518 || f == 486 || f == 424 || f == 4209.5
+}
+
+// FreqString writes a frequency in kHz the shortest way: 518, 4209.5.
+func FreqString(f float64) string { return strconv.FormatFloat(f, 'f', -1, 64) }
+
+// Hz returns the station's frequency in Hz, the unit of a record's channel (518000, 4209500).
+func (s Station) Hz() int { return int(math.Round(s.FreqKHz * 1000)) }
 
 // ParseClock converts "hh:mm" to minutes after midnight.
 func ParseClock(s string) (int, bool) {

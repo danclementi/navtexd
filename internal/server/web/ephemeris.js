@@ -82,7 +82,7 @@
     if (!d) return;
     const s = d.station, add = (k, v) => dl.append(el("dt", { text: k }), el("dd", { text: v }));
     add("Position", `latitude ${s.lat.toFixed(3)}, longitude ${s.lon.toFixed(3)}`);
-    add("Transmission slots", s.times.join("  ") + "  UTC");
+    add("Transmission slots", s.times.filter(Boolean).join("  ") + "  UTC");
   }
 
   $("ep-freq").onchange = () => { fillStations(); load(); };

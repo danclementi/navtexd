@@ -41,7 +41,7 @@ const (
 
 // Input is what is known about a received message.
 type Input struct {
-	FreqKHz int
+	FreqKHz float64
 	B1      string    // station letter; "" or "?" when not read
 	NavArea int       // > 0 when set by the operator (manual override)
 	When    time.Time // start of reception, UTC
@@ -86,15 +86,15 @@ type Result struct {
 // Identifier scores messages against a station table.
 type Identifier struct {
 	tab    *stations.Table
-	byFreq map[int][]int
-	df     map[int]map[string]int // per frequency: keyword -> number of stations using it
+	byFreq map[float64][]int
+	df     map[float64]map[string]int // per frequency: keyword -> number of stations using it
 	// History returns how many messages from station index i were received before (nil = no history).
 	History func(i int) int
 }
 
 // New prepares an identifier for a station table.
 func New(t *stations.Table) *Identifier {
-	id := &Identifier{tab: t, byFreq: map[int][]int{}, df: map[int]map[string]int{}}
+	id := &Identifier{tab: t, byFreq: map[float64][]int{}, df: map[float64]map[string]int{}}
 	for i, s := range t.Stations {
 		id.byFreq[s.FreqKHz] = append(id.byFreq[s.FreqKHz], i)
 		m := id.df[s.FreqKHz]

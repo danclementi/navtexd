@@ -141,6 +141,12 @@ type ImportResult struct {
 // saved to the backups folder first); otherwise records that are not already in the log (same time, channel, kind and text) are
 // added with new numbers. A file without any record is refused and nothing changes.
 func (s *Store) Import(r io.Reader, replace bool) (ImportResult, error) {
+	return s.ImportWith(r, replace, nil)
+}
+
+// ImportWith is Import where place (when not nil) is applied to every record first: it can give a record made with another
+// station table its station's place and key in this one.
+func (s *Store) ImportWith(r io.Reader, replace bool, place func(*Record)) (ImportResult, error) {
 	in := map[int64]*Record{}
 	var order []int64
 	bad := 0
@@ -186,6 +192,11 @@ func (s *Store) Import(r io.Reader, replace bool) (ImportResult, error) {
 	}
 	if bad > len(recs) {
 		return ImportResult{}, fmt.Errorf("the file does not look like a log: %d unreadable lines", bad)
+	}
+	if place != nil {
+		for _, r := range recs {
+			place(r)
+		}
 	}
 	return s.ImportRecords(recs, replace)
 }
