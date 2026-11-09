@@ -353,7 +353,7 @@
   function showText() {
     const r = L.rec;
     const cands = pendingCands(r), n = cands.reduce((a, l) => a + l.length, 0);
-    const paint = (rl) => { if (L.rec === r) { NX.fillRecordText($("rec-text"), r, { cor: $("rec-cor").checked, cands, rl }); if (whyOpen && r.why) markWords($("rec-text"), r.why.words); } };
+    const paint = (rl) => { if (L.rec === r) { NX.fillRecordText($("rec-text"), r, { cor: $("rec-cor").checked, cands, rl }); if (whyIsOpen(r) && r.why) markWords($("rec-text"), r.why.words); } };
     if ($("rec-showrev").checked) reversedLines(r).then(paint, () => paint(null)); else paint(null);
     // stretches that look as if they were decoded in the wrong shift are marked in the text; one click accepts one, or all
     const box = $("rev-sug");
@@ -419,7 +419,23 @@
     const notes = [r.sfix ? `Start: ${r.sfix} read as ZCZC (recognized by its position and what follows)` : "", r.rev && r.rev.length ? `${r.rev.length} stretch${r.rev.length > 1 ? "es" : ""} replaced by the operator (shown in <angle brackets>)` : ""].filter(Boolean).join("\n");
     const dl = el("dl", { class: "dlginfo" });
     const add = (k, v) => dl.append(el("dt", { text: k }), el("dd", {}, v));
-    add("Msg Start", val(NX.stamp(Date.parse(r.rx)) + " UTC")); add("B1 / NAVAREA", b1na); add("Set by", val(setBy));
+    // a record opened without a station starts with the evidence open (and keeps it open when the station is set from there)
+    if (r.st === "UNID" && whyRec.id !== r.id) whyRec = { id: r.id, open: true, auto: true };
+    const slotTxt = el("span", { class: "slotl", title: "Time slot (station letter) the message started in" });
+    NX.loadStations().then((byId) => { if (L.rec === r) slotTxt.textContent = " [" + (slotLetters(r, byId).join("/") || "none") + "]"; }).catch(() => {});
+    const whyBtn = r.why ? el("button", { type: "button", class: "whybtn", title: "How the station was worked out: every station that was scored and what its points came from" }) : null;
+    if (whyBtn) {
+      const label = () => { whyBtn.textContent = (whyIsOpen(r) ? "\u25be" : "\u25b8") + " Why?"; whyBtn.setAttribute("aria-expanded", String(whyIsOpen(r))); };
+      label();
+      whyBtn.onclick = () => {
+        const open = !whyIsOpen(r);
+        if (!(whyRec.id === r.id && whyRec.auto)) whyOpen = open; // (the choice for records that have a station is remembered)
+        whyRec = { id: r.id, open, auto: whyRec.id === r.id && whyRec.auto };
+        label(); identBlock(L.rec).catch(() => {}); showText();
+      };
+    }
+    add("Msg Start", el("span", { class: "v", title: NX.stamp(Date.parse(r.rx)) + " UTC" }, NX.stamp(Date.parse(r.rx)) + " UTC", slotTxt)); add("B1 / NAVAREA", b1na);
+    add("Set by", el("span", { class: "setby" }, val(setBy), whyBtn || ""));
     add("Frequency", val(r.ch + " kHz")); add("Msg Header", val((r.b1 || "?") + (r.b2 || "?") + (r.ser || "??"), notes || undefined)); add("Comment", cm);
     add("Station", val(r.st)); add("Msg ID#", val(NX.hex(r.id), `Quality ${r.q.toFixed(1)}`)); add("", ""); add("", "");
     const box = $("rec-info");
@@ -428,44 +444,56 @@
   }
 
   // Station identification under the message data, in a block of its own (so that it keeps its place when a record is edited):
-  //  - a row of chips (what the identification rests on, and what is doubtful) and the "Why?" button that opens the evidence;
-  //  - the evidence: every station that was scored, what each point came from, and the rules for naming a station;
-  //  - the choices: at most two likely stations (the (up to) two candidates with a score above zero, best first; else, when the
-  //    header has a B1, the two closest stations with that B1), and a list of all stations of the frequency.
+  //  - the evidence, opened by the "Why?" button next to "Set by" (a record without a station starts with it open): a grid with
+  //    every station that was scored, best first, with a Use button for each and the parts of its score, and the rules;
+  //  - the choice of any station of the frequency.
   // Using a station works for any record: the result is a "forced ID" when the message text does not support it. Distances are
   // used only to choose, never shown.
-  let whyOpen = false;
-  const pts = (p) => (p >= 0 ? "+" : "−") + Math.abs(p).toFixed(1);
-  function termRow(t, c) {
-    const row = (kind, what, note) => [el("span", { class: "tp", text: t.k === "slot" && !t.used ? "(" + pts(t.p) + ")" : pts(t.p) }), el("span", { class: "tk", text: kind }), el("span", { class: "tw" }, what, note ? el("span", { class: "small", text: "  " + note }) : "")];
-    const q = (w) => el("b", { text: "“" + w + "”" });
-    const flags = [t.loose ? "only inside a longer word" : "", t.dup ? "listed twice for the station, so counted twice" : "", t.cap ? "held back: cap on keyword points" : ""].filter(Boolean).join("; ");
-    switch (t.k) {
-      case "uid": return row("UID", q(t.kw), flags);
-      case "gid": return row("GID", q(t.kw), (t.n > 1 ? `used by ${t.n} stations: 4 ÷ ${t.n}` : "used by this station only") + (flags ? "; " + flags : ""));
-      case "slot": return row("time slot", t.used ? "the message started in the station's slot" : "the message started in the station's slot, but B1 was read: not counted");
-      case "dist": return row("distance", `${t.km} km`);
-      case "hist": return row("history", `${t.n} earlier message${t.n === 1 ? "" : "s"} from the station`);
-    }
-    return [];
+  let whyOpen = false;               // the operator's choice for records that have a station
+  let whyRec = { id: 0, open: false }; // the choice for the record that is open (a record without a station starts open)
+  const whyIsOpen = (r) => (whyRec.id === r.id ? whyRec.open : whyOpen);
+  // the time slots (station letters) of the frequency that the message started in
+  function slotLetters(r, byId) {
+    const d = new Date(r.rx), m = d.getUTCHours() * 60 + d.getUTCMinutes();
+    const mins = (t) => { const [h, mm] = String(t).split(":").map(Number); return h * 60 + mm; };
+    const on = (s) => s.times.some((t) => t && !isNaN(mins(t)) && ((m - mins(t)) % 1440 + 1440) % 1440 < 10);
+    return [...new Set([...byId.values()].filter((s) => s.freq === r.ch && on(s)).map((s) => s.b1))].sort();
   }
-  function whyPanel(w) {
+  // The candidates as a grid, best first: station, Use, total, and the parts of the score as badges (UID, GID, SLOT, DIST, HIST).
+  // Numbers are padded with blanks, not zeros, so that the columns line up.
+  const num = (v, d, w) => v.toFixed(d).padStart(w, " ");
+  const sum = (c, k) => c.terms.reduce((a, t) => a + (t.k === k ? t.p : 0), 0);
+  const words = (c, k) => [...new Set(c.terms.filter((t) => t.k === k && t.p >= 0 && t.kw).map((t) => t.kw))].join(", ") || "none found";
+  function whyPanel(w, byId) {
     const p = el("div", { class: "whyp" });
     if (!w.cands.length) p.append(el("div", { class: "small whynote", text: w.reason || "No station was scored." }));
-    for (const c of w.cands) {
-      const g = el("div", { class: "whyc" + (c.chosen ? " chosen" : "") });
-      g.append(el("div", { class: "whyh" }, el("b", { text: c.label }), el("span", { class: "small", text: c.chosen ? "the station of this message" : "" }), el("span", { class: "tp", text: c.score.toFixed(1) })));
-      const tg = el("div", { class: "whyt" });
-      for (const t of c.terms) tg.append(...termRow(t, c));
-      if (!c.terms.length) tg.append(el("span", { class: "small whynote", text: "nothing in the message points to this station" }));
-      g.append(tg);
-      p.append(g);
+    const g = el("div", { class: "whyg" });
+    const useTip = "Identify the record as this station (sets B1 and NAVAREA to its own). The identification is marked \"forced ID\" when the message text does not support it.";
+    const badge = (text, tip, strike) => el("span", { class: "bdg" + (strike ? " strike" : ""), title: tip, text });
+    const d = new Date(L.rec.rx), m = d.getUTCHours() * 60 + d.getUTCMinutes();
+    for (const c of w.cands.slice().sort((x, y) => y.score - x.score)) {
+      const st = byId.get(c.id);
+      const slotPts = sum(c, "slot");
+      const inSlot = slotPts > 0 && st && st.times.some((t) => { const [h, mm] = String(t).split(":").map(Number); const dd = ((m - (h * 60 + mm)) % 1440 + 1440) % 1440; return t && (dd <= 30 || dd >= 1439); });
+      const b = el("button", { text: "Use", disabled: !admin() || c.chosen, title: c.chosen ? "This is the station of the message" : useTip });
+      b.onclick = () => useCandidate(c.id);
+      g.append(
+        el("span", { class: "whyn" + (c.chosen ? " chosen" : ""), title: c.label, text: c.label }),
+        el("span", { class: "whys", title: "This station's time slot", text: st ? st.b1 : "" }),
+        b,
+        el("span", { class: "whytot", text: "Total=" + num(c.score, 2, 5) }),
+        badge("UID=" + num(sum(c, "uid"), 1, 4), "unique: " + words(c, "uid")),
+        badge("GID=" + num(sum(c, "gid"), 2, 4), "geographic: " + words(c, "gid")),
+        badge("SLOT=" + num(slotPts, 1, 3), w.b1_known ? "B1 read; ignored" : inSlot ? "message started in slot " + (st ? st.b1 : "") : "message did not start in a slot of this station", w.b1_known),
+        badge("DIST=" + num(sum(c, "dist"), 2, 4), "station distance"),
+        badge("HIST=" + num(sum(c, "hist"), 2, 4), "station history"));
     }
+    p.append(g);
     const best = w.cands[0];
     const rule = el("div", { class: "whyrule small" });
     rule.append(el("span", { text: "Rule" }),
       el("span", { text: `keywords ≥ ${w.need_kw.toFixed(1)}` + (best ? ` (best: ${best.kw.toFixed(1)})` : "") + (w.rivals ? `, lead over the next ≥ ${w.need_margin.toFixed(2)} (lead: ${w.margin.toFixed(2)})` : "")}));
-    if (w.reason && w.cands.length) rule.append(el("span", { text: "Result" }), el("span", { text: w.reason }));
+    if (w.cands.length) rule.append(el("span", { text: "Result" }), el("span", { text: w.reason || (w.method ? "Station set by: " + w.method + "." : "Station already assigned.") }));
     if (w.differs) rule.append(el("span", { text: "Today" }), el("span", { text: `Worked out again with the current station table this gives ${w.differs}.` }));
     rule.append(el("span", { text: "Note" }), el("span", { text: "Shown for this record as it is now (the history of earlier messages counts as of today)." }));
     p.append(rule);
@@ -481,34 +509,9 @@
     const on = (s) => s.times.some((t) => t && !isNaN(mins(t)) && ((m - mins(t)) % 1440 + 1440) % 1440 < 10);
     const same = [...byId.values()].filter((s) => s.freq === r.ch);
     const lab = (s) => `${s.area}${s.b1} ${s.name},${s.cc}`;
-    let pick = (r.cand || []).filter((c) => c.score > 0).sort((x, y) => y.score - x.score).slice(0, 2)
-      .map((c) => ({ id: c.id, label: c.label, score: c.score }));
-    if (!pick.length && r.b1 && r.b1 !== "?") {
-      pick = same.filter((s) => s.b1 === r.b1).sort((x, y) => (x.km || 0) - (y.km || 0) || x.area - y.area).slice(0, 2)
-        .map((s) => ({ id: s.id, label: lab(s) }));
-    }
     const tip = "Identify the record as this station (sets B1 and NAVAREA to its own). The identification is marked \"forced ID\" when the message text does not support it.";
     const frag = document.createDocumentFragment();
-    // row 1: the Why button and the chips
-    const toggle = el("button", { type: "button", class: "whybtn", "aria-expanded": String(whyOpen), title: "How the station was worked out: every station that was scored and what its points came from", text: (whyOpen ? "▾" : "▸") + " Why?" });
-    toggle.onclick = () => { whyOpen = !whyOpen; identBlock(L.rec).catch(() => {}); showText(); };
-    const chips = el("div", { class: "chips" });
-    for (const c of (w && w.chips) || []) chips.append(el("span", { class: "chip " + c.k, title: c.tip || "", text: c.t }));
-    frag.append(toggle, chips);
-    if (whyOpen && w) frag.append(el("div", { class: "whywrap" }, whyPanel(w)));
-    // row: the suggestions, two fixed places
-    frag.append(el("span", { class: "gl", text: "Suggested" }));
-    const sug = el("div", { class: "sugs" });
-    for (let i = 0; i < 2; i++) {
-      const c = pick[i], cell = el("span", { class: "sug" });
-      if (c) {
-        const b = el("button", { text: "Use", disabled: !admin(), title: tip });
-        b.onclick = () => useCandidate(c.id);
-        cell.append(el("span", { class: "sugt", text: c.label + (c.score ? `  (${c.score.toFixed(1)})` : "") }), b);
-      }
-      sug.append(cell);
-    }
-    frag.append(sug);
+    if (whyIsOpen(r) && w) frag.append(el("div", { class: "whywrap" }, whyPanel(w, byId)));
     // row: any station of the frequency
     frag.append(el("span", { class: "gl", text: "Other station" }));
     const other = el("div", { class: "othr" });
