@@ -272,6 +272,18 @@ until the report list changes."><svg class="ic" aria-hidden="true"><use href="#i
       <p class="small">Empties the trash of messages deleted more than 30 days ago and gives the free space in the database file back to the system. Nothing you can see changes; the file may get smaller. A copy of the database is saved first (the last three are kept). Messages deleted less than 30 days ago can still be brought back.</p>
       <button id="db-compact" type="button">Compact now</button>
     </fieldset>
+    <fieldset id="db-prune"><legend>Prune</legend>
+      <p class="small">Thin out the log, for instance at the end of a season. Messages without a station (UNID) have no distance, so the first three rules keep them. The number of messages that match is shown before anything is deleted.</p>
+      <label class="check"><input type="radio" name="pr-mode" value="date" checked> Older than the date <input id="pr-date" type="date" aria-label="Delete messages received before this date (UTC)"> <span class="small">(UTC, the whole of that day is kept)</span></label>
+      <label class="check"><input type="radio" name="pr-mode" value="distance"> Closer than <input id="pr-km" type="number" min="1" max="40000" step="1" value="2000" aria-label="Delete messages from stations closer than this distance"> km</label>
+      <label class="check"><input type="radio" name="pr-mode" value="both"> Older than the date <b>and</b> closer than the distance above</label>
+      <label class="check"><input type="radio" name="pr-mode" value="unid"> All messages without a station (UNID)</label>
+      <label class="field">Only on <select id="pr-freq"><option value="0">all channels</option><option value="518">518 kHz</option><option value="490">490 kHz</option><option value="486">486 kHz</option><option value="424">424 kHz</option><option value="4209.5">4209.5 kHz</option></select></label>
+      <label class="check"><input type="checkbox" id="pr-erase"> Delete for good: no Undo, and the file gets smaller. (Otherwise the messages stay in the trash for 30 days and the file keeps its size.)</label>
+      <label class="check"><input type="checkbox" id="pr-compact"> Compact the database afterwards</label>
+      <div id="pr-count" class="small" aria-live="polite"></div>
+      <div><button id="pr-go" type="button" disabled>Delete…</button></div>
+    </fieldset>
     <fieldset id="db-trash"><legend>Trash</legend>
       <p class="small">Deleted messages stay here for 30 days. Tick the ones you want and press Restore: they return to the log in their old places, whichever deletion they were part of. (Undo takes back only the latest action.)</p>
       <div class="trbar">

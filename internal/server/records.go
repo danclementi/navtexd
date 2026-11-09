@@ -32,6 +32,7 @@ func (s *Server) recordRoutes(mux *http.ServeMux, tunnel bool) {
 	mux.HandleFunc("GET /api/trash", s.admin(tunnel, s.trashList))
 	mux.HandleFunc("POST /api/trash/restore", s.admin(tunnel, s.trashRestore))
 	mux.HandleFunc("POST /api/maintenance/compact", s.admin(tunnel, s.maintCompact))
+	mux.HandleFunc("POST /api/maintenance/prune", s.admin(tunnel, s.maintPrune))
 	mux.HandleFunc("GET /api/database", s.admin(tunnel, s.dbInfo))
 	mux.HandleFunc("GET /api/database/export", s.admin(tunnel, s.dbExport))
 	mux.HandleFunc("POST /api/database/import", s.admin(tunnel, s.dbImport))
@@ -467,6 +468,106 @@ func (s *Server) maintCompact(w http.ResponseWriter, r *http.Request, id Identit
 	}
 	s.run.Log("info", fmt.Sprintf("message database compacted (%d -> %d bytes), backup %s", before, s.st.Size(), name))
 	writeJSON(w, 200, map[string]any{"ok": true, "before": before, "after": s.st.Size(), "backup": name})
+}
+
+// pruneFilter turns a request of the Database dialog's "Prune" section into a filter. The modes follow YaND's log maintenance:
+// "date" (received before a UTC date), "distance" (closer than km), "both" (both at once) and "unid" (records without a station).
+// The first three keep records without a station: their distance is not known. freq (kHz, 0 = all) limits any of them to a channel.
+func pruneFilter(mode, before string, km, freq float64) (store.Filter, error) {
+	var f store.Filter
+	if freq < 0 || math.IsNaN(freq) || math.IsInf(freq, 0) {
+		return f, errors.New("bad frequency")
+	}
+	if freq > 0 {
+		f.Channel = int(math.Round(freq * 1000))
+	}
+	if mode == "date" || mode == "both" {
+		if len(before) != 10 {
+			return f, errors.New("give the date (yyyy-mm-dd)")
+		}
+		t, err := parseTime(before)
+		if err != nil {
+			return f, err
+		}
+		f.To = t // received before 00:00 UTC of that day
+	}
+	if mode == "distance" || mode == "both" {
+		if !(km > 0) || km > 40100 || math.IsInf(km, 0) {
+			return f, errors.New("give a distance in km, more than 0")
+		}
+		f.MaxDistance = km
+	}
+	switch mode {
+	case "date":
+		f.OmitUnid = true
+	case "distance", "both":
+	case "unid":
+		f.Unidentified = true
+	default:
+		return f, errors.New("no such way to prune the log")
+	}
+	return f, nil
+}
+
+// maintPrune counts (dry) or deletes the records matching a pruning rule. The deletion is one action that Undo takes back (the
+// records stay in the trash for 30 days, which compacting does not shorten, unless "erase" asks for a deletion for good); a copy of the database is saved first.
+func (s *Server) maintPrune(w http.ResponseWriter, r *http.Request, id Identity) {
+	var body struct {
+		Mode    string  `json:"mode"`
+		Before  string  `json:"before"`
+		Km      float64 `json:"km"`
+		Freq    float64 `json:"freq"`
+		Dry     bool    `json:"dry"`
+		Compact bool    `json:"compact"`
+		Erase   bool    `json:"erase"` // delete for good: no trash, no Undo
+	}
+	if err := readBody(r, &body); err != nil {
+		fail(w, 400, err)
+		return
+	}
+	f, err := pruneFilter(body.Mode, body.Before, body.Km, body.Freq)
+	if err != nil {
+		fail(w, 400, err)
+		return
+	}
+	f.Limit = 1 // only the count is wanted
+	_, n := s.st.Query(f)
+	if body.Dry {
+		writeJSON(w, 200, map[string]any{"matches": n, "records": s.st.Count()})
+		return
+	}
+	if n == 0 {
+		writeJSON(w, 200, map[string]any{"deleted": 0, "records": s.st.Count(), "undo": s.undoState()})
+		return
+	}
+	backup, err := s.st.Backup("before-prune", 3)
+	if err != nil {
+		fail(w, 500, fmt.Errorf("could not save a backup first: %w", err))
+		return
+	}
+	f.Limit = 0
+	del, how := s.st.DeleteWhere, "Undo brings them back"
+	if body.Erase {
+		del, how = s.st.EraseWhere, "for good"
+	}
+	c, err := del(f)
+	if err != nil {
+		fail(w, 500, err)
+		return
+	}
+	s.run.Log("info", fmt.Sprintf("log pruned (%s): %d records deleted (%s), backup %s", body.Mode, c, how, backup))
+	out := map[string]any{"deleted": c, "backup": backup}
+	if body.Compact {
+		before := s.st.Size()
+		if err := s.st.Compact(); err != nil {
+			fail(w, 500, err)
+			return
+		}
+		out["size_before"], out["size_after"] = before, s.st.Size()
+	}
+	s.hub.Publish("record", recordMsg{Action: "restore"}, false, false) // (makes the Log tab load its list again)
+	out["records"], out["undo"] = s.st.Count(), s.undoState()
+	writeJSON(w, 200, out)
 }
 
 // dbExport downloads the log (all records, or those matching the Log tab's filter parameters).

@@ -766,10 +766,42 @@
     $("db-ex-f").disabled = !sum; $("db-ex-sum").textContent = sum ? "(" + sum + ")" : "(no filter is applied)";
     if (!sum) document.querySelector('input[name="db-ex"][value="all"]').checked = true;
     ddlg.showModal();
+    prCount();
   };
   $("db-close").onclick = () => ddlg.close();
   $("db-compact").onclick = async () => {
     try { const r = await api("POST", "/api/maintenance/compact"); dmsg(`Compacted: ${fmtB(r.before)} \u2192 ${fmtB(r.after)}. Backup: ${r.backup}`); dbInfo(); } catch (e) { dmsg(e.message); }
+  };
+  // ---- Prune: delete by date and / or distance, as YaND's log maintenance does ----
+  const prBody = () => ({ mode: document.querySelector('input[name="pr-mode"]:checked').value, before: $("pr-date").value, km: Number($("pr-km").value), freq: Number($("pr-freq").value), erase: $("pr-erase").checked, compact: $("pr-compact").checked });
+  const prWhat = (b) => ({ date: `received before ${b.before} (UTC)`, distance: `from stations closer than ${b.km} km`, both: `received before ${b.before} (UTC) and from stations closer than ${b.km} km`, unid: "without a station" })[b.mode] + (b.freq ? `, on ${b.freq} kHz` : "");
+  let prSeq = 0, prN = 0;
+  async function prCount() {
+    const seq = ++prSeq, b = prBody();
+    $("pr-go").disabled = true; prN = 0;
+    if ((b.mode === "date" || b.mode === "both") && !b.before) { $("pr-count").textContent = "Choose the date."; return; }
+    if ((b.mode === "distance" || b.mode === "both") && !(b.km > 0)) { $("pr-count").textContent = "Give the distance in km."; return; }
+    try {
+      const j = await api("POST", "/api/maintenance/prune", { ...b, dry: true });
+      if (seq !== prSeq) return;
+      prN = j.matches;
+      $("pr-count").textContent = `${j.matches} of ${j.records} messages match: ${prWhat(b)}.`;
+      $("pr-go").disabled = !j.matches;
+    } catch (e) { if (seq === prSeq) $("pr-count").textContent = e.message; }
+  }
+  for (const id of ["pr-date", "pr-km", "pr-freq"]) $(id).oninput = prCount;
+  for (const r of document.querySelectorAll('input[name="pr-mode"]')) r.onchange = prCount;
+  $("pr-erase").onchange = () => { if ($("pr-erase").checked) $("pr-compact").checked = true; };
+  $("pr-go").onclick = async () => {
+    const b = prBody();
+    if (!prN || !confirm(`Delete ${prN} messages ${prWhat(b)}?\n\n` + (b.erase ? "They are deleted for good: Undo cannot bring them back. A copy of the database is saved in the backups folder first." : "Undo (or the Trash) brings them back for 30 days. A copy of the database is saved in the backups folder first."))) return;
+    $("pr-go").disabled = true;
+    try {
+      const j = await api("POST", "/api/maintenance/prune", b);
+      dmsg(`${j.deleted} messages deleted` + (b.erase ? " for good" : " (Undo brings them back)") + (j.size_after !== undefined ? `; database ${fmtB(j.size_before)} \u2192 ${fmtB(j.size_after)}` : "") + (j.backup ? `. Backup: ${j.backup}` : "."));
+      trashLoad(); dbInfo(); await reload(); indicate();
+    } catch (e) { dmsg(e.message); }
+    prCount();
   };
   $("db-export").onclick = () => {
     const filt = document.querySelector('input[name="db-ex"]:checked').value === "filter";

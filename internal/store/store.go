@@ -443,6 +443,42 @@ func (s *Store) DeleteWhere(f Filter) (int, error) {
 	})
 }
 
+// EraseWhere deletes every record in the log matching f for good (ignoring Limit, Offset and Newest): nothing goes to the trash and
+// Undo cannot bring them back. It returns the count. (Compact then gives the space back.)
+func (s *Store) EraseWhere(f Filter) (int, error) {
+	where, args := f.where(false)
+	sel := `SELECT r.id FROM ` + f.from() + ` WHERE ` + where
+	tx, err := s.wdb.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	for _, q := range []string{
+		`DELETE FROM edit_history WHERE rec_id IN (` + sel + `)`,
+		`DELETE FROM bodies WHERE id IN (` + sel + `)`,
+	} {
+		if _, err := tx.Exec(q, args...); err != nil {
+			return 0, err
+		}
+	}
+	res, err := tx.Exec(`DELETE FROM records WHERE id IN (`+sel+`)`, args...)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return 0, nil
+	}
+	if err := dropEmptyBatches(tx); err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	s.live.Add(-n)
+	return int(n), nil
+}
+
 // trashWhere runs do inside one transaction with a new deletion batch; nothing is written when do deletes nothing.
 func (s *Store) trashWhere(do func(tx execer, now string, bid int64) (int, error)) (int, error) {
 	tx, err := s.wdb.Begin()
