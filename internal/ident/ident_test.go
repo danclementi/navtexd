@@ -83,3 +83,55 @@ func TestSlotTerm(t *testing.T) {
 		t.Errorf("US in slot %v", v)
 	}
 }
+
+// The evidence listed for a station adds up to its score, and shows what the scoring rules did.
+func TestTermsAddUp(t *testing.T) {
+	id := load(t)
+	id.History = func(i int) int { return 7 }
+	for _, in := range []Input{
+		{FreqKHz: 518, B1: "F", When: at(0, 50), Text: "SOUTH OF NANTUCKET SHOALS GALE WARNING", HaveOp: true, OpLat: 42.2, OpLon: -70.9},
+		{FreqKHz: 518, B1: "?", When: at(0, 52), Text: "SOUTH OF NANTUCKET SHOALS", HaveOp: true, OpLat: 42.2, OpLon: -70.9},
+		{FreqKHz: 490, B1: "A", When: at(0, 0), Text: "EJM MALIN HEAD GALE WARNING"},
+		{FreqKHz: 518, B1: "E", NavArea: 4, When: at(3, 0), Text: "NOTHING"},
+	} {
+		res := id.Identify(in)
+		for _, c := range res.Candidates {
+			sum, kw := 0.0, 0.0
+			for _, tm := range c.Terms {
+				if tm.Kind == "slot" && !tm.Used {
+					continue
+				}
+				sum += tm.Points
+				if tm.Kind == "uid" || tm.Kind == "gid" {
+					kw += tm.Points
+				}
+			}
+			if d := sum - c.Score; d > 0.011 || d < -0.011 {
+				t.Errorf("%+v: terms add to %.3f, score %.2f (%+v)", in, sum, c.Score, c.Terms)
+			}
+			if d := kw - c.Keyword; d > 1e-9 || d < -1e-9 {
+				t.Errorf("%+v: keyword terms add to %.3f, keyword score %.3f", in, kw, c.Keyword)
+			}
+			if e := id.Explain(in, c.Index); e.Score != c.Score {
+				t.Errorf("Explain gives %.2f, Identify %.2f", e.Score, c.Score)
+			}
+		}
+	}
+	// B1 read: the slot is shown but not counted; a keyword inside a longer word is marked
+	res := id.Identify(Input{FreqKHz: 518, B1: "F", When: at(0, 50), Text: "SOUTH OF NANTUCKET SHOALS"})
+	slotSeen := false
+	for _, tm := range res.Candidates[0].Terms {
+		if tm.Kind == "slot" {
+			slotSeen = true
+			if tm.Used || tm.Points == 0 {
+				t.Errorf("slot term %+v", tm)
+			}
+		}
+	}
+	if !slotSeen {
+		t.Error("no slot term although the message started in the slot")
+	}
+	if !hit(" XNITONX ", "NITON") || wholeWord(" XNITONX ", "NITON") || !wholeWord(" SEA NITON. ", "NITON") {
+		t.Error("whole-word test")
+	}
+}

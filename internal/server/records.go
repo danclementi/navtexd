@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"navtex/internal/autocorr"
+	"navtex/internal/catalog"
 	"navtex/internal/sitor"
 	"navtex/internal/store"
 	"navtex/internal/yand"
@@ -159,7 +160,9 @@ func (s *Server) message(w http.ResponseWriter, r *http.Request, id Identity) {
 		Ch  float64               `json:"ch"` // kHz (the record's own value is in Hz)
 		Rev [][]autocorr.Reversal `json:"rv,omitempty"`
 		Eff []string              `json:"eff,omitempty"` // the lines with the operator's revisions applied
+		Why *catalog.Why          `json:"why,omitempty"` // how the station was identified
 	}{Record: rec, Ch: store.KHz(rec.Channel)}
+	det.Why = s.cat.Explain(rec, s.withDist(id))
 	if len(rec.Revs) > 0 {
 		det.Eff = rec.EffectiveLines()
 	}

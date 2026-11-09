@@ -51,10 +51,25 @@ type Input struct {
 	OpLon   float64
 }
 
+// Term is one piece of evidence in a station's score: what was found and how many points it gave.
+type Term struct {
+	Kind    string  `json:"k"`            // uid, gid, slot, dist, hist
+	Keyword string  `json:"kw,omitempty"` // uid, gid: the keyword of the station table
+	Shared  int     `json:"n,omitempty"`  // gid: stations of the frequency that use the keyword; hist: messages received from the station before
+	Points  float64 `json:"p"`
+	Loose   bool    `json:"loose,omitempty"` // uid, gid: found only inside a longer word
+	Dup     bool    `json:"dup,omitempty"`   // uid, gid: the station's list holds the keyword more than once, so it counted again
+	Capped  bool    `json:"cap,omitempty"`   // uid, gid: held back by the cap on keyword points
+	Used    bool    `json:"used"`            // slot: false when B1 was read, so the time of day is not counted
+	Km      float64 `json:"km,omitempty"`    // dist: the distance
+}
+
 // Candidate is a possible station with its score.
 type Candidate struct {
-	Index int // index into the station table
-	Score float64
+	Index   int // index into the station table
+	Score   float64
+	Keyword float64 // the part of the score that comes from keywords
+	Terms   []Term
 }
 
 // Result is the outcome.
@@ -64,6 +79,8 @@ type Result struct {
 	Method     string // UID, GID, B1 (the only station with that letter), manual; "" when unidentified
 	Ambiguous  bool   // several stations fit about equally
 	Candidates []Candidate
+	Margin     float64 // best score minus the second best (0 when only one station was left)
+	Rivals     bool    // more than one station was scored
 }
 
 // Identifier scores messages against a station table.
@@ -133,6 +150,23 @@ func hit(text, kw string) bool {
 	}
 }
 
+// wholeWord reports whether kw occurs in the text as a word of its own (not inside a longer one).
+func wholeWord(text, kw string) bool {
+	k := strings.TrimSpace(kw)
+	for i := 0; k != ""; {
+		j := strings.Index(text[i:], k)
+		if j < 0 {
+			return false
+		}
+		a, b := i+j-1, i+j+len(k)
+		if (a < 0 || !isAlnum(text[a])) && (b >= len(text) || !isAlnum(text[b])) {
+			return true
+		}
+		i += j + 1
+	}
+	return false
+}
+
 // slotTerm says how well a time fits the station's transmission slots: full inside the slot (allowing a minute early),
 // half within 30 minutes after the start, else none.
 func slotTerm(s stations.Station, when time.Time) float64 {
@@ -170,6 +204,7 @@ func slotTerm(s stations.Station, when time.Time) float64 {
 type score struct {
 	total, kw float64
 	uid, gid  int
+	terms     []Term
 }
 
 func (id *Identifier) score(i int, in Input, text string) score {
@@ -177,16 +212,34 @@ func (id *Identifier) score(i int, in Input, text string) score {
 	df := id.df[s.FreqKHz]
 	var sc score
 	uids := 0
+	var uterms []Term
+	seen := map[string]bool{}
 	for _, k := range s.UID {
-		if hit(text, strings.ToUpper(k)) {
+		k = strings.ToUpper(k)
+		if hit(text, k) {
+			uterms = append(uterms, Term{Kind: "uid", Keyword: strings.TrimSpace(k), Loose: !wholeWord(text, k), Dup: seen[k]})
 			uids++
 		}
+		seen[k] = true
 	}
 	if uids > 0 {
 		sc.kw += math.Min(uidCap, uidScore+uidExtra*float64(uids-1))
 		sc.uid = uids
+		left := math.Min(uidCap, uidScore+uidExtra*float64(uids-1)) // handed out hit by hit
+		for n := range uterms {
+			want := uidExtra
+			if n == 0 {
+				want = uidScore
+			}
+			uterms[n].Points = math.Min(want, left)
+			uterms[n].Capped = uterms[n].Points < want
+			left -= uterms[n].Points
+		}
+		sc.terms = append(sc.terms, uterms...)
 	}
 	g := 0.0
+	var gterms []Term
+	seen = map[string]bool{}
 	for _, k := range s.GID {
 		k = strings.ToUpper(k)
 		if hit(text, k) {
@@ -196,21 +249,51 @@ func (id *Identifier) score(i int, in Input, text string) score {
 			}
 			g += gidUnit / float64(n)
 			sc.gid++
+			gterms = append(gterms, Term{Kind: "gid", Keyword: strings.TrimSpace(k), Shared: n, Points: gidUnit / float64(n), Loose: !wholeWord(text, k), Dup: seen[k]})
 		}
+		seen[k] = true
 	}
 	sc.kw += math.Min(gidCap, g)
+	left := math.Min(gidCap, g)
+	for n := range gterms {
+		want := gterms[n].Points
+		gterms[n].Points = math.Min(want, left)
+		gterms[n].Capped = gterms[n].Points < want
+		left -= gterms[n].Points
+	}
+	sc.terms = append(sc.terms, gterms...)
 	sc.total = sc.kw
-	if in.B1 == "" || in.B1 == "?" { // the slot only tells something when B1 does not
-		sc.total += slotTerm(s, in.When)
+	slot := slotTerm(s, in.When)
+	used := in.B1 == "" || in.B1 == "?" // the slot only tells something when B1 does not
+	if used {
+		sc.total += slot
+	}
+	if slot > 0 || used {
+		sc.terms = append(sc.terms, Term{Kind: "slot", Points: slot, Used: used})
 	}
 	if in.HaveOp {
 		d := geo.DistanceKm(in.OpLat, in.OpLon, s.Lat, s.Lon)
-		sc.total += distMax * math.Exp(-d/2000)
+		p := distMax * math.Exp(-d/2000)
+		sc.total += p
+		sc.terms = append(sc.terms, Term{Kind: "dist", Points: p, Km: math.Round(d)})
 	}
 	if id.History != nil {
-		sc.total += math.Min(histMax, 0.1*math.Log1p(float64(id.History(i))))
+		n := id.History(i)
+		p := math.Min(histMax, 0.1*math.Log1p(float64(n)))
+		sc.total += p
+		sc.terms = append(sc.terms, Term{Kind: "hist", Points: p, Shared: n})
 	}
 	return sc
+}
+
+// Explain scores one station of the table for a message, whether or not Identify would consider it (to show why a station the
+// operator picked has the score it has).
+func (id *Identifier) Explain(in Input, index int) Candidate {
+	if index < 0 || index >= len(id.tab.Stations) {
+		return Candidate{Index: index}
+	}
+	sc := id.score(index, in, Normalize(in.Text))
+	return Candidate{Index: index, Score: round2(sc.total), Keyword: sc.kw, Terms: sc.terms}
 }
 
 // Identify names the station of a message, or reports that it cannot.
@@ -244,13 +327,14 @@ func (id *Identifier) Identify(in Input) Result {
 	sort.SliceStable(all, func(a, b int) bool { return all[a].total > all[b].total })
 	for n := 0; n < len(all) && n < maxCandidates; n++ {
 		if all[n].total > 0 || n == 0 {
-			res.Candidates = append(res.Candidates, Candidate{all[n].i, round2(all[n].total)})
+			res.Candidates = append(res.Candidates, Candidate{Index: all[n].i, Score: round2(all[n].total), Keyword: all[n].kw, Terms: all[n].terms})
 		}
 	}
 	best := all[0]
 	margin := math.Inf(1)
 	if len(all) > 1 {
 		margin = best.total - all[1].total
+		res.Margin, res.Rivals = margin, true
 	}
 	switch {
 	case len(all) == 1 && (in.NavArea > 0 || known):
@@ -274,3 +358,6 @@ func (id *Identifier) Identify(in Input) Result {
 }
 
 func round2(v float64) float64 { return math.Round(v*100) / 100 }
+
+// Thresholds are the keyword score a station needs to be named, and the lead it needs over the next one.
+func Thresholds() (keyword, margin float64) { return minKeyword, minMargin }
