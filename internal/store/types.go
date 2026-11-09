@@ -21,6 +21,7 @@ func (f F2) MarshalJSON() ([]byte, error) {
 // Candidate is one possible transmitting station with its identification score.
 type Candidate struct {
 	StationID int    `json:"id"`
+	Key       string `json:"key,omitempty"` // the station's own identity (see Record.StationKey)
 	Label     string `json:"label"`
 	Score     F2     `json:"score"`
 }
@@ -45,8 +46,9 @@ type Record struct {
 	B2          string      `json:"b2"`
 	Serial      string      `json:"ser"`
 	NavArea     int         `json:"area"`
-	StationID   int         `json:"sid"`
-	Station     string      `json:"st"` // station label, "UNID" when unknown
+	StationID   int         `json:"sid"`          // the station's place in the station table now (set when the record is read; see StationKey)
+	StationKey  string      `json:"sk,omitempty"` // the station's own identity: what the record really refers to, whatever the order of the table
+	Station     string      `json:"st"`           // station label, "UNID" when unknown
 	DistanceKm  float64     `json:"km"`
 	BearingDeg  float64     `json:"brg"`
 	Quality     F2          `json:"q"`
@@ -55,7 +57,8 @@ type Record struct {
 	IdentScore  F2          `json:"is"`
 	Candidates  []Candidate `json:"cand,omitempty"`
 	Manual      bool        `json:"man"`            // B1 / NAVAREA set by the operator: never re-identified
-	Picked      int         `json:"pick,omitempty"` // station chosen by the operator among the candidates (ID); 0 = none
+	Picked      int         `json:"pick,omitempty"` // station chosen by the operator among the candidates (place in the table); 0 = none
+	PickedKey   string      `json:"pk,omitempty"`   // the key of that station
 	Lines       []Line      `json:"lines"`
 	StartFix    string      `json:"sfix,omitempty"` // the damaged ZCZC as received, when the start was recognized by position and structure
 	Corrected   string      `json:"cor,omitempty"`  // body after word autocorrection (of the effective text)

@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"navtex/internal/geo"
 	"navtex/internal/ident"
@@ -40,6 +41,10 @@ type Catalog struct {
 
 	disabled map[string]bool // stations (by key) whose messages are not logged
 
+	keys  []string                       // the key of every station of the table (see StationKeys)
+	index atomic.Pointer[map[string]int] // key -> the station's place in the table (1-based); read without a lock by the store
+	warns []string                       // what is odd about the table (stations that cannot be told apart)
+
 	// Position returns the operator's position (ok false when not set).
 	Position func() (lat, lon float64, ok bool)
 }
@@ -62,6 +67,15 @@ func Open(dir string, st *store.Store) (*Catalog, error) {
 	}
 	c.set(tab)
 	c.loadLogging()
+	if st != nil {
+		st.SetResolver(c.resolve)
+		if _, err := st.BackfillStationKeys(c.keyFor); err != nil {
+			return nil, err
+		}
+		if _, err := st.ResyncStations(c.resolve); err != nil {
+			return nil, err
+		}
+	}
 	return c, nil
 }
 
@@ -146,6 +160,94 @@ func (c *Catalog) SetDisabled(ids []int) error {
 func (c *Catalog) set(t *stations.Table) {
 	c.tab = t
 	c.id = ident.New(t)
+	c.keys, c.warns = StationKeys(t.Stations)
+	idx := make(map[string]int, len(c.keys))
+	for i, k := range c.keys {
+		idx[k] = i + 1
+	}
+	c.index.Store(&idx)
+}
+
+// StationKeys gives every station of a table its key: what the station is, whatever its place in the table. A record stores
+// the key, so that rows can be moved, added or removed (in a spreadsheet, say) without the log pointing at the wrong
+// station. The key is frequency, NAVAREA, B1 letter and call sign. Stations that would share a key (two rows with the call
+// sign "___", say) are told apart by their names, and then by their order; the second result says which.
+func StationKeys(list []stations.Station) (keys, warnings []string) {
+	count := map[string]int{}
+	for _, s := range list {
+		count[key(s)]++
+	}
+	used := map[string]bool{}
+	for i, s := range list {
+		k := key(s)
+		if count[k] > 1 {
+			k += "#" + strings.TrimSpace(s.Name)
+		}
+		if used[k] {
+			for n := 2; ; n++ {
+				if k2 := fmt.Sprintf("%s#%d", k, n); !used[k2] {
+					warnings = append(warnings, fmt.Sprintf("station %d (%s %s) cannot be told apart from an earlier station: change its call sign or name", i+1, key(s), s.Name))
+					k = k2
+					break
+				}
+			}
+		}
+		used[k] = true
+		keys = append(keys, k)
+	}
+	return keys, warnings
+}
+
+// resolve gives the place (1-based) in the table of the station with the given key.
+func (c *Catalog) resolve(k string) (int, bool) {
+	p := c.index.Load()
+	if p == nil {
+		return 0, false
+	}
+	id, ok := (*p)[k]
+	return id, ok
+}
+
+// keyOf gives the key of the station at the given place (1-based; "" when there is none).
+func (c *Catalog) keyOf(id int) string {
+	if id < 1 || id > len(c.keys) {
+		return ""
+	}
+	return c.keys[id-1]
+}
+
+// keyFor gives the key of the station a record of an earlier version names by its place: the station at that place if its
+// label (when given) and channel agree, else the station of the table with that label on the channel ("" when there is none).
+func (c *Catalog) keyFor(id int, label string, channel int) string {
+	if id >= 1 && id <= len(c.tab.Stations) {
+		if s := c.tab.Stations[id-1]; s.FreqKHz*1000 == channel && (label == "" || Label(s) == label) {
+			return c.keys[id-1]
+		}
+	}
+	if label == "" {
+		return ""
+	}
+	for i, s := range c.tab.Stations {
+		if s.FreqKHz*1000 == channel && Label(s) == label {
+			return c.keys[i]
+		}
+	}
+	return ""
+}
+
+// Warnings lists what is odd about the table (stations that cannot be told apart).
+func (c *Catalog) Warnings() []string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return append([]string(nil), c.warns...)
+}
+
+// resync brings the records' places in line with the table (call it after the table changed, without holding c.mu).
+func (c *Catalog) resync() (int, error) {
+	if c.st == nil {
+		return 0, nil
+	}
+	return c.st.ResyncStations(c.resolve)
 }
 
 // Label is the station text shown in the Log: "GNI Niton,ENG" (call sign, name, country code).
@@ -196,8 +298,10 @@ func (c *Catalog) Enrich(r *store.Record) {
 	c.mu.Lock() // the identifier's History hook is shared
 	defer c.mu.Unlock()
 	r.Station, r.StationID, r.DistanceKm, r.BearingDeg, r.IdentMethod, r.IdentScore, r.Candidates = "UNID", 0, 0, 0, "", 0, nil
+	r.StationKey, r.PickedKey = "", c.keyOf(r.Picked)
 	place := func(s stations.Station, idx int, method string, score float64) {
 		r.Station, r.StationID, r.IdentMethod, r.IdentScore = Label(s), idx+1, method, store.F2(score)
+		r.StationKey = c.keyOf(idx + 1)
 		if r.NavArea == 0 || !r.Manual {
 			r.NavArea = s.NavArea
 		}
@@ -223,7 +327,7 @@ func (c *Catalog) Enrich(r *store.Record) {
 	c.id.History = func(i int) int { return counts[i+1] }
 	res := c.id.Identify(in)
 	for _, cd := range res.Candidates {
-		r.Candidates = append(r.Candidates, store.Candidate{StationID: cd.Index + 1, Label: Label(c.tab.Stations[cd.Index]), Score: store.F2(cd.Score)})
+		r.Candidates = append(r.Candidates, store.Candidate{StationID: cd.Index + 1, Key: c.keyOf(cd.Index + 1), Label: Label(c.tab.Stations[cd.Index]), Score: store.F2(cd.Score)})
 	}
 	if r.Picked >= 1 && r.Picked <= len(c.tab.Stations) && c.tab.Stations[r.Picked-1].FreqKHz*1000 == r.Channel {
 		// the operator chose this station among the candidates (needed when several share frequency, B1 and NAVAREA)
@@ -250,6 +354,7 @@ func (c *Catalog) Placer() func(r *store.Record) {
 		byLabel[fmt.Sprintf("%d|%s", s.FreqKHz*1000, Label(s))] = i
 	}
 	list := c.tab.Stations
+	keys := append([]string(nil), c.keys...)
 	c.mu.RUnlock()
 	lat, lon, haveOp := c.opPos()
 	return func(r *store.Record) {
@@ -258,7 +363,7 @@ func (c *Catalog) Placer() func(r *store.Record) {
 			return
 		}
 		s := list[i]
-		r.StationID = i + 1
+		r.StationID, r.StationKey = i+1, keys[i]
 		if r.NavArea == 0 {
 			r.NavArea = s.NavArea
 		}
@@ -345,7 +450,11 @@ func (c *Catalog) Import(data []byte) (n int, backup string, err error) {
 		return 0, "", fmt.Errorf("could not save the current table first: %w", err)
 	}
 	c.set(tab)
-	return len(tab.Stations), backup, c.save()
+	if err = c.save(); err != nil {
+		return len(tab.Stations), backup, err
+	}
+	_, err = c.resync() // (records follow their stations to their new places)
+	return len(tab.Stations), backup, err
 }
 
 // backupLocked copies the table file to backups/YAND_STATIONS-<time it was last saved>.TXT and returns that name (empty when

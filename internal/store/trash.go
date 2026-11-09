@@ -55,7 +55,7 @@ func (s *Store) LastDeletion() (TrashBatch, bool) {
 		for rows.Next() {
 			b.Count++
 			if b.Count == 1 && rows.Scan(&data) == nil {
-				if r, err := decode(data); err == nil {
+				if r, err := s.decode(data); err == nil {
 					b.RecID, b.Rx = r.ID, r.Received
 				}
 			}
@@ -88,7 +88,7 @@ func (s *Store) Undo() ([]Record, error) {
 	var out []Record
 	gained := 0
 	if kind == "edit" { // the record goes back to how it was before the edit
-		old, err := collect(tx, `SELECT data FROM edit_history WHERE batch_id=? ORDER BY rowid`, bid)
+		old, err := s.collect(tx, `SELECT data FROM edit_history WHERE batch_id=? ORDER BY rowid`, bid)
 		if err != nil {
 			return nil, err
 		}
@@ -120,7 +120,7 @@ func (s *Store) Undo() ([]Record, error) {
 			return nil, err
 		}
 	} else {
-		recs, err := collect(tx, `SELECT b.data FROM records r JOIN bodies b ON b.id = r.id WHERE r.batch_id=? AND r.deleted_at IS NOT NULL ORDER BY r.id`, bid)
+		recs, err := s.collect(tx, `SELECT b.data FROM records r JOIN bodies b ON b.id = r.id WHERE r.batch_id=? AND r.deleted_at IS NOT NULL ORDER BY r.id`, bid)
 		if err != nil {
 			return nil, err
 		}
@@ -144,7 +144,7 @@ func (s *Store) Undo() ([]Record, error) {
 }
 
 // collect reads the records of a query that returns one data column, completely, so that the transaction can write afterwards.
-func collect(tx interface {
+func (s *Store) collect(tx interface {
 	Query(query string, args ...any) (*sql.Rows, error)
 }, query string, args ...any) ([]Record, error) {
 	rows, err := tx.Query(query, args...)
@@ -158,7 +158,7 @@ func collect(tx interface {
 		if err := rows.Scan(&data); err != nil {
 			return nil, err
 		}
-		r, err := decode(data)
+		r, err := s.decode(data)
 		if err != nil {
 			continue
 		}
@@ -186,7 +186,7 @@ func (s *Store) Restore(ids ...int64) ([]Record, error) {
 		for k, id := range part {
 			args[k] = id
 		}
-		recs, err := collect(tx, `SELECT b.data FROM records r JOIN bodies b ON b.id = r.id WHERE r.deleted_at IS NOT NULL AND r.id IN (`+placeholders(len(part))+`)`, args...)
+		recs, err := s.collect(tx, `SELECT b.data FROM records r JOIN bodies b ON b.id = r.id WHERE r.deleted_at IS NOT NULL AND r.id IN (`+placeholders(len(part))+`)`, args...)
 		if err != nil {
 			return nil, err
 		}

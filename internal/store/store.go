@@ -23,8 +23,9 @@ type Store struct {
 	rdb *sql.DB // connections for queries
 	bdb *sql.DB // one connection for backups, so that they never wait for (or delay) a query
 
-	live      atomic.Int64 // number of records in the log
-	lastPurge atomic.Int64 // unix time of the last emptying of the old trash
+	live      atomic.Int64                                 // number of records in the log
+	resolver  atomic.Pointer[func(key string) (int, bool)] // station key -> place in the station table (set by the catalog)
+	lastPurge atomic.Int64                                 // unix time of the last emptying of the old trash
 
 	logF     *os.File
 	logLines int
@@ -166,6 +167,17 @@ func (s *Store) initSchema() error {
 			}
 		}
 	}
+	if ver >= 1 && ver < 3 { // version 3: a record refers to its station by key (the column is filled in by BackfillStationKeys)
+		var have int
+		if err := tx.QueryRow(`SELECT count(*) FROM pragma_table_info('records') WHERE name='station_key'`).Scan(&have); err != nil {
+			return err
+		}
+		if have == 0 {
+			if _, err := tx.Exec(`ALTER TABLE records ADD COLUMN station_key TEXT NOT NULL DEFAULT ''`); err != nil {
+				return err
+			}
+		}
+	}
 	if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion)); err != nil {
 		return err
 	}
@@ -240,9 +252,9 @@ func normalize(r *Record) {
 // --- writing records ---
 
 const recCols = `received, channel, kind, b1, b2, serial, navarea, station, distance_km, bearing_deg, quality, comment,
- end_time, rcv, station_id, ident_method, ident_score, manual, picked, version`
+ end_time, rcv, station_id, ident_method, ident_score, manual, picked, version, station_key`
 
-const recColCount = 20
+const recColCount = 21
 
 func b2i(b bool) int {
 	if b {
@@ -259,7 +271,7 @@ func recArgs(r *Record) (rec, body []any, err error) {
 	}
 	return []any{ts(r.Received), r.Channel, r.Kind, r.B1, r.B2, r.Serial, r.NavArea, r.Station, r.DistanceKm, r.BearingDeg,
 			float64(r.Quality), r.Comment, ts(r.End), r.Rcv, r.StationID, r.IdentMethod, float64(r.IdentScore),
-			b2i(r.Manual), r.Picked, r.Version},
+			b2i(r.Manual), r.Picked, r.Version, r.StationKey},
 		[]any{r.Text(), r.Corrected, string(data)}, nil
 }
 
@@ -346,13 +358,54 @@ func decode(data string) (Record, error) {
 	return r, err
 }
 
+// decode reads a record back and gives its station, its picked station and its candidates the place they have in the station
+// table now: a record refers to a station by its key, and the table may have been reordered, extended or cut since.
+func (s *Store) decode(data string) (Record, error) {
+	r, err := decode(data)
+	if err == nil {
+		s.placeStations(&r)
+	}
+	return r, err
+}
+
+// SetResolver tells the store how to turn a station key into the station's place in the table (ok false: no such station).
+func (s *Store) SetResolver(f func(key string) (int, bool)) { s.resolver.Store(&f) }
+
+func (s *Store) placeStations(r *Record) {
+	p := s.resolver.Load()
+	if p == nil {
+		return
+	}
+	f := *p
+	if r.StationKey != "" {
+		r.StationID, _ = f(r.StationKey) // (0 when the station is no longer in the table)
+	}
+	if r.PickedKey != "" {
+		r.Picked, _ = f(r.PickedKey)
+	}
+	if len(r.Candidates) > 0 {
+		keep := r.Candidates[:0:0]
+		for _, c := range r.Candidates {
+			if c.Key != "" {
+				id, ok := f(c.Key)
+				if !ok {
+					continue
+				}
+				c.StationID = id
+			}
+			keep = append(keep, c)
+		}
+		r.Candidates = keep
+	}
+}
+
 // Get returns a copy of a record.
 func (s *Store) Get(id int64) (Record, bool) {
 	var data string
 	if err := s.rdb.QueryRow(`SELECT b.data FROM records r JOIN bodies b ON b.id = r.id WHERE r.id=? AND r.deleted_at IS NULL`, id).Scan(&data); err != nil {
 		return Record{}, false
 	}
-	r, err := decode(data)
+	r, err := s.decode(data)
 	return r, err == nil
 }
 
@@ -655,7 +708,7 @@ func (s *Store) queryRows(f Filter, trash bool) ([]TrashedRecord, int) {
 			s.dbError("query", err)
 			break
 		}
-		r, err := decode(data)
+		r, err := s.decode(data)
 		if err != nil {
 			continue
 		}

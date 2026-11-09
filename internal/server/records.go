@@ -34,6 +34,7 @@ func (s *Server) recordRoutes(mux *http.ServeMux, tunnel bool) {
 	mux.HandleFunc("POST /api/trash/restore", s.admin(tunnel, s.trashRestore))
 	mux.HandleFunc("POST /api/maintenance/compact", s.admin(tunnel, s.maintCompact))
 	mux.HandleFunc("POST /api/maintenance/prune", s.admin(tunnel, s.maintPrune))
+	mux.HandleFunc("POST /api/maintenance/reident", s.admin(tunnel, s.maintReident))
 	mux.HandleFunc("GET /api/database", s.admin(tunnel, s.dbInfo))
 	mux.HandleFunc("GET /api/database/export", s.admin(tunnel, s.dbExport))
 	mux.HandleFunc("POST /api/database/import", s.admin(tunnel, s.dbImport))
@@ -570,6 +571,60 @@ func (s *Server) maintPrune(w http.ResponseWriter, r *http.Request, id Identity)
 	}
 	s.hub.Publish("record", recordMsg{Action: "restore"}, false, false) // (makes the Log tab load its list again)
 	out["records"], out["undo"] = s.st.Count(), s.undoState()
+	writeJSON(w, 200, out)
+}
+
+// maintReident identifies the messages without a station again (after keywords were added). With "reload" the station file is
+// read from disk first, for the case that it was replaced outside the program. With "dry" it only says what would happen. The
+// changes are one action that Undo takes back, and a copy of the database is saved first.
+func (s *Server) maintReident(w http.ResponseWriter, r *http.Request, id Identity) {
+	var body struct {
+		Freq   float64 `json:"freq"`
+		Dry    bool    `json:"dry"`
+		Reload bool    `json:"reload"`
+	}
+	if err := readBody(r, &body); err != nil {
+		fail(w, 400, err)
+		return
+	}
+	out := map[string]any{}
+	if body.Reload {
+		rl, err := s.cat.ReloadFromDisk()
+		if err != nil {
+			fail(w, 400, err)
+			return
+		}
+		out["reloaded"] = rl
+		if rl.Changed {
+			s.run.Log("info", fmt.Sprintf("station table read again from the station file: %d stations (%d added, %d removed)", rl.Stations, rl.Added, rl.Removed))
+			s.hub.Publish("stations", map[string]any{"changed": 0}, false, false)
+			if rl.Moved > 0 && !body.Dry {
+				s.hub.Publish("record", recordMsg{Action: "restore"}, false, false)
+			}
+		}
+	}
+	if !body.Dry {
+		backup, err := s.st.Backup("before-reident", 3)
+		if err != nil {
+			fail(w, 500, fmt.Errorf("could not save a backup first: %w", err))
+			return
+		}
+		out["backup"] = backup
+	}
+	res, err := s.cat.ReidentifyUnid(s.st, body.Freq, body.Dry, "identified the unidentified messages again")
+	if err != nil {
+		fail(w, 500, err)
+		return
+	}
+	out["result"] = res
+	if !body.Dry {
+		s.run.Log("info", fmt.Sprintf("unidentified messages identified again: %d of %d got a station", res.Found, res.Checked))
+		if res.Found > 0 {
+			s.hub.Publish("record", recordMsg{Action: "restore"}, false, false)
+		}
+		out["undo"] = s.undoState()
+	}
+	out["records"] = s.st.Count()
 	writeJSON(w, 200, out)
 }
 

@@ -1,7 +1,7 @@
 package store
 
 // schemaVersion is stored in the database (PRAGMA user_version). When it is raised, the views are dropped and created again.
-const schemaVersion = 2
+const schemaVersion = 3
 
 // The records table has a readable column for every field a person might want to look at, so that a viewer (the sqlite3 command
 // line, DB Browser for SQLite and the like) shows a normal table. The program itself reads the whole record back from the data
@@ -25,14 +25,15 @@ CREATE TABLE IF NOT EXISTS records (
   comment      TEXT    NOT NULL,
   end_time     TEXT    NOT NULL,
   rcv          INTEGER NOT NULL,                   -- decoding channel: 0 = the first, 1 = the second
-  station_id   INTEGER NOT NULL,                   -- 0 = unknown
+  station_id   INTEGER NOT NULL,                   -- 0 = unknown; the station's place in the table (kept up to date when the table changes)
   ident_method TEXT    NOT NULL,
   ident_score  REAL    NOT NULL,
   manual       INTEGER NOT NULL,                   -- 1 = B1 / NAVAREA set by the operator
   picked       INTEGER NOT NULL,
   version      INTEGER NOT NULL,                   -- changes with every edit (detects a stale copy)
   deleted_at   TEXT,                               -- NULL = in the log; else when it was deleted (it is in the trash)
-  batch_id     INTEGER                             -- the deletion it belongs to
+  batch_id     INTEGER,                            -- the deletion it belongs to
+  station_key  TEXT    NOT NULL DEFAULT ''         -- the station's own identity (frequency, NAVAREA, B1, call sign): what a record really refers to
 );
 -- One covering index for the log: the list, its total and the filters read only this index, not the table. (Earlier databases
 -- had rec_time and rec_chan, which this one replaces.)

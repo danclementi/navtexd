@@ -848,11 +848,49 @@
     $("db-ex-f").disabled = !sum; $("db-ex-sum").textContent = sum ? "(" + sum + ")" : "(no filter is applied)";
     if (!sum) document.querySelector('input[name="db-ex"][value="all"]').checked = true;
     ddlg.showModal();
-    prCount();
+    prCount(); riCount();
   };
   $("db-close").onclick = () => ddlg.close();
   $("db-compact").onclick = async () => {
     try { const r = await api("POST", "/api/maintenance/compact"); dmsg(`Compacted: ${fmtB(r.before)} \u2192 ${fmtB(r.after)}. Backup: ${r.backup}`); dbInfo(); } catch (e) { dmsg(e.message); }
+  };
+  // ---- Identify again: give the messages without a station another try after keywords were added ----
+  let riSeq = 0, riN = 0;
+  const riBody = (dry) => ({ freq: Number($("ri-freq").value), reload: $("ri-reload").checked, dry });
+  const riText = (r) => {
+    const m = Object.entries(r.methods || {}).map(([k, v]) => `${v} by ${k}`).join(", ");
+    const top = (r.top || []).slice(0, 8).map((t) => `${t.station} ${t.n}`).join("; ");
+    return `${r.found} of ${r.checked} unidentified messages would get a station` + (r.found ? ` (${m}). Mostly: ${top}.` : ".");
+  };
+  const reloadText = (r) => {
+    if (!r || !r.changed) return "";
+    const bits = [`${r.stations} stations`];
+    if (r.added) bits.push(`${r.added} added`);
+    if (r.removed) bits.push(`${r.removed} removed`);
+    return `Station file read again (${bits.join(", ")}). ` + (r.unresolved ? `${r.unresolved} messages belong to a station that is no longer in it. ` : "") + (r.warnings || []).join(" ") + " ";
+  };
+  async function riCount() {
+    const seq = ++riSeq;
+    $("ri-go").disabled = true; riN = 0;
+    $("ri-count").textContent = "Checking\u2026";
+    try {
+      const j = await api("POST", "/api/maintenance/reident", riBody(true));
+      if (seq !== riSeq) return;
+      riN = j.result.found;
+      $("ri-count").textContent = reloadText(j.reloaded) + riText(j.result);
+      $("ri-go").disabled = !riN;
+    } catch (e) { if (seq === riSeq) $("ri-count").textContent = e.message; }
+  }
+  $("ri-freq").onchange = riCount; $("ri-reload").onchange = riCount;
+  $("ri-go").onclick = async () => {
+    if (!riN || !confirm(`Give a station to ${riN} unidentified messages?\n\nA copy of the database is saved in the backups folder first, and Undo takes the whole change back.`)) return;
+    $("ri-go").disabled = true;
+    try {
+      const j = await api("POST", "/api/maintenance/reident", riBody(false));
+      dmsg(`${j.result.found} of ${j.result.checked} unidentified messages now have a station (Undo takes it back). Backup: ${j.backup}`);
+      trashLoad(); dbInfo(); await reload(); indicate();
+    } catch (e) { dmsg(e.message); }
+    riCount();
   };
   // ---- Prune: delete by date and / or distance, as YaND's log maintenance does ----
   const prBody = () => ({ mode: document.querySelector('input[name="pr-mode"]:checked').value, before: $("pr-date").value, km: Number($("pr-km").value), freq: Number($("pr-freq").value), erase: $("pr-erase").checked, compact: $("pr-compact").checked });

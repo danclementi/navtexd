@@ -272,6 +272,13 @@ until the report list changes."><svg class="ic" aria-hidden="true"><use href="#i
       <p class="small">Empties the trash of messages deleted more than 30 days ago and gives the free space in the database file back to the system. Nothing you can see changes; the file may get smaller. A copy of the database is saved first (the last three are kept). Messages deleted less than 30 days ago can still be brought back.</p>
       <button id="db-compact" type="button">Compact now</button>
     </fieldset>
+    <fieldset id="db-reident"><legend>Identify again</legend>
+      <p class="small">After keywords were added to the station table, this looks at the messages that have no station (UNID) once more and gives a station to those that now match. Messages that already have a station, and messages you edited, are not touched. A copy of the database is saved first, and Undo takes it all back in one step.</p>
+      <label class="field">Only on <select id="ri-freq"><option value="0">all channels</option><option value="518">518 kHz</option><option value="490">490 kHz</option><option value="486">486 kHz</option><option value="424">424 kHz</option><option value="4209.5">4209.5 kHz</option></select></label>
+      <label class="check"><input type="checkbox" id="ri-reload" checked> Read the station file (YAND_STATIONS.TXT) from disk first, in case it was replaced outside the program</label>
+      <div id="ri-count" class="small" aria-live="polite"></div>
+      <div><button id="ri-go" type="button" disabled>Identify again…</button></div>
+    </fieldset>
     <fieldset id="db-prune"><legend>Prune</legend>
       <p class="small">Thin out the log, for instance at the end of a season. Messages without a station (UNID) have no distance, so the first three rules keep them. The number of messages that match is shown before anything is deleted.</p>
       <label class="check"><input type="radio" name="pr-mode" value="date" checked> Older than the date <input id="pr-date" type="date" aria-label="Delete messages received before this date (UTC)"> <span class="small">(UTC, the whole of that day is kept)</span></label>
