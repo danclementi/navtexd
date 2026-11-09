@@ -187,6 +187,7 @@
 
   function showRole(role, needToken, h) {
     state.role = role;
+    if (h && h.title) document.title = h.title;
     const admin = role === "admin";
     const r = $("role");
     r.textContent = admin ? (h && h.remote ? "admin (remote)" : "admin") : "view only";

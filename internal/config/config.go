@@ -183,6 +183,7 @@ const MinRemoteToken = 16
 
 type Server struct {
 	Listen        string `json:"listen" doc:"Address of the web server, e.g. 127.0.0.1:8080 (this computer only) or :8080 (all interfaces). off = no web server"`
+	TabTitle      string `json:"tab_title" doc:"Text on the browser tab (and window title) of this program's web page. Give each instance its own, e.g. \"navtexd 490\" and \"navtexd 518\", to tell the tabs apart. Empty = navtexd. At most 60 characters; browsers pick it up when the page is loaded again"`
 	OpenBrowser   bool   `json:"open_browser" doc:"Open the web interface in the default browser when the program starts (takes effect at the next start)"`
 	TunnelListen  string `json:"tunnel_listen" doc:"Extra address for a reverse tunnel (e.g. cloudflared). Everything arriving here is a viewer, whatever its address. Empty = none"`
 	AdminNetworks string `json:"admin_networks" doc:"Extra networks, comma separated (e.g. 100.64.0.0/10), whose clients may change settings. Loopback and private LAN ranges always may"`
@@ -427,7 +428,7 @@ func defaultConfig() Config {
 		Logging: Logging{LineQuality: true},
 		Clips:   Clips{BeforeS: 60, AfterS: 10, Dir: "clips", MaxMemoryMB: 500},
 		Compare: Compare{ChannelA: 1, ChannelB: 2, MinDiffs: 1, WaitS: 30, PairS: 60},
-		Server:  Server{Listen: "127.0.0.1:8080", OpenBrowser: true, MaxViewers: 50, MaxPerViewer: 6, ViewerRate: 10},
+		Server:  Server{Listen: "127.0.0.1:8080", TabTitle: "navtexd", OpenBrowser: true, MaxViewers: 50, MaxPerViewer: 6, ViewerRate: 10},
 		Output:  Output{Format: "text", IncompleteMessages: true},
 	}
 }
@@ -441,6 +442,9 @@ func (c Config) validate(top bool) error {
 	bad := func(format string, a ...any) { errs = append(errs, fmt.Errorf(format, a...)) }
 	if top && c.Server.RemoteAdmin && len(c.Server.Token) < MinRemoteToken {
 		bad("server.remote_admin needs server.token to be at least %d characters (use Generate in Options)", MinRemoteToken)
+	}
+	if top && len([]rune(c.Server.TabTitle)) > 60 {
+		bad("server.tab_title is too long (at most 60 characters)")
 	}
 	if top && (c.Server.MaxViewers < 0 || c.Server.MaxPerViewer < 0 || c.Server.ViewerRate < 0) {
 		bad("server.max_viewers, max_per_viewer and viewer_rate cannot be negative (0 = no limit)")

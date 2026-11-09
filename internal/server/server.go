@@ -185,6 +185,20 @@ func (s *Server) controls(rcv int, admin bool) controlsMsg {
 	return m
 }
 
+// tabTitle is the text for the browser tab: the setting, or "navtexd" when it is empty; control characters become blanks.
+func tabTitle(t string) string {
+	t = strings.TrimSpace(strings.Map(func(r rune) rune {
+		if r < 32 || r == 127 {
+			return ' '
+		}
+		return r
+	}, t))
+	if t == "" {
+		return "navtexd"
+	}
+	return t
+}
+
 // chanHello is what a new client is told about one decoding channel.
 type chanHello struct {
 	Controls controlsMsg `json:"controls"`
@@ -200,6 +214,7 @@ type hello struct {
 	CanLogin  bool        `json:"can_login"` // a viewer who is not on the local network may log in with the access token (server.remote_admin)
 	Remote    bool        `json:"remote"`    // an administrator who got in with the access token, not from the local network
 	Version   string      `json:"version"`
+	Title     string      `json:"title"` // text for the browser tab (server.tab_title)
 	Now       int64       `json:"now"`
 	Run       app.State   `json:"run"`      // the first channel (see Chans)
 	Controls  controlsMsg `json:"controls"` // "
@@ -227,7 +242,7 @@ func (s *Server) hello(id Identity) hello {
 	}
 	set := s.run.Config().Server
 	canLogin := id.Role == Viewer && !id.NeedToken && set.RemoteAdmin && set.Token != ""
-	return hello{Role: id.Role.String(), NeedToken: id.NeedToken, CanLogin: canLogin, Remote: id.Remote, Version: Version, Now: time.Now().UnixMilli(), Run: chans[0].Run,
+	return hello{Role: id.Role.String(), NeedToken: id.NeedToken, CanLogin: canLogin, Remote: id.Remote, Version: Version, Title: tabTitle(set.TabTitle), Now: time.Now().UnixMilli(), Run: chans[0].Run,
 		Controls: chans[0].Controls, Meters: last[0], Sun: sun, Text: chans[0].Text, Lines: chans[0].Lines, Chans: chans,
 		Clients: s.hub.Clients(), Net: s.netLast.Load(), Records: s.st.Count(), Loc: s.withDist(id)}
 }

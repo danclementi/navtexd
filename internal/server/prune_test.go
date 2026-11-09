@@ -112,3 +112,11 @@ func TestPrune(t *testing.T) {
 		t.Errorf("trash after erase: %v", tj)
 	}
 }
+
+func TestTabTitle(t *testing.T) {
+	for in, want := range map[string]string{"": "navtexd", "  ": "navtexd", "navtexd 490": "navtexd 490", " 518\n kHz ": "518  kHz", "a\tb": "a b"} {
+		if got := tabTitle(in); got != want {
+			t.Errorf("tabTitle(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
