@@ -162,7 +162,9 @@ func TestSoftBeatsHardInNoise(t *testing.T) {
 	var hardOK, softOK int
 	for seed := int64(1); seed <= 12; seed++ {
 		syms := symbolsOf(encode(testText, 160), 55, 1, seed)
-		hm, _, _ := decodeFramer(syms, 1000, DefaultConfig())
+		hc := DefaultConfig()
+		hc.Framing = FramingHard
+		hm, _, _ := decodeFramer(syms, 1000, hc)
 		sm, _, _ := decodeFramer(syms, 1000, softCfg())
 		if len(hm) > 0 && hm[0].ID() == "KA91" {
 			hardOK++

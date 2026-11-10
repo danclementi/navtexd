@@ -9,7 +9,7 @@ import (
 
 // Config holds the framing settings; DefaultConfig gives the reference values.
 type Config struct {
-	Framing         Framing    `json:"framing" doc:"How the character alignment is found. hard: ten valid 4-of-7 words in a row lock the framing (fast, but needs a clean signal). soft: scores all alignments from the 35-bit repetition of each character and locks on the accumulated evidence (works in more noise, follows bit slips and station changes, but locks a few seconds later and shows characters it cannot trust as ~ or !). The soft framing reads the bit order as LSB first, ignores unshift_on_space, and leaves lock_words, unlock_bad_words, parity_votes, parity_factor, keep_parity_symbols and relock_words unused. Changing it restarts the channel" choices:"hard,soft"`
+	Framing         Framing    `json:"framing" doc:"How the character alignment is found (soft is the default since v0.9). hard: ten valid 4-of-7 words in a row lock the framing (fast, but needs a clean signal). soft: scores all alignments from the 35-bit repetition of each character and locks on the accumulated evidence (works in more noise, follows bit slips and station changes, but locks a few seconds later and shows characters it cannot trust as ~ or !). The soft framing reads the bit order as LSB first, ignores unshift_on_space, and leaves lock_words, unlock_bad_words, parity_votes, parity_factor, keep_parity_symbols and relock_words unused. Changing it restarts the channel" choices:"hard,soft"`
 	Order           Order      `json:"bit_order" doc:"Which bit of each 7-bit code is sent first. auto: decide by finding ZCZC (LSB is shown until then)" choices:"auto,lsb,msb"`
 	Polarity        Polarity   `json:"polarity" doc:"Which tone is the mark: normal (receiver in USB, mark is the higher tone), inverted (LSB) or auto (try both)" choices:"auto,normal,inverted"`
 	UnshiftOnSpace  bool       `json:"unshift_on_space" doc:"A space character returns to the letters shift (helps when a shift character was missed)"`
@@ -27,7 +27,7 @@ type Config struct {
 }
 
 func DefaultConfig() Config {
-	return Config{Order: Auto, Polarity: PolAuto, Unreadable: Tilde, BreakBeforeZCZC: true, BreakAfterBRK: true,
+	return Config{Framing: FramingSoft, Order: Auto, Polarity: PolAuto, Unreadable: Tilde, BreakBeforeZCZC: true, BreakAfterBRK: true,
 		ShiftHz: 170, MinRun: 10, MaxBad: 8, VoteAgree: 10, VoteFactor: 3, KeepParity: 3000, RelockWords: 4, RelockWindowS: 120}
 }
 

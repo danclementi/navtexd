@@ -41,7 +41,11 @@ type Config struct {
 	Compare     Compare             `json:"compare"`
 	Output      Output              `json:"output"`
 	Extra       [Channels - 1]Extra `json:"extra"`
+	Migrated    string              `json:"migrated,omitempty" hidden:"true" doc:"Internal: the one-time changes already made to this settings file"`
 }
+
+// MigratedSoft marks a settings file whose decoders were moved to the soft framing (the default since v0.9).
+const MigratedSoft = "soft-framing"
 
 // Channels is the maximum number of decoding channels. Channel 0 uses the top-level input, channel, ddc, receiver,
 // decoder and segment groups; channel n (1 and up) uses the same groups inside Extra[n-1] ("extra.<n-1>.*" in the
@@ -638,6 +642,15 @@ func Load(path string) (Config, error) {
 	for ch := 0; ch < Channels; ch++ { // the marker must come from the file (the defaults have it set)
 		c.EditChannel(ch, func(d *Config) { d.Channel.ViewV2 = false })
 	}
+	var probe struct {
+		Migrated string `json:"migrated"`
+	}
+	if json.Unmarshal(b, &probe) == nil && !strings.Contains(probe.Migrated, MigratedSoft) { // a file from before v0.9: a framing it does not name was the old default, hard
+		c.Decoder.Framing = sitor.FramingHard
+		for i := range c.Extra {
+			c.Extra[i].Decoder.Framing = sitor.FramingHard
+		}
+	}
 	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&c); err != nil {
@@ -663,6 +676,26 @@ func Load(path string) (Config, error) {
 		c.Operator.Public, c.Server.ViewerHints = true, false
 	}
 	return c, c.Validate()
+}
+
+// MigrateSoftFraming moves the channels of a settings file from before v0.9 to the soft framing, once: the file is marked
+// so that a channel put back on hard stays there. It returns the numbers (1 and up) of the enabled channels that were
+// changed, and whether the migration ran now (the file then needs saving).
+func (c *Config) MigrateSoftFraming() (changed []int, ran bool) {
+	if strings.Contains(c.Migrated, MigratedSoft) {
+		return nil, false
+	}
+	for ch := 0; ch < Channels; ch++ {
+		if c.ForChannel(ch).Decoder.Framing == sitor.FramingSoft {
+			continue
+		}
+		c.EditChannel(ch, func(d *Config) { d.Decoder.Framing = sitor.FramingSoft })
+		if c.ChannelEnabled(ch) {
+			changed = append(changed, ch+1)
+		}
+	}
+	c.Migrated = strings.TrimSpace(c.Migrated + " " + MigratedSoft)
+	return changed, true
 }
 
 // JSON renders the configuration as indented JSON.

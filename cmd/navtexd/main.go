@@ -88,6 +88,7 @@ func main() {
 	}
 
 	cfg := config.Default()
+	softNotice := ""
 	settings := filepath.Join(*dataDir, app.SettingsFile)
 	if *cfgFile == "" {
 		if _, err := os.Stat(settings); err == nil {
@@ -103,6 +104,30 @@ func main() {
 			fatal(err)
 		}
 		cfg = c
+		if *cfgFile == settings { // the saved settings: from v0.9 on the soft framing is the default, and these move over once
+			if changed, ran := cfg.MigrateSoftFraming(); ran {
+				if old, err := os.ReadFile(settings); err == nil && len(changed) > 0 {
+					_ = os.WriteFile(filepath.Join(*dataDir, "settings.pre-soft.json"), old, 0o644)
+				}
+				if err := cfg.Save(settings); err != nil {
+					fatal(err)
+				}
+				if len(changed) > 0 {
+					names := make([]string, len(changed))
+					for i, ch := range changed {
+						names[i] = fmt.Sprint(ch)
+					}
+					plural := ""
+					if len(names) > 1 {
+						plural = "s"
+					}
+					softNotice = "Decoder framing changed from hard to soft on channel" + plural + " " + strings.Join(names, ", ") +
+						" (the new default). To keep hard framing on a channel, set decoder.framing back to hard in the settings. The previous settings are in settings.pre-soft.json."
+				}
+			}
+		}
+	} else {
+		cfg.Migrated = config.MigratedSoft // new settings: nothing to move
 	}
 	base := cfg // the configuration before the command line, for remembering the input choice below
 	// first the flags that choose the source, then the ones that set its options
@@ -246,6 +271,9 @@ func main() {
 		},
 	}
 	run := app.New(*dataDir, cfg, st, hooks)
+	if softNotice != "" {
+		run.Log("warn", softNotice) // (warnings are also shown on the console)
+	}
 	cat.Position = func() (float64, float64, bool) {
 		o := run.Config().Operator
 		return o.LatDeg, o.LonDeg, o.LatDeg != 0 || o.LonDeg != 0

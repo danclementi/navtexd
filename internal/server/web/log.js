@@ -333,6 +333,7 @@
     if (!ws.length) return;
     const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const re = new RegExp(ws.map(esc).join("|"), "gi");
+    pre.normalize(); // (the text is built word by word: join the pieces so that a keyword of several words can match)
     const walker = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.parentElement.closest(".pfx, .vis, .cand, .revd, .fix") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) });
     const nodes = [];
     while (walker.nextNode()) nodes.push(walker.currentNode);
@@ -384,7 +385,7 @@
       if (r.rev.length > 1) { const b = el("button", { type: "button", class: "linkbtn", disabled: !admin(), text: "undo all" }); b.onclick = () => patch({ rev: { op: "clear" } }); rl.append(b); }
     }
   }
-  $("rec-showrev").onchange = () => { if (L.rec) showText(); };
+  $("rec-showrev").onchange = () => { syncDelete(); if (L.rec) showText(); };
   $("rec-cand").onchange = () => { try { localStorage.setItem("nx-cand", $("rec-cand").checked ? "1" : "0"); } catch {} if (L.rec) showText(); };
   $("rec-cand").checked = (() => { try { return localStorage.getItem("nx-cand") === "1"; } catch { return false; } })();
   // a click on a marked stretch accepts it (not when text is being selected)
@@ -572,7 +573,13 @@
     $("ld-prev").disabled = !canStep(earlier());
     $("ld-next").disabled = !canStep(-earlier());
     $("ld-report").hidden = false;
-    $("ld-delete").disabled = !admin();
+    syncDelete();
+  }
+  // (not while all the text is shown reversed: it is too easy to forget that, and to take the message for garbage)
+  function syncDelete() {
+    const rev = $("rec-showrev").checked;
+    $("ld-delete").disabled = !admin() || rev;
+    $("ld-delete").title = rev ? "Not while \"reverse all text\" is checked" : "Delete this record.\nIt is saved first: the undo button brings it back.";
   }
   async function openDialog() {
     if (!L.selId) return;
@@ -975,9 +982,11 @@
     const odd = ($("rev-out").value.match(/[^\x20-\x7e\n£]|[<>]/) || [])[0];
     if (ok && odd) { ok = false; why = ` The text to put in has a character that cannot be put into a message: ${odd === "\r" ? "a line end" : `"${odd}"`}. Only printable ASCII characters and the pound sign, without < and >, are allowed.`; }
     $("rev-apply").disabled = !ok;
+    $("rev-clear").disabled = !(revSrc || $("rev-out").value || String(window.getSelection()));
     $("rev-apply").title = ok ? "Put this text into the message in place of the selected text. The received text is kept (undo is possible)." : "Select text in the message; its reversal appears in the box. Correct it if needed, then use this." + why;
   }
   $("rev-out").addEventListener("input", updateApply);
+  $("rev-clear").onclick = () => { window.getSelection().removeAllRanges(); revClear(); };
   $("rev-apply").addEventListener("mousedown", (e) => e.preventDefault()); // (a click must not clear the selection in the message)
   // The message text inside a selection, one part per line: the time stamps, the quality numbers and the line ends that the
   // selection also holds are left out. Each part says its line, its text and which occurrence of the text in the line it is.
