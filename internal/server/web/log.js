@@ -230,6 +230,7 @@
     try { rec = await api("GET", "/api/messages/" + id); } catch (e) { $("rec-text").textContent = e.message; return; }
     if (L.selId !== id) return; // the user has moved on
     L.rec = rec;
+    revClear();
     showRecord();
   }
   async function selectIndex(i) {
@@ -352,7 +353,7 @@
   }
   function showText() {
     const r = L.rec;
-    const cands = pendingCands(r), n = cands.reduce((a, l) => a + l.length, 0);
+    const cands = $("rec-cand").checked ? pendingCands(r) : [], n = cands.reduce((a, l) => a + l.length, 0);
     const paint = (rl) => { if (L.rec === r) { NX.fillRecordText($("rec-text"), r, { cor: $("rec-cor").checked, cands, rl }); if (whyIsOpen(r) && r.why) markWords($("rec-text"), r.why.words); } };
     if ($("rec-showrev").checked) reversedLines(r).then(paint, () => paint(null)); else paint(null);
     // stretches that look as if they were decoded in the wrong shift are marked in the text; one click accepts one, or all
@@ -384,6 +385,8 @@
     }
   }
   $("rec-showrev").onchange = () => { if (L.rec) showText(); };
+  $("rec-cand").onchange = () => { try { localStorage.setItem("nx-cand", $("rec-cand").checked ? "1" : "0"); } catch {} if (L.rec) showText(); };
+  $("rec-cand").checked = (() => { try { return localStorage.getItem("nx-cand") === "1"; } catch { return false; } })();
   // a click on a marked stretch accepts it (not when text is being selected)
   $("rec-text").addEventListener("click", (e) => {
     const c = e.target.closest(".cand");
@@ -972,11 +975,10 @@
     const odd = ($("rev-out").value.match(/[^\x20-\x7e\n£]|[<>]/) || [])[0];
     if (ok && odd) { ok = false; why = ` The text to put in has a character that cannot be put into a message: ${odd === "\r" ? "a line end" : `"${odd}"`}. Only printable ASCII characters and the pound sign, without < and >, are allowed.`; }
     $("rev-apply").disabled = !ok;
-    $("rev-apply").title = ok ? "Replace the received text in the message by this text. The received text is kept (undo is possible)." : "Select text in the message (then \"Use selection\") or click a suggestion above, press Reverse, correct the result if needed, then use this." + why;
+    $("rev-apply").title = ok ? "Put this text into the message in place of the selected text. The received text is kept (undo is possible)." : "Select text in the message; its reversal appears in the box. Correct it if needed, then use this." + why;
   }
-  $("rev-in").addEventListener("input", () => setRevSource(null));
   $("rev-out").addEventListener("input", updateApply);
-  $("rev-sel").addEventListener("mousedown", (e) => e.preventDefault()); // (a click must not clear the selection in the message)
+  $("rev-apply").addEventListener("mousedown", (e) => e.preventDefault()); // (a click must not clear the selection in the message)
   // The message text inside a selection, one part per line: the time stamps, the quality numbers and the line ends that the
   // selection also holds are left out. Each part says its line, its text and which occurrence of the text in the line it is.
   function selectedParts(sel) {
@@ -1000,21 +1002,25 @@
     });
     return parts;
   }
-  $("rev-sel").onclick = () => {
-    const sel = window.getSelection(), t = String(sel);
-    if (!t) return;
-    const parts = selectedParts(sel);
-    revSrc = null;
-    if (parts.length) { // (Ctrl-C copies the selection as it is)
-      $("rev-in").value = parts.map((p) => p.text).join("\n");
-      revSrc = { parts };
-    } else $("rev-in").value = t; // not in the message text: it can be reversed, not put in
-    updateApply();
-  };
-  $("rev-go").onclick = async () => {
-    try { $("rev-out").value = (await api("POST", "/api/reverse", { text: $("rev-in").value })).text; } catch (e) { $("rev-out").value = e.message; }
-    updateApply();
-  };
+  // The selected message text is reversed at once, into the one box (which can be corrected before Accept)
+  let revSeq = 0;
+  function revClear() { revSeq++; revSrc = null; $("rev-out").value = ""; updateApply(); }
+  document.addEventListener("selectionchange", () => {
+    if (!dlg.open || !L.rec || document.activeElement === $("rev-out")) return; // (editing the box must not lose what it came from)
+    const sel = window.getSelection(), parts = String(sel) ? selectedParts(sel) : [];
+    if (!parts.length) { if (revSrc || $("rev-out").value) revClear(); return; }
+    const mine = ++revSeq, text = parts.map((p) => p.text).join("\n");
+    clearTimeout(revTimer);
+    revTimer = setTimeout(async () => {
+      try {
+        const out = (await api("POST", "/api/reverse", { text })).text;
+        if (mine !== revSeq) return;
+        revSrc = { parts }; $("rev-out").value = out;
+      } catch (e) { if (mine !== revSeq) return; revSrc = null; $("rev-out").value = e.message; }
+      updateApply();
+    }, 120);
+  });
+  let revTimer = 0;
   $("rev-apply").onclick = async () => {
     if (!revSrc || !L.rec) return;
     if (revSrc.parts) {
@@ -1026,7 +1032,7 @@
     } else {
       await patch({ rev: { op: "add", l: revSrc.l, s: revSrc.s, e: revSrc.e, t: $("rev-out").value.trim() } });
     }
-    revSrc = null; $("rev-in").value = ""; $("rev-out").value = ""; updateApply();
+    revClear();
   };
 
   // ---- live updates ----

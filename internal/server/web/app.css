@@ -384,9 +384,11 @@ dialog#log-dlg::backdrop { background: rgba(0, 0, 0, .45); }
 #log-dlg .ldtext { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; padding: 6px 12px 0; }
 #log-dlg .ldtext label { align-self: flex-start; margin-bottom: 4px; }
 #log-dlg #rec-text { flex: 1 1 auto; height: auto; min-height: 60px; margin: 0; font-family: var(--mono); background: var(--msg-bg); color: var(--msg-ink); border-color: var(--spec-grid); }
-#log-dlg .ldrev { flex: 0 0 auto; padding: 0 12px 10px; border-top: 1px solid var(--line); margin-top: 6px; }
-#log-dlg .ldrev h3 { margin: 6px 0 4px; }
-#log-dlg .ldrev .row textarea { flex: 1 1 auto; min-width: 0; }
+#log-dlg .ldrev { flex: 0 0 auto; display: flex; gap: 10px; align-items: stretch; padding: 8px 12px 10px; border-top: 1px solid var(--line); margin-top: 6px; }
+#log-dlg .ldrev textarea { flex: 1 1 0; min-width: 0; resize: none; }
+#log-dlg .ldrev button { align-self: flex-start; }
+#log-dlg .ldrev .vsep { flex: none; width: 1px; background: var(--line); }
+#log-dlg .ldrev .revchecks { flex: none; display: flex; flex-direction: column; gap: 4px; justify-content: center; }
 .filters .frow { gap: 6px 10px; }
 .filters .frow:first-child { flex-wrap: nowrap; }
 .filters .frow:first-child .field, .filters .frow:first-child .check { flex: 0 0 auto; white-space: nowrap; gap: 4px; }
@@ -394,9 +396,6 @@ dialog#log-dlg::backdrop { background: rgba(0, 0, 0, .45); }
 .filters #f-km-wrap input[type=number] { width: 58px; }
 .filters .field.grow { white-space: nowrap; }
 .filters .field.grow input[type=text] { min-width: 0; }
-#log-dlg .ldrev .row { flex-wrap: nowrap; align-items: stretch; margin-bottom: 6px; }
-#log-dlg .ldrev .row textarea { flex: 1 1 0; }
-#log-dlg .ldrev .row .col { flex: 0 0 auto; display: flex; flex-direction: row; gap: 6px; align-items: flex-start; }
 .filters .frow:first-child { gap: 6px 8px; }
 .filters #f-kind { width: 88px; }
 .filters .field input[type=date] { width: 112px; }
@@ -555,7 +554,6 @@ nav #helplink { margin-left: auto; display: flex; align-items: center; border: 2
 nav #helplink:hover { color: var(--ink); }
 
 /* stretches that look as if decoded in the wrong shift, and the view of all text reversed */
-#log-dlg .rowchecks { display: flex; flex-wrap: wrap; gap: 4px 18px; }
 #rec-text .cand { --cand: #f0a0e8; background: var(--cand); color: var(--msg-bg); border-radius: 2px; cursor: pointer; } /* reverse video like .fix, with the picked text colour turned 150 degrees round the colour wheel */
 @supports (color: hsl(from red h s l)) { #rec-text .cand { --cand: hsl(from var(--msg-ink) calc(h + 150) s l); } }
 #rec-text .cand:hover { filter: brightness(1.15); box-shadow: 0 0 0 1px var(--cand); }
