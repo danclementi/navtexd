@@ -437,7 +437,7 @@
     add("Msg Start", el("span", { class: "v", title: NX.stamp(Date.parse(r.rx)) + " UTC" }, NX.stamp(Date.parse(r.rx)) + " UTC", slotTxt)); add("B1 / NAVAREA", b1na);
     add("Set by", el("span", { class: "setby" }, val(setBy), whyBtn || ""));
     add("Frequency", val(r.ch + " kHz")); add("Msg Header", val((r.b1 || "?") + (r.b2 || "?") + (r.ser || "??"), notes || undefined)); add("Comment", cm);
-    add("Station", val(r.st)); add("Msg ID#", val(NX.hex(r.id), `Quality ${r.q.toFixed(1)}`)); add("", ""); add("", "");
+    add("Station", val(r.st)); add("Msg ID#", val(NX.hex(r.id), `Quality ${r.q.toFixed(1)}`)); add("Override:", el("span", { class: "ovr", id: "rec-ovr" }));
     const box = $("rec-info");
     box.replaceChildren(dl);
     identBlock(r).catch(() => {});
@@ -471,7 +471,10 @@
     const useTip = "Identify the record as this station (sets B1 and NAVAREA to its own). The identification is marked \"forced ID\" when the message text does not support it.";
     const badge = (text, tip, strike) => el("span", { class: "bdg" + (strike ? " strike" : ""), title: tip, text });
     const d = new Date(L.rec.rx), m = d.getUTCHours() * 60 + d.getUTCMinutes();
-    for (const c of w.cands.slice().sort((x, y) => y.score - x.score)) {
+    let shown = w.cands.slice().sort((x, y) => y.score - x.score).slice(0, 3);
+    const cho = w.cands.find((c) => c.chosen);
+    if (cho && !shown.includes(cho)) shown[2] = cho; // (the station of the record is always among the rows)
+    for (const c of shown) {
       const st = byId.get(c.id);
       const slotPts = sum(c, "slot");
       const inSlot = slotPts > 0 && st && st.times.some((t) => { const [h, mm] = String(t).split(":").map(Number); const dd = ((m - (h * 60 + mm)) % 1440 + 1440) % 1440; return t && (dd <= 30 || dd >= 1439); });
@@ -486,17 +489,10 @@
         badge("GID=" + num(sum(c, "gid"), 2, 4), "geographic: " + words(c, "gid")),
         badge("SLOT=" + num(slotPts, 1, 3), w.b1_known ? "B1 read; ignored" : inSlot ? "message started in slot " + (st ? st.b1 : "") : "message did not start in a slot of this station", w.b1_known),
         badge("DIST=" + num(sum(c, "dist"), 2, 4), "station distance"),
-        badge("HIST=" + num(sum(c, "hist"), 2, 4), "station history"));
+        badge("HIST=" + num(sum(c, "hist"), 2, 4), "station history"),
+        el("span"));
     }
     p.append(g);
-    const best = w.cands[0];
-    const rule = el("div", { class: "whyrule small" });
-    rule.append(el("span", { text: "Rule" }),
-      el("span", { text: `keywords ≥ ${w.need_kw.toFixed(1)}` + (best ? ` (best: ${best.kw.toFixed(1)})` : "") + (w.rivals ? `, lead over the next ≥ ${w.need_margin.toFixed(2)} (lead: ${w.margin.toFixed(2)})` : "")}));
-    if (w.cands.length) rule.append(el("span", { text: "Result" }), el("span", { text: w.reason || (w.method ? "Station set by: " + w.method + "." : "Station already assigned.") }));
-    if (w.differs) rule.append(el("span", { text: "Today" }), el("span", { text: `Worked out again with the current station table this gives ${w.differs}.` }));
-    rule.append(el("span", { text: "Note" }), el("span", { text: "Shown for this record as it is now (the history of earlier messages counts as of today)." }));
-    p.append(rule);
     return p;
   }
   async function identBlock(r) {
@@ -504,28 +500,23 @@
     const byId = await NX.loadStations();
     if (!L.rec || L.rec.id !== id) return;
     const w = r.why;
-    const d = new Date(r.rx), m = d.getUTCHours() * 60 + d.getUTCMinutes();
-    const mins = (t) => { const [h, mm] = String(t).split(":").map(Number); return h * 60 + mm; };
-    const on = (s) => s.times.some((t) => t && !isNaN(mins(t)) && ((m - mins(t)) % 1440 + 1440) % 1440 < 10);
     const same = [...byId.values()].filter((s) => s.freq === r.ch);
     const lab = (s) => `${s.area}${s.b1} ${s.name},${s.cc}`;
     const tip = "Identify the record as this station (sets B1 and NAVAREA to its own). The identification is marked \"forced ID\" when the message text does not support it.";
     const frag = document.createDocumentFragment();
     if (whyIsOpen(r) && w) frag.append(el("div", { class: "whywrap" }, whyPanel(w, byId)));
-    // row: any station of the frequency
-    frag.append(el("span", { class: "gl", text: "Other station" }));
-    const other = el("div", { class: "othr" });
+    // Override: any station of the frequency (in the info area, after the message ID)
+    const other = document.createDocumentFragment();
     if (same.length) {
-      const sel = el("select", { disabled: !admin(), title: "Any station of this frequency" }, el("option", { value: "", text: "other station…" }));
+      const sel = el("select", { disabled: !admin(), title: "Any station of this frequency" }, el("option", { value: "", text: "any station…" }));
       for (const st of same.slice().sort((a, b) => a.area - b.area || a.b1.localeCompare(b.b1))) sel.append(el("option", { value: String(st.id), text: lab(st) }));
       const b = el("button", { text: "Use", disabled: !admin(), title: tip });
       b.onclick = () => { if (sel.value) useCandidate(Number(sel.value)); };
-      const slot = [...new Set(same.filter(on).map((s) => s.b1))].sort();
-      other.append(sel, b, el("span", { class: "small", text: slot.length ? `message started in time slot '${slot.join("/")}'` : "message started outside any scheduled time slot" }));
+      other.append(sel, b);
     }
-    frag.append(other);
     if (!L.rec || L.rec.id !== id || L.rec.v !== v) return;
     $("rec-ident").replaceChildren(frag);
+    const ovr = $("rec-ovr"); if (ovr) ovr.replaceChildren(other);
   }
 
   // The server sets B1 and NAVAREA from the station and remembers the choice (several stations can share all three)

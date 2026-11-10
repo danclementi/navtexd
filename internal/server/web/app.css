@@ -565,23 +565,23 @@ nav #helplink:hover { color: var(--ink); }
 #rec-text.showrev { outline: 2px dashed #38a0e8; outline-offset: -2px; }
 
 /* station identification in the record dialog: a block of its own with fixed rows, so that nothing moves when a record is edited */
-#log-dlg .ldident { flex: none; display: grid; grid-template-columns: 7.5em minmax(0, 1fr); grid-auto-rows: minmax(28px, auto); align-items: center; gap: 2px 10px; padding: 4px 12px; font-size: 12px; border-bottom: 1px solid var(--line); min-height: 36px; }
+#log-dlg .ldident { flex: none; padding: 3px 12px; font-size: 12px; border-bottom: 1px solid var(--line); }
+#log-dlg .ldident:empty { display: none; }
 #log-dlg .ldident .gl { color: var(--dim); }
 #log-dlg .ldinfo .whybtn { font-size: 12px; padding: 0 8px; line-height: 18px; flex: none; }
 #log-dlg .ldinfo .setby { display: flex; gap: 8px; align-items: center; min-width: 0; }
 #log-dlg .ldinfo .slotl { color: var(--dim); }
-#log-dlg .ldident .othr { display: grid; grid-template-columns: 15em auto minmax(0, 1fr); gap: 8px; align-items: center; }
-#log-dlg .ldident .othr select { width: 100%; }
-#log-dlg .ldident .whywrap { grid-column: 1 / -1; }
-#log-dlg .whyp { display: grid; gap: 6px; padding: 4px 0 6px; max-height: 28vh; overflow: auto; }
-#log-dlg .whyg { display: grid; grid-template-columns: 17em 1.6em auto auto repeat(5, auto); gap: 3px 8px; align-items: center; }
+#log-dlg .ldinfo .ovr { display: flex; gap: 8px; align-items: center; min-width: 0; }
+#log-dlg .ldinfo .ovr select { width: 17em; max-width: 100%; }
+#log-dlg .ldinfo .ovr button { font-size: 12px; padding: 0 8px; line-height: 18px; }
+#log-dlg .whyp { display: grid; gap: 2px; padding: 2px 0 3px; max-height: 28vh; overflow: auto; }
+#log-dlg .whyg { display: grid; grid-template-columns: 17em 1.6em auto auto repeat(5, auto) minmax(2em, 1fr); gap: 1px 8px; align-items: center; }
+#log-dlg .whyg button { font-size: 11px; padding: 0 8px; line-height: 16px; }
 #log-dlg .whyn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #log-dlg .whyn.chosen { font-weight: 700; }
 #log-dlg .whys { text-align: center; font-family: var(--mono, monospace); color: var(--dim); cursor: help; }
 #log-dlg .whyp button:disabled { opacity: .45; }
 #log-dlg .whytot, #log-dlg .bdg { white-space: pre; font-family: var(--mono, monospace); font-size: 12px; }
-#log-dlg .bdg { border: 1px solid var(--line); border-radius: 9px; padding: 0 7px; line-height: 18px; cursor: help; }
+#log-dlg .bdg { border: 1px solid var(--line); border-radius: 9px; padding: 0 7px; line-height: 15px; cursor: help; }
 #log-dlg .bdg.strike { text-decoration: line-through; color: var(--dim); }
-#log-dlg .whyrule { display: grid; grid-template-columns: 7em minmax(0, 1fr); gap: 1px 8px; }
-#log-dlg .whyrule > span:nth-child(odd) { color: var(--dim); }
 #rec-text mark.kwhit { background: color-mix(in srgb, #e8c020 55%, transparent); color: inherit; border-radius: 2px; }
