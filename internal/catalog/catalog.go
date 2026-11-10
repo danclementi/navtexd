@@ -302,6 +302,9 @@ func (c *Catalog) Enrich(r *store.Record) {
 	defer c.mu.Unlock()
 	r.Station, r.StationID, r.DistanceKm, r.BearingDeg, r.IdentMethod, r.IdentScore, r.Candidates = "UNID", 0, 0, 0, "", 0, nil
 	r.StationKey, r.PickedKey = "", c.keyOf(r.Picked)
+	if r.Picked < 0 {
+		r.PickedKey = store.PickedNone
+	}
 	place := func(s stations.Station, idx int, method string, score float64) {
 		r.Station, r.StationID, r.IdentMethod, r.IdentScore = Label(s), idx+1, method, store.F2(score)
 		r.StationKey = c.keyOf(idx + 1)
@@ -331,6 +334,9 @@ func (c *Catalog) Enrich(r *store.Record) {
 	res := c.id.Identify(in)
 	for _, cd := range res.Candidates {
 		r.Candidates = append(r.Candidates, store.Candidate{StationID: cd.Index + 1, Key: c.keyOf(cd.Index + 1), Label: Label(c.tab.Stations[cd.Index]), Score: store.F2(cd.Score)})
+	}
+	if r.Picked < 0 {
+		return // kept unidentified by the operator (the candidates stay, for Why?)
 	}
 	if r.Picked >= 1 && r.Picked <= len(c.tab.Stations) && c.tab.Stations[r.Picked-1].Hz() == r.Channel {
 		// the operator chose this station among the candidates (needed when several share frequency, B1 and NAVAREA)

@@ -197,7 +197,8 @@ func (s *Server) patchMessage(w http.ResponseWriter, r *http.Request, id Identit
 		Comment *string `json:"cmt"`
 		Rev     *revOp  `json:"rev"`
 		Revs    []revOp `json:"revs"`    // several revisions in one step (a selection over several lines), all or none
-		Station *int    `json:"station"` // choose this station (ID); sets B1 and NAVAREA to its own; 0 = no choice
+		Station *int    `json:"station"` // choose this station (ID); sets B1 and NAVAREA to its own; 0 = no choice; -1 = keep the record unidentified
+		Reident bool    `json:"reident"` // identify this record again from scratch: forget the operator's station and B1 / NAVAREA lock
 	}
 	if err := readBody(r, &body); err != nil {
 		fail(w, 400, err)
@@ -230,9 +231,14 @@ func (s *Server) patchMessage(w http.ResponseWriter, r *http.Request, id Identit
 		}
 		rec.NavArea, rec.Manual, rec.Picked = *body.NavArea, true, 0
 	}
+	if body.Reident {
+		rec.Manual, rec.Picked = false, 0
+	}
 	if body.Station != nil {
 		if *body.Station == 0 {
 			rec.Picked = 0
+		} else if *body.Station < 0 {
+			rec.Picked, rec.Manual = -1, true
 		} else {
 			st, ok := s.cat.Station(*body.Station)
 			if !ok || st.Hz() != rec.Channel {
@@ -245,7 +251,7 @@ func (s *Server) patchMessage(w http.ResponseWriter, r *http.Request, id Identit
 	if body.Comment != nil {
 		rec.Comment = strings.TrimSpace(*body.Comment)
 	}
-	if body.B1 != nil || body.NavArea != nil || body.Station != nil {
+	if body.B1 != nil || body.NavArea != nil || body.Station != nil || body.Reident {
 		s.cat.Enrich(&rec)
 	}
 	ops := body.Revs

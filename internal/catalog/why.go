@@ -29,6 +29,7 @@ type WhyCand struct {
 type Why struct {
 	Method     string    `json:"method"`
 	Reason     string    `json:"reason,omitempty"`
+	Kept       bool      `json:"kept,omitempty"` // the operator keeps the record unidentified
 	Ambiguous  bool      `json:"amb,omitempty"`
 	Rivals     bool      `json:"rivals,omitempty"`
 	Margin     float64   `json:"margin"`
@@ -106,8 +107,11 @@ func (c *Catalog) Explain(r store.Record, loc bool) *Why {
 	if main == nil && len(w.Cands) > 0 {
 		main = &w.Cands[0]
 	}
+	w.Kept = r.Picked < 0
 	if r.StationID == 0 {
 		switch {
+		case r.Picked < 0:
+			w.Reason = "Kept unidentified by the operator."
 		case len(w.Cands) == 0:
 			w.Reason = fmt.Sprintf("No station of this frequency fits B1 %q.", r.B1)
 		case main.Keyword < w.NeedKW:

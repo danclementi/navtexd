@@ -110,12 +110,12 @@ test, `min_fragment_words` words of at least `min_fragment_word_letters` letters
 vocabulary (it holds words of 5 letters or more), `off` = any run of letters, `auto` (default) = `on` at 518 kHz, `off` at 490, 486 and 424 kHz. Dropped fragments are not stored; the System
 Log notes each one ("fragment not stored (N words ...)") so that you can tune the numbers. Messages are never affected.
 
-### Soft framing (experimental, per channel)
-`decoder.framing` (Options, Decoder tab of each channel; shown in sudo mode) chooses how the decoder finds the character alignment. `hard` (default) needs ten valid
-4-of-7 words in a row; `soft` scores all alignments from the 35-bit repetition of every character and locks on the accumulated evidence, so it works in more noise, follows a
-one-bit slip or a change of station, and tries both polarities by itself. Characters it cannot trust are printed as `~` (or `!` where the two copies each look valid but
+### Soft and hard framing (per channel)
+`decoder.framing` (Options, Decoder tab of each channel; shown in sudo mode) chooses how the decoder finds the character alignment. `soft` (the default since v0.9) scores all alignments from the 35-bit repetition of every character and locks on the accumulated evidence, so it works in more noise, follows a
+one-bit slip or a change of station, and tries both polarities by itself; `hard` needs ten valid 4-of-7 words in a row. With `soft`, characters it cannot trust are printed as `~` (or `!` where the two copies each look valid but
 differ). The soft lock needs a few seconds of evidence before it locks (the text from before the lock is recovered), reads the bit order as LSB first, and does not use
 `unshift_on_space`, `lock_words`, `unlock_bad_words`, the parity and re-lock options. Changing the option restarts the channel. To compare the two on the same signal, give two channels the same input (`shared_from`) and set one to `hard` and the other to `soft`.
+Settings saved by an earlier version are moved to `soft` once, at the first start of v0.9 (the console and the system log say so; the old file is kept as `settings.pre-soft.json`); set `hard` again on a channel where you want it, and it stays.
 The soft lock is a port of the one in [navtex-rs](https://github.com/bgm60/navtex-rs); see `docs/soft-lock-design.md`.
 
 ### Comparing two channels automatically

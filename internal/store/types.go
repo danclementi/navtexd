@@ -57,13 +57,16 @@ type Record struct {
 	IdentScore  F2          `json:"is"`
 	Candidates  []Candidate `json:"cand,omitempty"`
 	Manual      bool        `json:"man"`            // B1 / NAVAREA set by the operator: never re-identified
-	Picked      int         `json:"pick,omitempty"` // station chosen by the operator among the candidates (place in the table); 0 = none
+	Picked      int         `json:"pick,omitempty"` // station chosen by the operator among the candidates (place in the table); 0 = none; -1 = kept unidentified by the operator
 	PickedKey   string      `json:"pk,omitempty"`   // the key of that station
 	Lines       []Line      `json:"lines"`
 	StartFix    string      `json:"sfix,omitempty"` // the damaged ZCZC as received, when the start was recognized by position and structure
 	Corrected   string      `json:"cor,omitempty"`  // body after word autocorrection (of the effective text)
 	Revs        []Revision  `json:"rev,omitempty"`  // stretches the operator replaced, e.g. text decoded in the wrong shift
 }
+
+// PickedNone is the PickedKey of a record that the operator keeps unidentified (Picked = -1).
+const PickedNone = "-"
 
 // Revision replaces Lines[Line].Text[Start:End] (raw text, never changed) with New when the effective text is built.
 type Revision struct {

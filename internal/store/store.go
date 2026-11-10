@@ -380,7 +380,9 @@ func (s *Store) placeStations(r *Record) {
 	if r.StationKey != "" {
 		r.StationID, _ = f(r.StationKey) // (0 when the station is no longer in the table)
 	}
-	if r.PickedKey != "" {
+	if r.PickedKey == PickedNone {
+		r.Picked = -1
+	} else if r.PickedKey != "" {
 		r.Picked, _ = f(r.PickedKey)
 	}
 	if len(r.Candidates) > 0 {

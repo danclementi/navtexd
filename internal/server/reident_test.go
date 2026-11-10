@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -350,5 +351,59 @@ func TestIdentify4209(t *testing.T) {
 	s.cat.Enrich(&r)
 	if strings.Contains(r.Station, "Nha Trang") {
 		t.Errorf("518 kHz got %q", r.Station)
+	}
+}
+
+// The operator can keep a record unidentified (it stays so when read again) and have it identified again from scratch.
+func TestKeepUnidAndIdentifyAgain(t *testing.T) {
+	cfg := config.Default()
+	cfg.Input.File.Path = "/nonexistent.wav"
+	cfg.Input.Source = "file"
+	cfg.Operator.LatDeg, cfg.Operator.LonDeg = 36.85, -76.3
+	s, _, st, _ := setup(t, cfg)
+	admin := httptest.NewServer(s.handler(false))
+	defer admin.Close()
+	when := time.Date(2026, 5, 1, 0, 50, 0, 0, time.UTC)
+	sid := 0
+	for i := 1; sid == 0; i++ { // the first station of 518 kHz gets a keyword of its own
+		if x, ok := s.cat.Station(i); !ok {
+			t.Fatal("no 518 kHz station")
+		} else if x.Hz() == 518000 {
+			sid = i
+		}
+	}
+	x, _ := s.cat.Station(sid)
+	if code, _ := do(t, admin, "PUT", "/api/stations/"+strconv.Itoa(sid)+"/keywords", map[string]any{"type": "UID", "keywords": []string{"ZORGLUBX"}}, nil); code != 200 {
+		t.Fatal(code)
+	}
+	r := addMsg(t, st, s.cat, x.ID, when, "ZORGLUBX NOTICE")
+	if r.Station == "UNID" {
+		t.Fatalf("the keyword did not name %s", x.Name)
+	}
+	named := r.Station
+	code, _ := do(t, admin, "PATCH", "/api/messages/"+strconv.FormatInt(r.ID, 10), map[string]any{"v": r.Version, "station": -1}, nil)
+	got, _ := st.Get(r.ID)
+	if code != 200 || got.Station != "UNID" || got.Picked != -1 || !got.Manual || got.StationID != 0 {
+		t.Fatalf("kept unid: %d %+v", code, got)
+	}
+	if len(got.Candidates) == 0 {
+		t.Error("the candidates should stay for Why?")
+	}
+	// read again from the database (a restart): still UNID, and the global pass leaves it alone
+	again, _ := st.Get(r.ID)
+	if again.Station != "UNID" || again.Picked != -1 {
+		t.Fatalf("after reading again: %+v", again)
+	}
+	if res, err := s.cat.ReidentifyUnid(st, 0, false, "test"); err != nil || res.Found != 0 {
+		t.Fatalf("global pass: %v %+v", err, res)
+	}
+	if got, _ := st.Get(r.ID); got.Station != "UNID" {
+		t.Fatal("the global pass named a record kept unidentified")
+	}
+	// identify again from scratch
+	code, _ = do(t, admin, "PATCH", "/api/messages/"+strconv.FormatInt(r.ID, 10), map[string]any{"v": got.Version, "reident": true}, nil)
+	got, _ = st.Get(r.ID)
+	if code != 200 || got.Station != named || got.Picked != 0 || got.Manual {
+		t.Fatalf("identify again: %d %+v (wanted %s)", code, got, named)
 	}
 }

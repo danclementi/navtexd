@@ -470,7 +470,7 @@
   const words = (c, k) => [...new Set(c.terms.filter((t) => t.k === k && t.p >= 0 && t.kw).map((t) => t.kw))].join(", ") || "none found";
   function whyPanel(w, byId) {
     const p = el("div", { class: "whyp" });
-    if (!w.cands.length) p.append(el("div", { class: "small whynote", text: w.reason || "No station was scored." }));
+    if (!w.cands.length || w.kept) p.append(el("div", { class: "small whynote", text: w.reason || "No station was scored." }));
     const g = el("div", { class: "whyg" });
     const useTip = "Identify the record as this station (sets B1 and NAVAREA to its own). The identification is marked \"forced ID\" when the message text does not support it.";
     const badge = (text, tip, strike) => el("span", { class: "bdg" + (strike ? " strike" : ""), title: tip, text });
@@ -511,11 +511,11 @@
     if (whyIsOpen(r) && w) frag.append(el("div", { class: "whywrap" }, whyPanel(w, byId)));
     // Override: any station of the frequency (in the info area, after the message ID)
     const other = document.createDocumentFragment();
-    if (same.length) {
-      const sel = el("select", { disabled: !admin(), title: "Any station of this frequency" }, el("option", { value: "", text: "any station…" }));
+    {
+      const sel = el("select", { disabled: !admin(), title: "Any station of this frequency" }, el("option", { value: "", text: "any station…" }), el("option", { value: "re", text: "Identify again" }), el("option", { value: "-1", text: "UNID (keep unidentified)" }));
       for (const st of same.slice().sort((a, b) => a.area - b.area || a.b1.localeCompare(b.b1))) sel.append(el("option", { value: String(st.id), text: lab(st) }));
       const b = el("button", { text: "Use", disabled: !admin(), title: tip });
-      b.onclick = () => { if (sel.value) useCandidate(Number(sel.value)); };
+      b.onclick = () => { if (sel.value === "re") patch({ reident: true }); else if (sel.value) useCandidate(Number(sel.value)); };
       other.append(sel, b);
     }
     if (!L.rec || L.rec.id !== id || L.rec.v !== v) return;
