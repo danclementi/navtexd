@@ -220,17 +220,61 @@
     sc.focus({ preventScroll: true }); // the arrow keys now move through the records
   }
 
+  // ---- the message pane under the list: the current record's text, and the splitter that sets its height (kept in this browser) ----
+  const PH = "nx-log-pane";
+  const pane = { h: 170, shown: true };
+  try { const v = JSON.parse(localStorage.getItem(PH) || "null"); if (v && v.h >= 60) pane.h = v.h; if (v && v.shown === false) pane.shown = false; } catch (e) { /* default */ }
+  const paneMax = () => Math.max(80, $("tab-log").clientHeight - 200);
+  function applyPane() {
+    const pn = $("logpane"), shown = pane.shown;
+    pane.h = Math.max(60, Math.min(paneMax(), pane.h));
+    pn.hidden = !shown;
+    pn.style.setProperty("--lp-h", pane.h + "px");
+    $("logsplit").setAttribute("aria-valuenow", shown ? String(Math.round(pane.h)) : "0");
+    try { localStorage.setItem(PH, JSON.stringify({ h: Math.round(pane.h), shown })); } catch (e) { /* private mode */ }
+    if (L.loaded) requestAnimationFrame(render); // the list changed height: its rows are placed again
+  }
+  function paintPane() {
+    const r = L.rec, tx = $("lp-text"), inf = $("lp-info");
+    if (!r || r.id !== L.selId) { tx.replaceChildren(); inf.textContent = L.sel.size > 1 ? `${L.sel.size} records selected` : "No record selected"; return; }
+    inf.textContent = [NX.hex(r.id), NX.stamp(r.rx) + " UTC", r.ch ? r.ch + " kHz" : "", r.st || "", r.kind].filter(Boolean).join("  \u00b7  ");
+    NX.fillRecordText(tx, r, { cor: true });
+    tx.scrollTop = 0;
+  }
+  {
+    const sp = $("logsplit");
+    let y0 = 0, h0 = 0;
+    sp.addEventListener("pointerdown", (e) => { sp.setPointerCapture(e.pointerId); sp.classList.add("drag"); y0 = e.clientY; h0 = pane.shown ? pane.h : 0; e.preventDefault(); });
+    sp.addEventListener("pointermove", (e) => {
+      if (!sp.classList.contains("drag")) return;
+      const h = h0 + (y0 - e.clientY); // dragging up makes the pane taller
+      if (h < 40) { if (pane.shown) { pane.shown = false; applyPane(); } return; }
+      pane.shown = true; pane.h = h; applyPane();
+    });
+    const up = () => sp.classList.remove("drag");
+    sp.addEventListener("pointerup", up); sp.addEventListener("pointercancel", up);
+    sp.addEventListener("dblclick", () => { pane.shown = !pane.shown; applyPane(); });
+    sp.addEventListener("keydown", (e) => {
+      if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+      e.preventDefault();
+      pane.shown = true; pane.h += e.key === "ArrowUp" ? 20 : -20; applyPane();
+    });
+    window.addEventListener("resize", applyPane);
+    NX.paneRefit = applyPane;
+  }
+
   // ---- selection and record text ----
   // show one record (the "current" one) in the text pane; `keep` leaves the selection set alone
   async function select(id, keep) {
     L.selId = id; if (!keep) L.gone = false;
     if (!keep) L.sel = id ? new Set([id]) : new Set();
     render();
-    if (!id) { $("rec-text").textContent = ""; $("rev-sug").hidden = true; $("rec-info").replaceChildren(); $("rec-ident").replaceChildren(); $("rec-title").textContent = ""; L.rec = null; return; }
+    if (!id) { paintPane(); $("rec-text").textContent = ""; $("rev-sug").hidden = true; $("rec-info").replaceChildren(); $("rec-ident").replaceChildren(); $("rec-title").textContent = ""; L.rec = null; return; }
     let rec;
     try { rec = await api("GET", "/api/messages/" + id); } catch (e) { $("rec-text").textContent = e.message; return; }
     if (L.selId !== id) return; // the user has moved on
     L.rec = rec;
+    paintPane();
     revClear();
     showRecord();
   }
@@ -400,6 +444,7 @@
 
   function showRecord() {
     const r = L.rec;
+    paintPane();
     updateNav();
     showText();
     // fixed grid, three rows of three label/value pairs; values never wrap, so nothing moves
@@ -1056,5 +1101,5 @@
     try { const j = await fetchRange(0, 1); L.lt = j.total; L.la = j.all; indicate(); } catch (e) { /* ignore */ }
   }
   NX.listen("role", () => { showDbBtn(); loadUndo(); if (L.loaded) { render(); if (L.rec) showRecord(); } updateApply(); });
-  NX.tabs.log = () => { showDbBtn(); loadUndo(); if (!L.loaded) { L.loaded = true; reload(); } else refresh(); };
+  NX.tabs.log = () => { applyPane(); showDbBtn(); loadUndo(); if (!L.loaded) { L.loaded = true; reload(); } else refresh(); };
 })();

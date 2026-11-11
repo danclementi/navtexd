@@ -354,6 +354,15 @@ dialog#rec-dlg::backdrop { background: rgba(0, 0, 0, .45); }
 /* ---- Log tab: the list fills the panel; filters in two rows; the record is read in a pop-up ---- */
 #tab-log:not([hidden]) { display: flex; flex-direction: column; overflow: hidden; }
 #tab-log .logscroll { flex: 1 1 auto; height: auto; min-height: 120px; }
+/* the message pane under the list, with a splitter to change its height (kept in this browser) */
+#tab-log .logsplit { flex: 0 0 auto; height: 9px; cursor: row-resize; display: flex; align-items: center; justify-content: center; touch-action: none; outline: none; }
+#tab-log .logsplit i { display: block; width: 48px; height: 3px; border-radius: 2px; background: var(--line); }
+#tab-log .logsplit:hover i, #tab-log .logsplit:focus-visible i, #tab-log .logsplit.drag i { background: var(--accent); }
+#tab-log .logpane { flex: 0 0 auto; height: var(--lp-h, 170px); min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+#tab-log .logpane[hidden] { display: none; }
+#tab-log .lpinfo { flex: none; padding: 2px 8px; font-size: 12px; color: var(--dim); border-bottom: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#tab-log .lptext { flex: 1 1 auto; min-height: 0; margin: 0; padding: 4px 8px; overflow: auto; font-family: var(--mono); font-size: 13px; background: var(--msg-bg); color: var(--msg-ink); white-space: pre; }
+#lp-text .fix { background: var(--msg-ink); color: var(--msg-bg); }
 #tab-log .filters { display: block; margin-bottom: 4px; }
 .filters .frow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-bottom: 6px; }
 .filters .frow .field.grow { flex: 1 1 320px; max-width: 560px; }
