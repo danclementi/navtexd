@@ -87,14 +87,15 @@ type Result struct {
 type Identifier struct {
 	tab    *stations.Table
 	byFreq map[float64][]int
-	df     map[float64]map[string]int // per frequency: keyword -> number of stations using it
+	df     map[float64]map[string]int   // per frequency: keyword -> number of stations using it
+	users  map[float64]map[string][]int // per frequency: keyword -> the stations using it
 	// History returns how many messages from station index i were received before (nil = no history).
 	History func(i int) int
 }
 
 // New prepares an identifier for a station table.
 func New(t *stations.Table) *Identifier {
-	id := &Identifier{tab: t, byFreq: map[float64][]int{}, df: map[float64]map[string]int{}}
+	id := &Identifier{tab: t, byFreq: map[float64][]int{}, df: map[float64]map[string]int{}, users: map[float64]map[string][]int{}}
 	for i, s := range t.Stations {
 		id.byFreq[s.FreqKHz] = append(id.byFreq[s.FreqKHz], i)
 		m := id.df[s.FreqKHz]
@@ -102,11 +103,17 @@ func New(t *stations.Table) *Identifier {
 			m = map[string]int{}
 			id.df[s.FreqKHz] = m
 		}
+		u := id.users[s.FreqKHz]
+		if u == nil {
+			u = map[string][]int{}
+			id.users[s.FreqKHz] = u
+		}
 		seen := map[string]bool{}
 		for _, k := range append(append([]string(nil), s.GID...), s.UID...) {
 			if k = strings.ToUpper(k); k != "" && !seen[k] {
 				seen[k] = true
 				m[k]++
+				u[k] = append(u[k], i)
 			}
 		}
 	}
@@ -170,6 +177,15 @@ func wholeWord(text, kw string) bool {
 // slotTerm says how well a time fits the station's transmission slots: full inside the slot (allowing a minute early),
 // half within 30 minutes after the start, else none.
 func slotTerm(s stations.Station, when time.Time) float64 {
+	w := slotMax
+	if s.CountryCode == "USA" {
+		w /= 2 // US stations are often off schedule
+	}
+	return w * slotFit(s, when)
+}
+
+// slotFit is 1 when the time is inside one of the station's slots, 0.5 when it is up to 30 minutes after the start, else 0.
+func slotFit(s stations.Station, when time.Time) float64 {
 	if when.IsZero() {
 		return 0
 	}
@@ -194,11 +210,45 @@ func slotTerm(s stations.Station, when time.Time) float64 {
 			best = math.Max(best, 0.5)
 		}
 	}
-	w := slotMax
-	if s.CountryCode == "USA" {
-		w /= 2 // US stations are often off schedule
+	return best
+}
+
+// lateWeight is how much a station whose slot began 10 to 30 minutes ago (running late) counts as a possible sender.
+const lateWeight = 0.3
+
+// sharing says how much a keyword of station i is worth, as the number to divide gidUnit by, and how many stations count as
+// sharing it. Only stations that could have sent the message share it: with B1 read, those with that letter; with the time known,
+// those whose slot fits (weight 1) or began up to 30 minutes ago (lateWeight). The station itself always counts as 1. Without a
+// time, every station of the frequency that uses the keyword counts.
+func (id *Identifier) sharing(i int, k string, in Input) (div float64, n int) {
+	if in.When.IsZero() {
+		n = id.df[id.tab.Stations[i].FreqKHz][k]
+		return math.Max(1, float64(n)), n
 	}
-	return w * best
+	b1 := strings.ToUpper(strings.TrimSpace(in.B1))
+	known := len(b1) == 1 && b1[0] >= 'A' && b1[0] <= 'Z'
+	div, n = 1, 1
+	for _, j := range id.users[id.tab.Stations[i].FreqKHz][k] {
+		if j == i {
+			continue
+		}
+		o := id.tab.Stations[j]
+		if known && !strings.EqualFold(o.ID, b1) {
+			continue
+		}
+		w := 0.0
+		switch slotFit(o, in.When) {
+		case 1:
+			w = 1
+		case 0.5:
+			w = lateWeight
+		}
+		if w > 0 {
+			div += w
+			n++
+		}
+	}
+	return div, n
 }
 
 type score struct {
@@ -209,7 +259,6 @@ type score struct {
 
 func (id *Identifier) score(i int, in Input, text string) score {
 	s := id.tab.Stations[i]
-	df := id.df[s.FreqKHz]
 	var sc score
 	uids := 0
 	var uterms []Term
@@ -243,13 +292,13 @@ func (id *Identifier) score(i int, in Input, text string) score {
 	for _, k := range s.GID {
 		k = strings.ToUpper(k)
 		if hit(text, k) {
-			n := df[k]
+			div, n := id.sharing(i, k, in)
 			if n < 1 {
 				n = 1
 			}
-			g += gidUnit / float64(n)
+			g += gidUnit / div
 			sc.gid++
-			gterms = append(gterms, Term{Kind: "gid", Keyword: strings.TrimSpace(k), Shared: n, Points: gidUnit / float64(n), Loose: !wholeWord(text, k), Dup: seen[k]})
+			gterms = append(gterms, Term{Kind: "gid", Keyword: strings.TrimSpace(k), Shared: n, Points: gidUnit / div, Loose: !wholeWord(text, k), Dup: seen[k]})
 		}
 		seen[k] = true
 	}

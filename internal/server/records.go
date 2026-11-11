@@ -68,11 +68,40 @@ func parseTime(v string) (time.Time, error) {
 // logFilter reads the log filter from the query of a request (the Log tab's filter dialog); withDist says whether the distance
 // limits are honoured (viewers may not be told distances).
 func logFilter(q url.Values, withDist bool) (store.Filter, error) {
-	f := store.Filter{Text: q.Get("text"), B1: q.Get("b1"), Kind: q.Get("kind"), Newest: q.Get("order") == "newest", Unidentified: q.Get("unid") == "1"}
-	if k, err := strconv.ParseFloat(q.Get("freq"), 64); err == nil && k > 0 { // kHz (4209.5)
-		f.Channel = int(math.Round(k * 1000))
+	f := store.Filter{Text: q.Get("text"), B1: q.Get("b1"), Newest: q.Get("order") == "newest", Unidentified: q.Get("unid") == "1"}
+	if v := q.Get("freq"); v != "" { // kHz (4209.5), or a list: 490,518
+		f.Channels = map[int]bool{}
+		for _, t := range strings.Split(v, ",") {
+			if k, err := strconv.ParseFloat(strings.TrimSpace(t), 64); err == nil && k > 0 {
+				f.Channels[int(math.Round(k*1000))] = true
+			}
+		}
+		if len(f.Channels) == 0 {
+			f.Channels = nil
+		}
 	}
-	f.Rcv, _ = strconv.Atoi(q.Get("rcv"))
+	if v := q.Get("rcv"); v != "" { // decoding channels, a list: 1,3
+		f.Rcvs = map[int]bool{}
+		for _, t := range strings.Split(v, ",") {
+			if n, err := strconv.Atoi(strings.TrimSpace(t)); err == nil && n > 0 {
+				f.Rcvs[n] = true
+			}
+		}
+		if len(f.Rcvs) == 0 {
+			f.Rcvs = nil
+		}
+	}
+	if v := q.Get("kind"); v != "" { // a list: message,fragment
+		f.Kinds = map[string]bool{}
+		for _, t := range strings.Split(v, ",") {
+			if t = strings.ToLower(strings.TrimSpace(t)); t != "" {
+				f.Kinds[t] = true
+			}
+		}
+		if len(f.Kinds) == 0 {
+			f.Kinds = nil
+		}
+	}
 	if v := q.Get("navarea"); v != "" { // a list: 1,2,5
 		f.NavAreas = map[int]bool{}
 		for _, t := range strings.Split(v, ",") {

@@ -2,6 +2,7 @@ package ident
 
 import (
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -133,5 +134,48 @@ func TestTermsAddUp(t *testing.T) {
 	}
 	if !hit(" XNITONX ", "NITON") || wholeWord(" XNITONX ", "NITON") || !wholeWord(" SEA NITON. ", "NITON") {
 		t.Error("whole-word test")
+	}
+}
+
+// A keyword is shared only among the stations that could have sent the message: with B1 read, the stations with that letter;
+// otherwise those whose slot fits (in full, or a late 0.3).
+func TestKeywordSharedAmongPlausibleStations(t *testing.T) {
+	const tab = "VERSION 1\n" +
+		"1#518#L#LGQ#Rogaland#NOR#Norway#58.6#5.6#01:50#05:50#09:50#13:50#17:50#21:50#NORWEGIAN,SKAGERRAK##\n" +
+		"1#518#M#LGT#Jeloya#NOR#Norway#59.4#10.6#02:00#06:00#10:00#14:00#18:00#22:00#NORWEGIAN##\n" +
+		"1#518#N#LFO#Orlandet#NOR#Norway#63.7#9.6#02:10#06:10#10:10#14:10#18:10#22:10#NORWEGIAN##\n" +
+		"20#518#L#UGE#Arkhangelsk#RUS#Russia#64.5#40.5#01:50#05:50#09:50#13:50#17:50#21:50#RUSSIAN##\n"
+	parsed, err := stations.Parse(strings.NewReader(tab))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := New(parsed)
+	pts := func(in Input, call string) (float64, int) {
+		for _, c := range id.Identify(in).Candidates {
+			if s := id.tab.Stations[c.Index]; s.Callsign == call {
+				for _, tm := range c.Terms {
+					if tm.Kind == "gid" && tm.Keyword == "NORWEGIAN" {
+						return tm.Points, tm.Shared
+					}
+				}
+			}
+		}
+		return -1, 0
+	}
+	// letter read: only the L stations count, and Arkhangelsk does not use the keyword
+	if p, n := pts(Input{FreqKHz: 518, B1: "L", When: at(1, 51), Text: "NORWEGIAN NAV. WARNING"}, "LGQ"); p != gidUnit || n != 1 {
+		t.Errorf("letter read: got %v points shared by %d, want %v by 1", p, n, gidUnit)
+	}
+	// letter unread, 01:51: Rogaland is in its slot; Jeloya (02:00) is not yet, Orlandet (02:10) neither
+	if p, n := pts(Input{FreqKHz: 518, B1: "?", When: at(1, 51), Text: "NORWEGIAN NAV. WARNING"}, "LGQ"); p != gidUnit || n != 1 {
+		t.Errorf("slot only: got %v points shared by %d, want %v by 1", p, n, gidUnit)
+	}
+	// letter unread, 02:05: Rogaland is 15 minutes late (counts 0.3), Jeloya is in its slot (counts 1), Orlandet is not yet
+	if p, n := pts(Input{FreqKHz: 518, B1: "?", When: at(2, 5), Text: "NORWEGIAN NAV. WARNING"}, "LGQ"); n != 2 || p != gidUnit/(1+1) {
+		t.Errorf("late: got %v points shared by %d, want %v by 2", p, n, gidUnit/2)
+	}
+	// no time: every station of the frequency that uses the keyword shares it, as before
+	if p, n := pts(Input{FreqKHz: 518, B1: "?", Text: "NORWEGIAN NAV. WARNING"}, "LGQ"); n != 3 || p != gidUnit/3 {
+		t.Errorf("no time: got %v points shared by %d, want %v by 3", p, n, gidUnit/3)
 	}
 }

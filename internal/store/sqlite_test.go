@@ -89,6 +89,15 @@ func TestSQLFilterAgreesWithMatch(t *testing.T) {
 		if rnd.Intn(8) == 0 {
 			f.NavAreas = map[int]bool{}
 		}
+		if rnd.Intn(4) == 0 {
+			f.Rcvs = map[int]bool{1 + rnd.Intn(2): true, 1 + rnd.Intn(2): rnd.Intn(2) == 0}
+		}
+		if rnd.Intn(4) == 0 {
+			f.Kinds = map[string]bool{kinds[rnd.Intn(3)]: true, kinds[rnd.Intn(3)]: true}
+		}
+		if rnd.Intn(10) == 0 {
+			f.Rcvs, f.Kinds = map[int]bool{}, map[string]bool{}
+		}
 		f.OmitUnid = rnd.Intn(4) == 0
 		f.Unidentified = rnd.Intn(6) == 0
 		if rnd.Intn(3) == 0 {

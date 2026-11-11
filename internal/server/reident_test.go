@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -405,5 +406,22 @@ func TestKeepUnidAndIdentifyAgain(t *testing.T) {
 	got, _ = st.Get(r.ID)
 	if code != 200 || got.Station != named || got.Picked != 0 || got.Manual {
 		t.Fatalf("identify again: %d %+v (wanted %s)", code, got, named)
+	}
+}
+
+func TestLogFilterChannelAndKindLists(t *testing.T) {
+	f, err := logFilter(url.Values{"rcv": {"1,3"}, "kind": {"message,Fragment"}}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !f.Rcvs[1] || !f.Rcvs[3] || f.Rcvs[2] || len(f.Rcvs) != 2 || !f.Kinds["message"] || !f.Kinds["fragment"] || len(f.Kinds) != 2 {
+		t.Fatalf("lists not read: %v %v", f.Rcvs, f.Kinds)
+	}
+	if f.Rcv != 0 || f.Kind != "" {
+		t.Fatalf("single fields set: %d %q", f.Rcv, f.Kind)
+	}
+	f, _ = logFilter(url.Values{}, false)
+	if f.Rcvs != nil || f.Kinds != nil {
+		t.Fatalf("empty filter must match everything")
 	}
 }

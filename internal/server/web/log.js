@@ -7,9 +7,9 @@
   const admin = () => NX.state.role === "admin";
   const sc = $("logscroll");
 
-  // NAVAREA and ID letter: a row of check boxes each (ALL / CLEAR buttons). The hidden input f-area / f-b1 holds the checked ones as a
+  // Channel, Frequency, NAVAREA, ID letter and Kind: a row of check boxes each (ALL / CLEAR buttons). The hidden input f-rcv / f-freq / f-area / f-b1 / f-kind holds the checked ones as a
   // list ("1,4,7"), or "" when all are checked (= no filter). Nothing checked would match nothing: it turns into "all" when the user leaves the group.
-  const PICK = { area: Array.from({ length: 21 }, (_, i) => String(i + 1)), b1: [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ?"] };
+  const PICK = { rcv: ["1", "2", "3", "4"], kind: ["message", "incomplete", "fragment"], freq: ["518", "490", "486", "424", "4209.5"], area: Array.from({ length: 21 }, (_, i) => String(i + 1)), b1: [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ?"] };
   const pickBoxes = (k) => [...document.querySelectorAll(`#p-${k} .pickboxes input`)];
   const pickRead = (k) => { const b = pickBoxes(k), on = b.filter((x) => x.checked).map((x) => x.value); $("f-" + k).value = on.length === b.length || on.length === 0 ? "" : on.join(","); };
   const setPick = (k, v) => { // v: "" = all, else a comma list
@@ -17,7 +17,7 @@
     for (const x of pickBoxes(k)) x.checked = set.size === 0 || set.has(x.value);
     $("p-" + k).classList.remove("empty"); pickRead(k);
   };
-  for (const k of ["area", "b1"]) {
+  for (const k of ["rcv", "freq", "area", "b1", "kind"]) {
     const box = document.querySelector(`#p-${k} .pickboxes`);
     for (const c of PICK[k]) { const l = document.createElement("label"), x = document.createElement("input"); x.type = "checkbox"; x.value = c; x.checked = true; l.append(x, c); box.appendChild(l); }
     const grp = $("p-" + k), fire = () => { pickRead(k); $("f-" + k).dispatchEvent(new Event("input", { bubbles: true })); };
@@ -95,7 +95,8 @@
 
   function render() {
     $("f-km-wrap").hidden = !NX.state.loc;
-    $("f-rcv-wrap").hidden = !NX.secondOn();
+    $("p-rcv").hidden = !NX.secondOn();
+    pickBoxes("rcv").forEach((x, i) => { x.parentNode.hidden = i >= (NX.channels || 4); });
     indicate();
     const first = Math.max(0, Math.floor(sc.scrollTop / ROW)), vis = visRows() + 2;
     const start = Math.max(0, first - 3), end = Math.min(L.total, first + vis + 3);
@@ -692,7 +693,7 @@
   const snap = () => ({ v: ids.map((k) => $("f-" + k).value), u: $("f-unid").checked, o: $("f-omit").checked });
   let before = snap();
   const restore = (s) => { ids.forEach((k, i) => { if (PICK[k]) setPick(k, s.v[i]); else $("f-" + k).value = s.v[i]; }); $("f-unid").checked = s.u; $("f-omit").checked = s.o; };
-  const applyDlg = () => { fixEmpty("area"); fixEmpty("b1"); if (!$("f-on").checked && summaryText(true)) $("f-on").checked = true; fdlg.close(); reload(); indicate(); };
+  const applyDlg = () => { for (const k of Object.keys(PICK)) fixEmpty(k); if (!$("f-on").checked && summaryText(true)) $("f-on").checked = true; fdlg.close(); reload(); indicate(); };
   $("f-edit").onclick = () => { before = snap(); fdlg.showModal(); };
   fdlg.addEventListener("cancel", (e) => { e.preventDefault(); $("f-cancel").click(); });
   $("f-cancel").onclick = () => { restore(before); fdlg.close(); indicate(); };
@@ -705,11 +706,11 @@
   // what the filter boxes say, in one line (also used when the filter is switched off)
   function summaryText() {
     const v = (k) => $("f-" + k).value.trim(), parts = [];
-    if (v("freq")) parts.push("Frequency " + v("freq"));
-    if (v("rcv")) { const c = NX.state.chans[Number(v("rcv")) - 1], n = c && c.controls && (c.controls.label || c.controls.name); parts.push(n && n !== "Channel " + v("rcv") ? "Channel " + v("rcv") + " (" + n + ")" : "Channel " + v("rcv")); }
+    if (v("freq")) parts.push("Frequency " + v("freq").replace(/,/g, ", "));
+    if (v("rcv")) parts.push("Channel " + v("rcv").replace(/,/g, ", "));
     if (v("area")) parts.push("NAVAREA " + v("area").replace(/,/g, ", "));
     if (v("b1")) parts.push("ID letter " + v("b1").replace(/,/g, ", "));
-    if (v("kind")) parts.push("Kind " + v("kind"));
+    if (v("kind")) parts.push("Kind " + v("kind").replace(/,/g, ", "));
     if (v("from") || v("to")) { const t = (k) => v(k) ? v(k) + (tmOk(v(k + "t")) ? " " + v(k + "t") : "") : "\u2026"; parts.push("Dates " + t("from") + " to " + t("to") + " UTC"); }
     if (v("kmin") || v("kmax")) parts.push("Distance " + (v("kmin") || "0") + "\u2013" + (v("kmax") || "\u221e") + " km");
     if ($("f-unid").checked) parts.push("UNID only");

@@ -320,11 +320,6 @@ until the report list changes."><svg class="ic" aria-hidden="true"><use href="#i
 <dialog id="f-dlg" aria-label="Log filter">
   <div class="dlghead"><b>Filter the log</b></div>
   <div class="fform">
-    <div class="fcol fleft">
-      <label class="field">Frequency <select id="f-freq"><option value="">any</option><option value="518">518</option><option value="490">490</option><option value="486">486</option><option value="424">424</option><option value="4209.5">4209.5</option></select></label>
-      <label class="field" id="f-rcv-wrap" hidden>Channel <select id="f-rcv"><option value="">any</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></label>
-      <label class="field">Kind <select id="f-kind"><option value="">all</option><option value="message">message</option><option value="incomplete">incomplete</option><option value="fragment">fragment</option></select></label>
-    </div>
     <div class="fcol fright">
       <div class="fdt">
         <span>From</span><input id="f-from" class="iso" type="text" placeholder="yyyy-mm-dd"><input id="f-fromt" class="tm" type="text" maxlength="5" placeholder="hh:mm" title="Time of day, 24 hours (optional: without it From is the start of the day)"><span class="dim">UTC</span>
@@ -335,8 +330,11 @@ until the report list changes."><svg class="ic" aria-hidden="true"><use href="#i
       <label class="field grow">Body text <input id="f-text" type="text" placeholder="search the message text"></label>
     </div>
     <div class="fpick">
+      <div class="pickgrp" id="p-rcv"><div class="pickbtns"><b>Channel</b><button type="button" data-all="1">ALL</button><button type="button" data-all="0">CLEAR</button></div><div class="pickboxes"></div><input id="f-rcv" type="hidden"></div>
+      <div class="pickgrp" id="p-freq"><div class="pickbtns"><b>Frequency</b><button type="button" data-all="1">ALL</button><button type="button" data-all="0">CLEAR</button></div><div class="pickboxes"></div><input id="f-freq" type="hidden"></div>
       <div class="pickgrp" id="p-area"><div class="pickbtns"><b>NAVAREA</b><button type="button" data-all="1">ALL</button><button type="button" data-all="0">CLEAR</button></div><div class="pickboxes"></div><input id="f-area" type="hidden"></div>
       <div class="pickgrp" id="p-b1"><div class="pickbtns"><b>ID letter</b><button type="button" data-all="1">ALL</button><button type="button" data-all="0">CLEAR</button></div><div class="pickboxes"></div><input id="f-b1" type="hidden"></div>
+      <div class="pickgrp" id="p-kind"><div class="pickbtns"><b>Kind</b><button type="button" data-all="1">ALL</button><button type="button" data-all="0">CLEAR</button></div><div class="pickboxes"></div><input id="f-kind" type="hidden"></div>
     </div>
   </div>
   <div class="dlgfoot">

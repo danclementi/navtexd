@@ -128,8 +128,11 @@ type Filter struct {
 	Rcv          int             // 0 = any decoding channel, 1 = the first, 2 = the second
 	NavArea      int             // 0 = any
 	B1           string          // "" or "*" = any
+	Channels     map[int]bool    // nil = any; else only these carrier frequencies (Hz)
 	NavAreas     map[int]bool    // nil = any; else only these NAVAREAs
 	B1s          map[string]bool // nil = any; else only these ID letters
+	Rcvs         map[int]bool    // nil = any; else only these decoding channels (1 = the first)
+	Kinds        map[string]bool // nil = any; else only these kinds (message, incomplete, fragment)
 	OmitUnid     bool            // leave out records without a station
 	Text         string          // case-insensitive substring of the text
 	From, To     time.Time
@@ -152,9 +155,15 @@ func (f Filter) match(r *Record) bool {
 		return false
 	case f.B1 != "" && f.B1 != "*" && r.B1 != f.B1:
 		return false
+	case f.Channels != nil && !f.Channels[r.Channel]:
+		return false
 	case f.NavAreas != nil && !f.NavAreas[r.NavArea]:
 		return false
 	case f.B1s != nil && !f.B1s[r.B1]:
+		return false
+	case f.Rcvs != nil && !f.Rcvs[r.Rcv+1]:
+		return false
+	case f.Kinds != nil && !f.Kinds[r.Kind]:
 		return false
 	case f.OmitUnid && r.StationID == 0:
 		return false

@@ -253,6 +253,7 @@ type revToken struct {
 	start, end int    // bytes in the line
 	kind       int    //
 	text       string // the replacement for this token
+	zc         bool   // the token ends in the start code ZCZC: the identification group after it belongs to the stretch
 }
 
 // Reversals suggests which parts of a line to put through the shift reverser: a run of consecutive words without any
@@ -292,6 +293,9 @@ func (c *Corrector) Reversals(line string, cfg Config) []Reversal {
 			} else {
 				break
 			}
+		}
+		if toks[b].zc && b+1 < len(toks) && toks[b+1].kind == tkShort {
+			b++ // (the identification group that follows ZCZC)
 		}
 		var sb strings.Builder
 		for k := a; k <= b; k++ {
@@ -345,6 +349,20 @@ func (c *Corrector) classify(line string, i, j int, cfg Config) revToken {
 			t.kind, t.text = tkTo, "TO"
 		}
 		return t // a number as it is
+	}
+	// the start code ZCZC and the end code NNNN are not in the vocabulary, but they are what a message starts and ends with: a token
+	// that reversed ends in ZCZC (junk may be stuck to its front), or is NNNN, is a stretch in the wrong shift
+	if rev := sitor.Reverse(tok); len(rev) >= 4 && len(rev) <= 24 && (strings.HasSuffix(rev, "ZCZC") || rev == "NNNN") {
+		clean := true
+		for _, r := range rev {
+			if !(r >= 'A' && r <= 'Z' || r == '~' || r == '*') {
+				clean = false
+			}
+		}
+		if clean {
+			t.kind, t.text, t.zc = tkStrong, rev, strings.HasSuffix(rev, "ZCZC")
+			return t
+		}
 	}
 	// strong: a vocabulary word, with up to two figure marks before and after it that were sent as marks
 	isMark2 := func(r rune) bool {

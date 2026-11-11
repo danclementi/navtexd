@@ -465,7 +465,7 @@ fieldset.specgrp { flex: 1 1 200px; min-width: 150px; padding: 4px 8px 6px; flex
 .fsum.off { color: var(--dim); }
 dialog#f-dlg { width: min(720px, 94vw); padding: 0; border: 2px solid var(--tabline); border-radius: 8px; background: var(--panel); color: var(--ink); }
 dialog#f-dlg::backdrop { background: rgba(0, 0, 0, .45); }
-#f-dlg .fform { display: grid; grid-template-columns: max-content 1fr; gap: 14px 32px; padding: 16px 20px; }
+#f-dlg .fform { display: grid; grid-template-columns: 1fr; gap: 14px 32px; padding: 16px 20px; }
 #f-dlg .fcol { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 #f-dlg .fleft .field { display: grid; grid-template-columns: 84px 110px; align-items: center; }
 #f-dlg .fleft .field[hidden] { display: none; }
@@ -488,6 +488,7 @@ input.iso.bad { border-color: var(--bad); }
 .lohint { font-weight: 600; }
 
 #f-dlg .fpick { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--line); padding-top: 10px; }
+#f-dlg .pickgrp[hidden] { display: none; }
 #f-dlg .pickgrp { display: grid; grid-template-columns: 76px 1fr; gap: 4px 10px; align-items: start; }
 #f-dlg .pickbtns { display: flex; flex-direction: column; gap: 3px; align-items: stretch; }
 #f-dlg .pickbtns button { font-size: 11px; padding: 1px 6px; }

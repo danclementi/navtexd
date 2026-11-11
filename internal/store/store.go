@@ -583,8 +583,47 @@ func (f Filter) where(trash bool) (string, []any) {
 	if f.Channel != 0 {
 		add("channel = ?", f.Channel)
 	}
+	if f.Channels != nil {
+		var in []any
+		for k, v := range f.Channels {
+			if v {
+				in = append(in, k)
+			}
+		}
+		if len(in) == 0 {
+			add("0")
+		} else {
+			add("channel IN (?"+strings.Repeat(",?", len(in)-1)+")", in...)
+		}
+	}
 	if f.Rcv != 0 {
 		add("rcv = ?", f.Rcv-1)
+	}
+	if f.Rcvs != nil {
+		var in []any
+		for k, v := range f.Rcvs {
+			if v {
+				in = append(in, k-1)
+			}
+		}
+		if len(in) == 0 {
+			add("0")
+		} else {
+			add("rcv IN (?"+strings.Repeat(",?", len(in)-1)+")", in...)
+		}
+	}
+	if f.Kinds != nil {
+		var in []any
+		for k, v := range f.Kinds {
+			if v {
+				in = append(in, k)
+			}
+		}
+		if len(in) == 0 {
+			add("0")
+		} else {
+			add("kind IN (?"+strings.Repeat(",?", len(in)-1)+")", in...)
+		}
 	}
 	if f.NavArea != 0 {
 		add("navarea = ?", f.NavArea)
