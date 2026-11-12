@@ -65,7 +65,7 @@
 <p>navtexd therefore scores every candidate station on the text and the circumstances, and names a station only when the evidence is clear.</p>
 
 <h3 id="s1-2">1.2 The station table</h3>
-<p>The table is a file in the format of YaND (<code>YAND_STATIONS.txt</code>): a <code>VERSION5</code> line, then one station per line, fields separated by <code>#</code>:</p>
+<p>The table is a file in the format of YaND (<code>navtexd_stations.txt</code>): a <code>VERSION5</code> line, then one station per line, fields separated by <code>#</code>:</p>
 <p class="eq">navarea # freq_kHz # B1 # callsign # name # country_code # country # lat # lon # t1 &hellip; t6 # GID keywords # UID keywords #</p>
 <ul>
 <li><strong>t1 &hellip; t6</strong> are the six daily transmission start times (UTC). A transmission lasts about ten minutes.</li>
@@ -219,7 +219,7 @@
 <table>
 <tr><th>Candidate</th><th class="n">kw</th><th class="n">Slot</th><th class="n">Total</th></tr>
 <tr><td>Kodiak (West), B1 X, slot 03:50</td><td class="n">4.00</td><td class="n">2.00</td><td class="n">6.00</td></tr>
-<tr><td>Every other station with slot 03:50 or 03:40 &hellip; 04:00</td><td class="n">0</td><td class="n">2.00</td><td class="n">2.00</td></tr>
+<tr><td>Every other station whose slot started within the previous 10 minutes</td><td class="n">0</td><td class="n">2.00</td><td class="n">2.00</td></tr>
 </table>
 <p>Kodiak (West) is the only station with <code>ADAK</code>, so the hit is worth 4.0. <code>kw</code> = 4.0 &ge; 2.0 and the margin is 4.0 &ge; 0.75, so rule 3 names it, method <code>GID</code>. At 06:10, outside every slot, the total is 4.0 and the result is the same.</p>
 <p>This is what happened with a message that really came from Novorossiysk (UFN, B1 A). Its text contained "ADAK" but none of Novorossiysk's keywords, and its B1 was not read. If the B1 had been read as A, the candidates would have been the eight stations of the table in 1.1, none of which has <code>ADAK</code>; all would have scored 0 and the record would have stayed UNID, which is the correct outcome for a text the table cannot place.</p>
@@ -233,7 +233,7 @@
 <table>
 <tr><th>Candidate</th><th>Why</th><th class="n">Total</th></tr>
 <tr><td>Kodiak (West)</td><td><code>BRISTOL BAY</code> is in its list twice: 2 &times; 4.0, capped at 8.0, plus slot 2.0</td><td class="n">10.00</td></tr>
-<tr><td>Niton (E)</td><td>its keyword <code>BRISTOL</code> (the Bristol Channel) matches inside "BRISTOL BAY": 4.0</td><td class="n">4.00</td></tr>
+<tr><td>Niton (E)</td><td>its keyword <code>BRISTOL</code> matches inside "BRISTOL BAY": 4.0</td><td class="n">4.00</td></tr>
 </table>
 <p>The answer is right here, but both effects are visible. With B1 = X given, Kodiak (West) is the only candidate and scores 8.00 from the keyword alone.</p>
 

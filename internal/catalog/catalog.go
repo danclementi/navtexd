@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -23,10 +24,78 @@ import (
 )
 
 //go:embed default_stations.txt
-var defaultTable []byte
+var baseTable []byte
+
+// The addendum holds stations that the community's table lacks, or that this program corrects. It is merged over the base table
+// when the program starts: a station with the same frequency, NAVAREA, ID letter and call sign takes the place of the base row,
+// the others are added at the end. Edit navtexd_station_addendum.txt and build again.
+//
+//go:embed navtexd_station_addendum.txt
+var addendumTable []byte
 
 // FileName is the station table inside the data directory.
-const FileName = "YAND_STATIONS.txt"
+const FileName = "navtexd_stations.txt"
+
+// LegacyFileName is the name that versions before v0.9.2 used. A file with this name is moved to FileName at the first start,
+// and kept as LegacyOldName.
+const (
+	LegacyFileName = "YAND_STATIONS.txt"
+	LegacyOldName  = "YAND_STATIONS.old"
+)
+
+var (
+	defaultOnce  sync.Once
+	defaultBytes []byte
+)
+
+// defaultTable is the table shipped with the program: the base table with the addendum merged over it.
+func defaultTable() []byte {
+	defaultOnce.Do(func() { defaultBytes = MergeTables(baseTable, addendumTable) })
+	return defaultBytes
+}
+
+// rowKey identifies a station row of a table file by frequency, NAVAREA, ID letter and call sign ("" for a line that is not a row).
+func rowKey(line string) string {
+	f := strings.SplitN(line, "#", 5)
+	if len(f) < 5 {
+		return ""
+	}
+	freq := strings.TrimSpace(f[1])
+	if v, err := strconv.ParseFloat(freq, 64); err == nil {
+		freq = strconv.FormatFloat(v, 'f', -1, 64)
+	}
+	return strings.TrimSpace(f[0]) + "#" + freq + "#" + strings.ToUpper(strings.TrimSpace(f[2])) + "#" + strings.ToUpper(strings.TrimSpace(f[3]))
+}
+
+// MergeTables puts the rows of add over a table: a row with the key of a row of base replaces it where it is, any other row is
+// added at the end. The header line and the line ends (CRLF) of base are kept.
+func MergeTables(base, add []byte) []byte {
+	lines := func(b []byte) []string {
+		s := strings.ReplaceAll(string(b), "\r\n", "\n")
+		out := strings.Split(strings.TrimRight(s, "\n"), "\n")
+		return out
+	}
+	bl, al := lines(base), lines(add)
+	at := map[string]int{}
+	for i, l := range bl {
+		if k := rowKey(l); k != "" {
+			at[k] = i
+		}
+	}
+	for _, l := range al {
+		k := rowKey(l)
+		if k == "" {
+			continue // the header
+		}
+		if i, ok := at[k]; ok {
+			bl[i] = l
+		} else {
+			at[k] = len(bl)
+			bl = append(bl, l)
+		}
+	}
+	return []byte(strings.Join(bl, "\r\n") + "\r\n")
+}
 
 // MaxKeywordChars is the most characters a keyword list (GID or UID) of a station may hold.
 const MaxKeywordChars = 300
@@ -45,17 +114,42 @@ type Catalog struct {
 	index atomic.Pointer[map[string]int] // key -> the station's place in the table (1-based); read without a lock by the store
 	warns []string                       // what is odd about the table (stations that cannot be told apart)
 
+	// Notice says what Open did to the station file of an earlier version (empty when nothing).
+	Notice string
+
 	// Position returns the operator's position (ok false when not set).
 	Position func() (lat, lon float64, ok bool)
 }
 
-// Open loads <dir>/YAND_STATIONS.txt; if it is missing the table shipped with the program is written there first.
+// Open loads <dir>/navtexd_stations.txt. If it is missing, a YAND_STATIONS.txt of an earlier version becomes that file (the old
+// one is kept as YAND_STATIONS.old, and Notice says so), else the table shipped with the program is written there.
 func Open(dir string, st *store.Store) (*Catalog, error) {
 	c := &Catalog{path: filepath.Join(dir, FileName), st: st}
 	if _, err := os.Stat(c.path); errors.Is(err, os.ErrNotExist) {
-		if err := os.WriteFile(c.path, defaultTable, 0o644); err != nil {
+		data := defaultTable()
+		legacy := filepath.Join(dir, LegacyFileName)
+		if old, err := os.ReadFile(legacy); err == nil {
+			data = old
+			c.Notice = "The station table " + LegacyFileName + " is now " + FileName + " (a copy of it); the old file was renamed " + LegacyOldName + "."
+		}
+		if err := os.WriteFile(c.path, data, 0o644); err != nil {
 			return nil, err
 		}
+		if c.Notice != "" {
+			keep := filepath.Join(dir, LegacyOldName)
+			for i := 2; ; i++ {
+				if _, err := os.Stat(keep); errors.Is(err, os.ErrNotExist) {
+					break
+				}
+				keep = filepath.Join(dir, fmt.Sprintf("YAND_STATIONS-%d.old", i))
+			}
+			if err := os.Rename(legacy, keep); err != nil {
+				c.Notice = "The station table " + LegacyFileName + " was copied to " + FileName + " (the old file could not be renamed: " + err.Error() + ")."
+			}
+		}
+	}
+	if err := c.addAddendum(dir); err != nil {
+		return nil, err
 	}
 	b, err := os.ReadFile(c.path)
 	if err != nil {
@@ -77,6 +171,103 @@ func Open(dir string, st *store.Store) (*Catalog, error) {
 		}
 	}
 	return c, nil
+}
+
+// AppliedFile remembers which stations of the addendum were offered to the table of this data folder.
+const AppliedFile = "station_addendum_applied.json"
+
+// addAddendum adds the stations of the addendum that the table file lacks, so that a table made before them gets them without an
+// import. Each station is offered once: one that the user deleted later does not come back, and a row that is there is never
+// changed (the user may have edited it). The table is saved to backups first, and Notice says what was added.
+func (c *Catalog) addAddendum(dir string) error {
+	live, err := os.ReadFile(c.path)
+	if err != nil {
+		return err
+	}
+	appliedPath := filepath.Join(dir, AppliedFile)
+	var f struct {
+		Applied []string `json:"applied"`
+	}
+	if b, err := os.ReadFile(appliedPath); err == nil {
+		_ = json.Unmarshal(b, &f)
+	}
+	applied := map[string]bool{}
+	for _, k := range f.Applied {
+		applied[k] = true
+	}
+	have := map[string]bool{}
+	for _, l := range strings.Split(strings.ReplaceAll(string(live), "\r\n", "\n"), "\n") {
+		if k := rowKey(l); k != "" {
+			have[k] = true
+		}
+	}
+	var add []string
+	perFreq := map[string]int{}
+	var freqs []string
+	all := map[string]bool{}
+	for _, l := range strings.Split(strings.ReplaceAll(string(addendumTable), "\r\n", "\n"), "\n") {
+		k := rowKey(l)
+		if k == "" {
+			continue
+		}
+		all[k] = true
+		if !have[k] && !applied[k] {
+			add = append(add, l)
+			fr := strings.Split(k, "#")[1]
+			if perFreq[fr] == 0 {
+				freqs = append(freqs, fr)
+			}
+			perFreq[fr]++
+		}
+	}
+	changed := len(add) > 0
+	for k := range all {
+		if !applied[k] {
+			changed = true
+			applied[k] = true
+		}
+	}
+	if len(add) > 0 {
+		backup, err := c.backupLocked()
+		if err != nil {
+			return fmt.Errorf("could not save the station table first: %w", err)
+		}
+		text := strings.TrimRight(strings.ReplaceAll(string(live), "\r\n", "\n"), "\n")
+		text = strings.ReplaceAll(text+"\n"+strings.Join(add, "\n")+"\n", "\n", "\r\n")
+		if err := os.WriteFile(c.path+".tmp", []byte(text), 0o644); err != nil {
+			return err
+		}
+		if err := os.Rename(c.path+".tmp", c.path); err != nil {
+			return err
+		}
+		var parts []string
+		for _, fr := range freqs {
+			parts = append(parts, fmt.Sprintf("%d for %s kHz", perFreq[fr], fr))
+		}
+		note := fmt.Sprintf("Added %d stations to the station table that come with this version of the program (%s)", len(add), strings.Join(parts, ", "))
+		if backup != "" {
+			note += "; the table was saved first as backups/" + backup
+		}
+		note += ". Use Identify again (Log tab, Database) for messages already logged."
+		if c.Notice != "" {
+			c.Notice += " "
+		}
+		c.Notice += note
+	}
+	if changed {
+		keys := make([]string, 0, len(applied))
+		for k := range applied {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		b, _ := json.MarshalIndent(struct {
+			Applied []string `json:"applied"`
+		}{keys}, "", "  ")
+		if err := os.WriteFile(appliedPath, b, 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // LoggingFile holds the selective-logging choice in the data directory.
@@ -469,7 +660,7 @@ func (c *Catalog) Import(data []byte) (n int, backup string, err error) {
 	return len(tab.Stations), backup, err
 }
 
-// backupLocked copies the table file to backups/YAND_STATIONS-<time it was last saved>.TXT and returns that name (empty when
+// backupLocked copies the table file to backups/navtexd_stations-<time it was last saved>.txt and returns that name (empty when
 // there is no file yet).
 func (c *Catalog) backupLocked() (string, error) {
 	fi, err := os.Stat(c.path)
@@ -487,12 +678,12 @@ func (c *Catalog) backupLocked() (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	name := "YAND_STATIONS-" + fi.ModTime().UTC().Format("20060102T150405Z") + ".TXT"
+	name := "navtexd_stations-" + fi.ModTime().UTC().Format("20060102T150405Z") + ".txt"
 	for i := 2; ; i++ { // two imports in the same second: keep both
 		if _, err := os.Stat(filepath.Join(dir, name)); os.IsNotExist(err) {
 			break
 		}
-		name = fmt.Sprintf("YAND_STATIONS-%s-%d.TXT", fi.ModTime().UTC().Format("20060102T150405Z"), i)
+		name = fmt.Sprintf("navtexd_stations-%s-%d.txt", fi.ModTime().UTC().Format("20060102T150405Z"), i)
 	}
 	return name, os.WriteFile(filepath.Join(dir, name), data, 0o644)
 }

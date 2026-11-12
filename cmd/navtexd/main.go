@@ -271,6 +271,9 @@ func main() {
 		},
 	}
 	run := app.New(*dataDir, cfg, st, hooks)
+	if cat.Notice != "" {
+		run.Log("warn", cat.Notice) // (warnings are also shown on the console)
+	}
 	if softNotice != "" {
 		run.Log("warn", softNotice) // (warnings are also shown on the console)
 	}

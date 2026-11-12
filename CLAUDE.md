@@ -86,7 +86,7 @@ server and a multi-client browser UI, comparable to YaND. Public GPL v3 project.
   tracked by `liveFields`/`IsLive`/`RestartNeeded` in `internal/config`.
 - Roles are decided by peer address and proxy headers; write requests need `X-Navtex: 1`.
 - Stored times are rounded to ms, qualities to two decimals (`store.F2`).
-- Station table: `<data>/YAND_STATIONS.txt`, seeded from `internal/catalog/default_stations.txt`.
+- Station table: `<data>/navtexd_stations.txt` (from v0.9.2; an earlier `YAND_STATIONS.txt` is copied to it and kept as `YAND_STATIONS.old`). It is seeded from `internal/catalog/default_stations.txt` (the community's table, identical to `data/YAND_STATIONS.txt`, a test checks that) with `internal/catalog/navtexd_station_addendum.txt` merged over it at start: a row with the same frequency, NAVAREA, ID letter and call sign replaces the base row, other rows are added at the end. Edit the addendum and rebuild. Once the data-folder file exists, only that file is read, except that at each start the addendum rows whose key is not in the file and was not offered before (`<data>/station_addendum_applied.json`) are appended to it, after a backup; rows already in the file are never changed, and a row the user deleted does not come back. Keyword edits made in the program are saved at once to the data-folder file.
   Extra vocabulary: `autocorrect.extra_words_file` (default `vocabulary.txt` in the data dir).
 - Log tab is a virtual list with a frozen view when a record is selected (see SERVER_DESIGN §28–29).
 - Connection messages and the server-closed banner: SERVER_DESIGN §30.

@@ -42,7 +42,7 @@ It is a single self-contained program written in pure Go (no cgo, no installer; 
   94 x 94 table written in base 26, A = 0). On a 486 kHz channel the Log shows the decoded Chinese text (the "show autocorrections" box);
   the received letters are kept and shown when it is unticked. A lost or added letter is bridged where the text allows, and a unit that
   cannot be read shows as □. No identification is attempted yet: the Chinese stations are not in the station table.
-- Station identification from a YaND-format station table (`YAND_STATIONS.txt`), with distance and bearing from the
+- Station identification from a YaND-format station table (`navtexd_stations.txt` in the data folder; older versions called it `YAND_STATIONS.txt`, and such a file is moved to the new name at the first start, the old one kept as `YAND_STATIONS.old`), with distance and bearing from the
   operator position.
 - Two access roles: **admin** (direct connections from the local machine or private network) and **view-only**
   (anything arriving through a proxy or tunnel, such as a Cloudflare tunnel). The operator position is stored only in

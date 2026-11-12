@@ -317,27 +317,22 @@ func TestImportsFollowStationKeys(t *testing.T) {
 	}
 }
 
-// A message on 4209.5 kHz is identified with a station of that channel (the table takes decimal frequencies).
+// A message on 4209.5 kHz is identified with a station of that channel (the table takes decimal frequencies; the shipped table has
+// these rows in its addendum).
 func TestIdentify4209(t *testing.T) {
 	cfg := config.Default()
 	cfg.Input.File.Path = "/nonexistent.wav"
 	cfg.Input.Source = "file"
 	cfg.Operator.LatDeg, cfg.Operator.LonDeg = 36.85, -76.3
-	s, _, st, dir := setup(t, cfg)
-	path := filepath.Join(dir, catalog.FileName)
-	raw, _ := os.ReadFile(path)
-	add := "11#4209.5#C#XVN#Nha Trang#VTN#Viet Nam#12.222#109.181#00:20#04:20#08:20#12:20#16:20#20:20###\r\n" +
-		"9#4209.5#X#SUZ#Ismailia#EGY#Egypt#30.467#32.367#07:50#11:50#######\r\n"
-	if err := os.WriteFile(path, append(raw, add...), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if rl, err := s.cat.ReloadFromDisk(); err != nil || rl.Added != 2 {
-		t.Fatalf("reload: %+v %v", rl, err)
-	}
+	s, _, st, _ := setup(t, cfg)
 	at := time.Date(2026, 5, 1, 4, 22, 0, 0, time.UTC)
+	// X is also the letter of a second station of NAVAREA 11, so the operator's NAVAREA 9 picks the one in Egypt
 	for b1, want := range map[string]string{"C": "Nha Trang", "X": "Ismailia"} {
 		r := store.Record{Channel: 4209500, Kind: "message", B1: b1, B2: "E", Serial: "01", Received: at, End: at.Add(time.Minute), Quality: 50,
 			Lines: []store.Line{{Time: at, Text: "ZCZC " + b1 + "E01"}, {Time: at, Text: "TEST"}, {Time: at, Text: "NNNN"}}}
+		if b1 == "X" {
+			r.NavArea, r.Manual = 9, true
+		}
 		s.cat.Enrich(&r)
 		saved, err := st.Add(r)
 		if err != nil {

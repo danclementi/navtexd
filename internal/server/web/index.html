@@ -159,7 +159,7 @@
     </div>
     <div class="cols">
       <fieldset class="col" id="tableio"><legend>Station table</legend>
-        <div class="row small">The station table (YAND_STATIONS.TXT). Import replaces it entirely; the table that is replaced is saved first in the backups folder of the data folder, with the date and time it was last saved in its name.</div>
+        <div class="row small">The station table (navtexd_stations.txt). Import replaces it entirely; the table that is replaced is saved first in the backups folder of the data folder, with the date and time it was last saved in its name.</div>
         <div class="row"><button id="st-export">Export table</button><input id="st-file" type="file" accept=".txt,.TXT" hidden><button id="st-import">Import table…</button></div>
         <div id="st-msg" class="small"></div>
       </fieldset>
@@ -277,7 +277,7 @@ until the report list changes."><svg class="ic" aria-hidden="true"><use href="#i
     <fieldset id="db-reident"><legend>Identify again</legend>
       <p class="small">After keywords were added to the station table, this looks at the messages that have no station (UNID) once more and gives a station to those that now match. Messages that already have a station, and messages you edited, are not touched. A copy of the database is saved first, and Undo takes it all back in one step.</p>
       <label class="field">Only on <select id="ri-freq"><option value="0">all channels</option><option value="518">518 kHz</option><option value="490">490 kHz</option><option value="486">486 kHz</option><option value="424">424 kHz</option><option value="4209.5">4209.5 kHz</option></select></label>
-      <label class="check"><input type="checkbox" id="ri-reload" checked> Read the station file (YAND_STATIONS.TXT) from disk first, in case it was replaced outside the program</label>
+      <label class="check"><input type="checkbox" id="ri-reload" checked> Read the station file (navtexd_stations.txt) from disk first, in case it was replaced outside the program</label>
       <div id="ri-count" class="small" aria-live="polite"></div>
       <div><button id="ri-go" type="button" disabled>Identify again…</button></div>
     </fieldset>

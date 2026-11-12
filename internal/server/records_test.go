@@ -547,7 +547,7 @@ func TestStationTableImportKeepsBackup(t *testing.T) {
 	if code, m := post([]byte("this is not a station table")); code != 400 {
 		t.Errorf("garbage: %d %v", code, m)
 	}
-	if m, _ := filepath.Glob(filepath.Join(dir, "backups", "YAND_STATIONS-*")); len(m) != 0 {
+	if m, _ := filepath.Glob(filepath.Join(dir, "backups", "navtexd_stations-*")); len(m) != 0 {
 		t.Errorf("a refused file must not leave a backup: %v", m)
 	}
 	code, m := post(table)

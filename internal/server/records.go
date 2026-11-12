@@ -819,7 +819,7 @@ func (s *Server) stationList(w http.ResponseWriter, r *http.Request, id Identity
 
 func (s *Server) stationExport(w http.ResponseWriter, r *http.Request, id Identity) {
 	w.Header().Set("Content-Type", "text/plain; charset=us-ascii")
-	w.Header().Set("Content-Disposition", `attachment; filename="YAND_STATIONS.TXT"`)
+	w.Header().Set("Content-Disposition", `attachment; filename="navtexd_stations.txt"`)
 	w.Write(s.cat.Export())
 }
 
