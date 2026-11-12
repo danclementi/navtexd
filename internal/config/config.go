@@ -229,9 +229,10 @@ type DeviceInput struct {
 	ManualCarrierHz float64 `json:"manual_carrier_hz" unit:"Hz" doc:"Frequency of the carrier (centre between mark and space) in this input's audio / baseband, used when autotune is off (the carrier marker in the spectrum can be dragged to set it)"`
 }
 
-// HPSDRInput: an OpenHPSDR / Metis radio on the network (Protocol 1), receive only.
+// HPSDRInput: an OpenHPSDR radio on the network (Protocol 1 or 2), receive only.
 type HPSDRInput struct {
 	Address         string  `json:"address" doc:"Address of the radio (e.g. 192.168.1.50), or empty to search the local network. The last radios that worked are offered in a list"`
+	Protocol        int     `json:"protocol" doc:"OpenHPSDR protocol to speak to the radio: 1 = the original (Metis) protocol, what most radios use, one stream for all receivers; 2 = the newer protocol, one stream per receiver. Use 2 for a radio that offers several receivers only through protocol 2 (for example the HPSDR bridge of UberSDR). All channels that use the same radio need the same protocol and sample rate" choices:"1,2"`
 	SampleRateHz    float64 `json:"sample_rate_hz" unit:"Hz" doc:"I/Q sample rate of the radio" choices:"48000,96000,192000,384000"`
 	SwapIQ          bool    `json:"swap_iq" hidden:"true"` // obsolete and ignored: replaced by mirror_iq, whose default is the setting every radio needs
 	MirrorIQ        bool    `json:"mirror_iq" doc:"Exchange I and Q, for a radio whose spectrum comes out mirrored. Off is right for every OpenHPSDR radio tried so far (Red Pitaya, QMtech, Hermes, Hermes Lite): the program already applies the exchange they need."`
@@ -398,7 +399,7 @@ type Output struct {
 func defaultInput() Input {
 	return Input{Source: "device", BlockSize: 16384, WatchdogS: 10,
 		Device:     DeviceInput{SampleRateHz: 48000, Channels: 1, LoBelowHz: DefaultCarrierHz, Autotune: true, ManualCarrierHz: DefaultCarrierHz},
-		HPSDR:      HPSDRInput{SampleRateHz: 48000, LoBelowHz: HPSDRCarrierHz, Autotune: true, ManualCarrierHz: HPSDRCarrierHz},
+		HPSDR:      HPSDRInput{Protocol: 1, SampleRateHz: 48000, LoBelowHz: HPSDRCarrierHz, Autotune: true, ManualCarrierHz: HPSDRCarrierHz},
 		SDRconnect: SDRconnectInput{SampleRateHz: SDRconnectRateHz, LNAState: -1, LoBelowHz: DefaultCarrierHz, Autotune: true, ManualCarrierHz: DefaultCarrierHz},
 		SpyServer:  SpyServerInput{Gain: -1, LoBelowHz: DefaultCarrierHz, Autotune: true, ManualCarrierHz: DefaultCarrierHz},
 		Stdin:      StdinInput{SampleRateHz: 48000, Channels: 1, PCMFormat: "s16le", LoBelowHz: DefaultCarrierHz, Autotune: true, ManualCarrierHz: DefaultCarrierHz},
@@ -486,6 +487,11 @@ func (c Config) validate(top bool) error {
 	}
 	if c.Input.SDRconnect.LNAState < -1 {
 		bad("input.sdrconnect.lna_state must be -1 (leave as it is) or 0 or more")
+	}
+	switch c.Input.HPSDR.Protocol {
+	case 0, 1, 2: // 0: a file without the option
+	default:
+		bad("input.hpsdr.protocol must be 1 or 2")
 	}
 	switch c.Input.HPSDR.SampleRateHz {
 	case 48000, 96000, 192000, 384000:

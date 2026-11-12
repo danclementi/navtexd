@@ -179,3 +179,26 @@ func TestKeywordSharedAmongPlausibleStations(t *testing.T) {
 		t.Errorf("no time: got %v points shared by %d, want %v by 3", p, n, gidUnit/3)
 	}
 }
+
+func TestMisreadB1OffersStationDueAtThatTime(t *testing.T) {
+	id := load(t)
+	text := "SOUTH OF NANTUCKET SHOALS"
+	// F is Boston's letter (00:40 slot); a misread G is not named for it, but Boston is offered
+	r := id.Identify(Input{FreqKHz: 518, B1: "G", When: at(0, 50), Text: text})
+	found := false
+	for _, c := range r.Candidates {
+		found = found || name(id, Result{Index: c.Index}) == "NMF Boston"
+	}
+	if r.Index >= 0 && name(id, r) == "NMF Boston" || !found || !r.LetterDiffers {
+		t.Errorf("misread letter: named %q, offered=%v differs=%v cands=%v", name(id, r), found, r.LetterDiffers, r.Candidates)
+	}
+	if r := id.Identify(Input{FreqKHz: 518, B1: "F", When: at(0, 50), Text: text}); name(id, r) != "NMF Boston" || r.LetterDiffers {
+		t.Errorf("right letter: got %q differs=%v", name(id, r), r.LetterDiffers)
+	}
+	if r := id.Identify(Input{FreqKHz: 518, B1: "G", When: at(2, 10), Text: text}); r.LetterDiffers {
+		t.Errorf("out of slot: offered %v", r.Candidates)
+	}
+	if r := id.Identify(Input{FreqKHz: 518, B1: "G", When: at(0, 50), Text: "NO USEFUL WORDS"}); r.LetterDiffers {
+		t.Errorf("no keywords: offered %v", r.Candidates)
+	}
+}

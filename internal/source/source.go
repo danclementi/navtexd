@@ -125,7 +125,7 @@ func open(ctx context.Context, cfg config.Config, opts ...Option) (*Opened, erro
 				}
 			}
 		}()
-		h, err := hpsdr.Open(ctx, hpsdr.Options{Addr: cfg.Input.HPSDR.Address, RateHz: int(cfg.Input.HPSDR.SampleRateHz), FreqHz: centre,
+		h, err := hpsdr.Open(ctx, hpsdr.Options{Addr: cfg.Input.HPSDR.Address, Protocol: hpsdrProtocol(cfg.Input.HPSDR.Protocol), RateHz: int(cfg.Input.HPSDR.SampleRateHz), FreqHz: centre,
 			MirrorIQ: cfg.Input.HPSDR.MirrorIQ, Notices: warn, Known: e.radios.Addrs(),
 			OnData: func(r hpsdr.Radio) {
 				if err := e.radios.Touch(r.Addr.IP.String(), r.Name); err != nil {
@@ -235,4 +235,12 @@ func open(ctx context.Context, cfg config.Config, opts ...Option) (*Opened, erro
 		return o, nil
 	}
 	return nil, fmt.Errorf("input.source %q: want file, device, stdin, hpsdr, sdrconnect or spyserver", cfg.Input.Source)
+}
+
+// hpsdrProtocol reads the protocol setting: 2 or anything else (an old file without it) as 1.
+func hpsdrProtocol(v int) int {
+	if v == 2 {
+		return 2
+	}
+	return 1
 }

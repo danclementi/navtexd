@@ -32,6 +32,7 @@ type session struct {
 	raddr *net.UDPAddr
 	radio Radio
 	rate  int
+	proto int // 1 or 2
 	gap   time.Duration
 	quiet time.Duration
 
@@ -41,7 +42,8 @@ type session struct {
 	discardUntil time.Time             // after a change of the receiver count the packets in flight have the old layout
 	reset        bool
 	seq          uint32
-	rr           int // receiver whose frequency goes in the next command packet
+	rr           int    // receiver whose frequency goes in the next command packet
+	seqRx, seqHi uint32 // protocol 2: the sequence numbers of the receiver-specific and high-priority packets
 
 	done chan struct{}
 	once sync.Once
@@ -85,6 +87,12 @@ func Open(ctx context.Context, o Options) (*Source, error) {
 	if o.SendGap == 0 {
 		o.SendGap = sendEvery
 	}
+	if o.Protocol == 0 {
+		o.Protocol = 1
+	}
+	if o.Protocol != 1 && o.Protocol != 2 {
+		return nil, fmt.Errorf("HPSDR protocol %d: want 1 or 2", o.Protocol)
+	}
 	if _, err := CommandPacket(0, o.RateHz, o.FreqHz); err != nil {
 		return nil, err
 	}
@@ -98,15 +106,15 @@ func Open(ctx context.Context, o Options) (*Source, error) {
 			}
 		}
 	}
-	radios, note, err := discover(ctx, o.Addr, o.Port, o.Timeout)
+	radios, note, err := discoverP(ctx, o.Addr, o.Port, o.Timeout, o.Protocol)
 	if err != nil {
 		return nil, err
 	}
 	if len(radios) == 0 {
 		if o.Addr != "" {
-			return nil, fmt.Errorf("no HPSDR radio answered at %s: %s (check the address, that the radio is on, and that nothing blocks UDP port %d)", o.Addr, note, o.Port)
+			return nil, fmt.Errorf("no HPSDR radio answered at %s for protocol %d: %s (check the address, that the radio is on, that it offers protocol %d, and that nothing blocks UDP port %d)", o.Addr, o.Protocol, note, o.Protocol, o.Port)
 		}
-		return nil, errors.New("no HPSDR radio found on the local network; set input.radio to its address")
+		return nil, fmt.Errorf("no HPSDR radio (protocol %d) found on the local network; set the radio's address", o.Protocol)
 	}
 	for i := range radios { // a radio busy with a channel of ours is not busy
 		if lookup(radios[i].Addr) != nil {
@@ -127,7 +135,7 @@ func Open(ctx context.Context, o Options) (*Source, error) {
 	// itself busy for a moment; give it a few seconds before blaming another program.
 	for wait := time.Duration(0); r.Busy && wait < busyWait && ctx.Err() == nil; wait += busyStep {
 		time.Sleep(busyStep)
-		if again, err := Discover(ctx, r.Addr.String(), o.Port, o.Timeout); err == nil && len(again) > 0 {
+		if again, err := DiscoverProto(ctx, r.Addr.String(), o.Port, o.Timeout, o.Protocol); err == nil && len(again) > 0 {
 			r = again[0]
 		}
 	}
@@ -141,13 +149,27 @@ func Open(ctx context.Context, o Options) (*Source, error) {
 	// A large receive buffer lets a brief stall of this program (or of Windows) pass without dropping packets: the
 	// default is small (tens of packets at the higher rates). The system may grant less; that is not an error.
 	_ = conn.SetReadBuffer(4 << 20)
-	s := &session{key: sessionKey(r.Addr.IP, o.Port), conn: conn, raddr: r.Addr, radio: r, rate: o.RateHz, gap: o.SendGap, quiet: o.Quiet,
+	if o.Protocol == 2 { // the streams are addressed from the general port
+		r.Addr = &net.UDPAddr{IP: r.Addr.IP, Port: o.Port}
+	}
+	s := &session{key: sessionKey(r.Addr.IP, o.Port), conn: conn, raddr: r.Addr, radio: r, rate: o.RateHz, proto: o.Protocol, gap: o.SendGap, quiet: o.Quiet,
 		nrx: 1, seq: o.StartSeq, done: make(chan struct{})}
 	m := s.newMember(o, 0)
 	s.slots[0] = m
 	regMu.Lock()
 	reg[s.key] = s
 	regMu.Unlock()
+	if s.proto == 2 {
+		if err := s.startP2(); err != nil {
+			s.remove(m)
+			return nil, err
+		}
+		s.wg.Add(2)
+		go s.receive2()
+		go s.keepAlive2()
+		m.watch(ctx)
+		return m, nil
+	}
 	s.sendSettings(3)
 	if _, err := conn.WriteToUDP(startPacket(true), s.raddr); err != nil {
 		s.remove(m)
@@ -178,6 +200,12 @@ func (s *session) newMember(o Options, slot int) *Source {
 
 // join adds a receiver for another channel.
 func (s *session) join(ctx context.Context, o Options) (*Source, error) {
+	if o.Protocol == 0 {
+		o.Protocol = 1
+	}
+	if o.Protocol != s.proto {
+		return nil, fmt.Errorf("the radio %s already streams to another channel with protocol %d; all channels that share a radio need the same protocol (not %d)", s.radio.Addr.IP, s.proto, o.Protocol)
+	}
 	if o.RateHz != s.rate {
 		return nil, fmt.Errorf("the radio %s already streams at %d Hz for another channel; all channels that share a radio need the same sample rate (not %d Hz)", s.radio.Addr.IP, s.rate, o.RateHz)
 	}
@@ -211,6 +239,11 @@ func (s *session) join(ctx context.Context, o Options) (*Source, error) {
 	n := s.nrx
 	s.mu.Unlock()
 	regMu.Unlock()
+	if s.proto == 2 { // every receiver has its own stream: no restart, the new one is switched on by the next packets
+		s.sendP2(true, true)
+		m.watch(ctx)
+		return m, nil
+	}
 	if grow {
 		// the layout of the packets changes: restart the stream cleanly
 		for i := 0; i < 2; i++ {
@@ -523,7 +556,11 @@ func (s *session) shutdown() {
 	s.once.Do(func() {
 		close(s.done)
 		for i := 0; i < 3; i++ {
-			s.conn.WriteToUDP(startPacket(false), s.raddr)
+			if s.proto == 2 {
+				s.conn.WriteToUDP(p2High(s.nextHi(), false, [MaxReceivers]float64{}, [MaxReceivers]bool{}), s.p2Addr(p2OffHigh))
+			} else {
+				s.conn.WriteToUDP(startPacket(false), s.raddr)
+			}
 		}
 		s.conn.Close()
 	})

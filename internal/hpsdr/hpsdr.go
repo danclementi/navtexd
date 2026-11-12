@@ -34,6 +34,7 @@ type Radio struct {
 	Board    int // 1 = Hermes (also reported by Pavel Demin's images), 6 = Hermes Lite, ...
 	Name     string
 	Busy     bool // already streaming to some host
+	Protocol int  // 1 (Metis, the default) or 2 (the "new protocol"); 0 is read as 1
 }
 
 func (r Radio) String() string {
@@ -42,6 +43,9 @@ func (r Radio) String() string {
 		name = boardName(r.Board)
 	}
 	s := fmt.Sprintf("%s at %s (MAC %s, firmware %d)", name, r.Addr.IP, r.MAC, r.Firmware)
+	if r.Protocol == 2 {
+		s += ", protocol 2"
+	}
 	if r.Busy {
 		s += ", busy"
 	}
@@ -101,9 +105,25 @@ func Discover(ctx context.Context, addr string, port int, timeout time.Duration)
 	return found, err
 }
 
+// DiscoverProto is Discover for protocol 1 or 2.
+func DiscoverProto(ctx context.Context, addr string, port int, timeout time.Duration, proto int) ([]Radio, error) {
+	found, _, err := discoverP(ctx, addr, port, timeout, proto)
+	return found, err
+}
+
 // discover is Discover plus a note about what else was seen when nothing answered properly (packets that are not
 // discovery replies, or a refusal), to be shown with the error.
 func discover(ctx context.Context, addr string, port int, timeout time.Duration) (found []Radio, note string, err error) {
+	return discoverP(ctx, addr, port, timeout, 1)
+}
+
+// discoverP is discover for protocol proto (1 or 2): the request and the reply have the other protocol's layout.
+func discoverP(ctx context.Context, addr string, port int, timeout time.Duration, proto int) (found []Radio, note string, err error) {
+	parse := ParseDiscoveryReply
+	pkt := discoveryPacket()
+	if proto == 2 {
+		parse, pkt = ParseDiscoveryReply2, discoveryPacket2()
+	}
 	conn, err := net.ListenUDP("udp4", &net.UDPAddr{})
 	if err != nil {
 		return nil, "", err
@@ -123,7 +143,6 @@ func discover(ctx context.Context, addr string, port int, timeout time.Duration)
 	} else {
 		targets = broadcastTargets(port)
 	}
-	pkt := discoveryPacket()
 	send := func() {
 		for _, t := range targets {
 			conn.WriteToUDP(pkt, t) // an interface that cannot send is simply skipped
@@ -164,7 +183,7 @@ func discover(ctx context.Context, addr string, port int, timeout time.Duration)
 		if only != nil && !from.IP.Equal(only) {
 			continue
 		}
-		if r, ok := ParseDiscoveryReply(buf[:n], from); ok {
+		if r, ok := parse(buf[:n], from); ok {
 			if !seen[r.MAC.String()] {
 				seen[r.MAC.String()] = true
 				found = append(found, r)
@@ -386,6 +405,7 @@ type Options struct {
 	Known    []string         // addresses used successfully before, most recent first: preferred when a search finds several radios
 	OnData   func(Radio)      // called once, when the first data arrives from the radio (it works)
 	Chosen   func(why string) // called when a search picked one of several radios, with the reason
+	Protocol int              // 1 (default) or 2: which OpenHPSDR protocol to speak to the radio
 	Quiet    time.Duration    // lost packets are reported once this long has passed without another loss; 0 = 5 s
 	SendGap  time.Duration    // interval between command packets; 0 = 100 ms
 	StartSeq uint32

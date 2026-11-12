@@ -81,6 +81,9 @@ type Result struct {
 	Candidates []Candidate
 	Margin     float64 // best score minus the second best (0 when only one station was left)
 	Rivals     bool    // more than one station was scored
+	// LetterDiffers is set when the named station has another B1 letter than the one read: the letter was probably misread, and the
+	// station was named by its keywords and by being the one due to transmit at the time of reception.
+	LetterDiffers bool
 }
 
 // Identifier scores messages against a station table.
@@ -361,9 +364,6 @@ func (id *Identifier) Identify(in Input) Result {
 		}
 		cands = append(cands, i)
 	}
-	if len(cands) == 0 {
-		return res
-	}
 	text := Normalize(in.Text)
 	type sc struct {
 		i int
@@ -374,10 +374,65 @@ func (id *Identifier) Identify(in Input) Result {
 		all[n] = sc{i, id.score(i, in, text)}
 	}
 	sort.SliceStable(all, func(a, b int) bool { return all[a].total > all[b].total })
-	for n := 0; n < len(all) && n < maxCandidates; n++ {
+	// A read B1 may be wrong. Stations of other letters that are due to transmit at the time of reception (and none that the
+	// operator has excluded by a NAVAREA) are scored as if B1 were unknown; the time of day does not count in their favour
+	// (it is what makes them candidates), so they are judged on keywords, distance and history alone.
+	var off []sc
+	if known && in.NavArea == 0 && !in.When.IsZero() {
+		un := in
+		un.B1 = "?"
+		for _, i := range id.byFreq[in.FreqKHz] {
+			s := id.tab.Stations[i]
+			if strings.EqualFold(s.ID, b1) || slotFit(s, in.When) < 1 {
+				continue
+			}
+			o := sc{i, id.score(i, un, text)}
+			o.total -= slotTerm(s, in.When)
+			for k := range o.terms {
+				if o.terms[k].Kind == "slot" {
+					o.terms[k].Used = false // shown, but not counted
+				}
+			}
+			off = append(off, o)
+		}
+		sort.SliceStable(off, func(a, b int) bool { return off[a].total > off[b].total })
+	}
+	if len(all) == 0 && len(off) == 0 {
+		return res
+	}
+	// the off-letter station that could be named: keyword evidence, and a lead over the other off-letter stations and over the
+	// best station of the letter that was read
+	var alt *sc
+	if len(off) > 0 && off[0].kw >= minKeyword {
+		lead := off[0].total
+		if len(off) > 1 {
+			lead = math.Min(lead, off[0].total-off[1].total+minMargin)
+		}
+		if len(all) > 0 {
+			lead = math.Min(lead, off[0].total-all[0].total+minMargin)
+		}
+		if lead >= minMargin {
+			alt = &off[0]
+		}
+	}
+	if alt != nil {
+		res.Candidates = append(res.Candidates, Candidate{Index: alt.i, Score: round2(alt.total), Keyword: alt.kw, Terms: alt.terms})
+		res.Index, res.Score, res.LetterDiffers = alt.i, round2(alt.total), true
+		res.Method = "GID"
+		if alt.uid > 0 {
+			res.Method = "UID"
+		}
+	}
+	for n := 0; n < len(all) && len(res.Candidates) < maxCandidates; n++ {
 		if all[n].total > 0 || n == 0 {
 			res.Candidates = append(res.Candidates, Candidate{Index: all[n].i, Score: round2(all[n].total), Keyword: all[n].kw, Terms: all[n].terms})
 		}
+	}
+	if alt != nil {
+		return res
+	}
+	if len(all) == 0 {
+		return Result{Index: -1}
 	}
 	best := all[0]
 	margin := math.Inf(1)

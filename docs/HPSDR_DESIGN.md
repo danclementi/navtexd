@@ -84,8 +84,7 @@ MOX set. (Hermes can transmit; a stray bit must not be able to.)
 
 - Hermes board: does the gateware stop streaming without regular host packets? Which C0 addresses set
   attenuator/preamp/dither/random, and how does the 500 kHz response look with the board's input filters?
-- Protocol 2 (Orion/Saturn): separate ports per stream, phase-word frequencies. Not needed for the three
-  radios on hand; add later if wanted.
+- Protocol 2 (Orion/Saturn, UberSDR's bridge): separate ports per stream, phase-word frequencies. Added as an option, see section 7.
 - Sample-rate map differs by gateware (RP-125 MHz: 48/96/192; QMtech: also 384). Use what the user
   selects; warn if the radio's data rate disagrees with the requested one.
 
@@ -104,3 +103,20 @@ so the keep-alive repeats the frequencies in turn.
   one packet-loss counter; its notices go to the first channel that uses it.
 - Tested against the fake radio with three receivers (each with its own tone); not yet against real hardware.
 
+
+## 7. Protocol 2 (`input.hpsdr.protocol` = 2)
+Both protocols are discovered on UDP 1024: a Protocol 1 request starts `EF FE`, a Protocol 2 request is 60 bytes, zeros but byte 4 = 2, and its
+reply (60 bytes, zeros in 0-3, status 2 or 3 in byte 4, MAC in 5-10, board in 11, firmware in 13) cannot be taken for the other. All
+packets leave the one socket of the session; the radio answers every stream to that source port and is told apart by its own source port.
+- **Set-up, in this order:** general packet (60 bytes to 1024: byte 37 = 0x08, frequencies are phase words; byte 38 = 1; the amplifier and
+  filter-board bytes stay 0), receiver-specific packet (1444 bytes to 1025: ADC count in byte 4, the receivers that are on as a bit map in
+  byte 7, and for each its ADC (17 + 6n), rate in kHz (18-19 + 6n) and 24 bits (22 + 6n)), then the high-priority packet (1444 bytes to 1027:
+  byte 4 bit 0 = run, receiver n's phase word at 9 + 4n). Phase word = `Hz * 2^32 / 122.88e6`.
+- **Keep-alive:** high priority every 100 ms, receiver-specific every 200 ms, general every 800 ms. Stop = the high-priority packet with run = 0, three times.
+- **Data:** receiver n's I/Q comes from source port 1035 + n: sequence (0-3), timestamp (4-11), bits (12-13), samples in the packet (14-15), then I and Q
+  (3 bytes each, big-endian). Each stream has its own sequence counter, so loss is counted per receiver. I and Q are exchanged as with Protocol 1
+  (`mirror_iq` undoes it). The status, microphone and wideband streams are ignored.
+- **Receive only:** the run byte never has MOX (bit 1); the transmit frequency, drive level, Alex words and attenuators stay 0 (a test asserts it).
+- **Sharing:** channels that use the same radio share one session as with Protocol 1 (lowest free receiver = DDC); a new receiver needs no restart,
+  the next packets switch it on. The channels need the same protocol and sample rate (one rate for all receivers for now). A radio such as the UberSDR bridge serves one client at a time.
+- Tested against a fake radio on loopback (two receivers with their own streams and frequencies) and against the HPSDR bridge built into UberSDR (two receivers, one on 4209.5 kHz and one on 518 kHz).

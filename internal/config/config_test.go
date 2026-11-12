@@ -181,6 +181,8 @@ func TestLiveListMatchesRestartRule(t *testing.T) {
 			v = "2"
 		case "input.hpsdr.sample_rate_hz":
 			v = "96000"
+		case "input.hpsdr.protocol":
+			v = "2"
 		case "input.sdrconnect.sample_rate_hz":
 			v = "1000000"
 		case "meters.spectrum_fft":

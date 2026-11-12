@@ -3,6 +3,7 @@ package catalog
 import (
 	"fmt"
 	"math"
+	"strings"
 
 	"navtex/internal/ident"
 	"navtex/internal/store"
@@ -27,20 +28,21 @@ type WhyCand struct {
 
 // Why explains the identification of a record: it is worked out again from the message text with the current station table.
 type Why struct {
-	Method     string    `json:"method"`
-	Reason     string    `json:"reason,omitempty"`
-	Kept       bool      `json:"kept,omitempty"` // the operator keeps the record unidentified
-	Ambiguous  bool      `json:"amb,omitempty"`
-	Rivals     bool      `json:"rivals,omitempty"`
-	Margin     float64   `json:"margin"`
-	NeedKW     float64   `json:"need_kw"`
-	NeedMargin float64   `json:"need_margin"`
-	B1         string    `json:"b1"`
-	B1Known    bool      `json:"b1_known"`
-	Differs    string    `json:"differs,omitempty"` // the station that working it out again gives, when that is not the record's
-	Cands      []WhyCand `json:"cands"`
-	Chips      []Chip    `json:"chips"`
-	Keywords   []string  `json:"words,omitempty"` // the keywords of the chosen (else best) station that were found in the text
+	Method        string    `json:"method"`
+	Reason        string    `json:"reason,omitempty"`
+	Kept          bool      `json:"kept,omitempty"` // the operator keeps the record unidentified
+	Ambiguous     bool      `json:"amb,omitempty"`
+	Rivals        bool      `json:"rivals,omitempty"`
+	Margin        float64   `json:"margin"`
+	NeedKW        float64   `json:"need_kw"`
+	NeedMargin    float64   `json:"need_margin"`
+	B1            string    `json:"b1"`
+	B1Known       bool      `json:"b1_known"`
+	LetterDiffers bool      `json:"letter_differs,omitempty"` // a station of another B1 letter is among the candidates
+	Differs       string    `json:"differs,omitempty"`        // the station that working it out again gives, when that is not the record's
+	Cands         []WhyCand `json:"cands"`
+	Chips         []Chip    `json:"chips"`
+	Keywords      []string  `json:"words,omitempty"` // the keywords of the chosen (else best) station that were found in the text
 }
 
 // Explain works out the identification of r again and describes it. With loc false the operator's position is not used, so
@@ -75,7 +77,7 @@ func (c *Catalog) Explain(r store.Record, loc bool) *Why {
 	}
 	c.id.History = func(i int) int { return counts[i+1] }
 	res := c.id.Identify(in)
-	w.Rivals, w.Ambiguous = res.Rivals, res.Ambiguous
+	w.Rivals, w.Ambiguous, w.LetterDiffers = res.Rivals, res.Ambiguous, res.LetterDiffers
 	if !math.IsInf(res.Margin, 0) && !math.IsNaN(res.Margin) {
 		w.Margin = math.Round(res.Margin*100) / 100
 	}
@@ -112,6 +114,8 @@ func (c *Catalog) Explain(r store.Record, loc bool) *Why {
 		switch {
 		case r.Picked < 0:
 			w.Reason = "Kept unidentified by the operator."
+		case w.LetterDiffers:
+			w.Reason = fmt.Sprintf("B1 %s was read, but a station of another letter that is due to transmit at this time also has keywords in the text. B1 may be misread, or the station is off schedule or reading another area's message: choose it from the candidates if it is right.", strings.ToUpper(r.B1))
 		case len(w.Cands) == 0:
 			w.Reason = fmt.Sprintf("No station of this frequency fits B1 %q.", r.B1)
 		case main.Keyword < w.NeedKW:
@@ -136,6 +140,9 @@ func (c *Catalog) Explain(r store.Record, loc bool) *Why {
 		chip("warn", "forced ID", "The station was chosen by the operator; the message text does not support it.")
 	default:
 		chip("info", w.Method, "")
+	}
+	if r.StationID > 0 && r.StationID <= len(c.tab.Stations) && w.B1Known && !strings.EqualFold(c.tab.Stations[r.StationID-1].ID, r.B1) {
+		chip("warn", "B1 differs", fmt.Sprintf("The station sends with B1 %s, not the %s that was read: the letter was probably misread, and the station is the one due to transmit at that time whose keywords fit.", c.tab.Stations[r.StationID-1].ID, strings.ToUpper(r.B1)))
 	}
 	if main != nil {
 		uid, gid, shared, loose, dup := 0, 0, 0, false, false
