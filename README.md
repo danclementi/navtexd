@@ -38,6 +38,10 @@ It is a single self-contained program written in pure Go (no cgo, no installer; 
   identification group that follows; the repaired start is shown as `[ZCZC]` like other autocorrected words. In the reader pop-up the
   operator can give any record (also a fragment) a station from the list of stations scheduled at that time, or any station of the
   frequency; the identification is then marked `forced ID` when the message text does not support it.
+- **Chinese text on 486 kHz.** The national NAVTEX service of China sends each GB 2312 character as three letters (the character's place in the
+  94 x 94 table written in base 26, A = 0). On a 486 kHz channel the Log shows the decoded Chinese text (the "show autocorrections" box);
+  the received letters are kept and shown when it is unticked. A lost or added letter is bridged where the text allows, and a unit that
+  cannot be read shows as □. No identification is attempted yet: the Chinese stations are not in the station table.
 - Station identification from a YaND-format station table (`YAND_STATIONS.txt`), with distance and bearing from the
   operator position.
 - Two access roles: **admin** (direct connections from the local machine or private network) and **view-only**

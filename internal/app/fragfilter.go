@@ -53,7 +53,7 @@ func wordCountV(text string, minLetters int, known func(string) bool) int {
 // when the option asks for that and the record has one, else in the received text (with the operator's revisions).
 func fragmentWords(rec store.Record, cfg segment.Config, known func(string) bool) int {
 	text := strings.Join(rec.EffectiveLines(), "\n")
-	if cfg.FragWordsCorrect && rec.Corrected != "" {
+	if cfg.FragWordsCorrect && rec.Corrected != "" && rec.Channel != chineseHz { // Chinese text has no words of letters: the received letters count
 		text = rec.Corrected
 	}
 	return wordCountV(text, cfg.FragWordLetters, known)

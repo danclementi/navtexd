@@ -22,6 +22,7 @@ import (
 	"navtex/internal/compare"
 	"navtex/internal/config"
 	"navtex/internal/engine"
+	"navtex/internal/gbcode"
 	"navtex/internal/hpsdr"
 	"navtex/internal/iq"
 	"navtex/internal/segment"
@@ -144,8 +145,21 @@ func (r *Runner) Corrector() (*autocorr.Corrector, autocorr.Config) {
 	return r.corr, AutocorrConfig(a)
 }
 
+// chineseHz is the carrier of the national NAVTEX service of China.
+const chineseHz = 486000
+
 // Correct fills in the autocorrected text of a record (the raw lines are not touched). It returns what was corrected.
 func (r *Runner) Correct(rec *store.Record) []string {
+	if rec.Channel == chineseHz { // the national service of China sends GB 2312 characters as three letters each
+		wrap := r.ChanConfig(rec.Rcv).Segment.MaxLineChars
+		if wrap < 20 {
+			wrap = 200
+		}
+		if text, ok := gbcode.Decode(rec.EffectiveLines(), wrap); ok {
+			rec.Corrected = strings.Join(text, "\n")
+			return nil
+		}
+	}
 	c, cfg := r.Corrector()
 	body, notes := c.Body(rec.EffectiveLines(), cfg) // the operator's revisions count, the raw lines are not touched
 	if f := rec.StartFix; f != "" {                  // the repaired start is shown like any repaired word
