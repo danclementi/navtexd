@@ -37,6 +37,7 @@ const (
 	minKeyword    = 2.0 // keyword evidence needed to name a station
 	minMargin     = 0.75
 	maxCandidates = 6
+	maxOffLetter  = 2 // stations of other letters offered as candidates when B1 may have been misread
 )
 
 // Input is what is known about a received message.
@@ -81,8 +82,8 @@ type Result struct {
 	Candidates []Candidate
 	Margin     float64 // best score minus the second best (0 when only one station was left)
 	Rivals     bool    // more than one station was scored
-	// LetterDiffers is set when the named station has another B1 letter than the one read: the letter was probably misread, and the
-	// station was named by its keywords and by being the one due to transmit at the time of reception.
+	// LetterDiffers is set when a station of another B1 letter than the one read is among the candidates: it is due to transmit at
+	// the time of reception and its keywords are in the text, so the letter may have been misread. It is never named by itself.
 	LetterDiffers bool
 }
 
@@ -374,8 +375,8 @@ func (id *Identifier) Identify(in Input) Result {
 		all[n] = sc{i, id.score(i, in, text)}
 	}
 	sort.SliceStable(all, func(a, b int) bool { return all[a].total > all[b].total })
-	// A read B1 may be wrong. Stations of other letters that are due to transmit at the time of reception (and none that the
-	// operator has excluded by a NAVAREA) are scored as if B1 were unknown; the time of day does not count in their favour
+	// A read B1 may be wrong. Stations of other letters that are due to transmit at the time of reception (none when the
+	// operator has set a NAVAREA) are scored as if B1 were unknown; the time of day does not count in their favour
 	// (it is what makes them candidates), so they are judged on keywords, distance and history alone.
 	var off []sc
 	if known && in.NavArea == 0 && !in.When.IsZero() {
@@ -400,39 +401,33 @@ func (id *Identifier) Identify(in Input) Result {
 	if len(all) == 0 && len(off) == 0 {
 		return res
 	}
-	// the off-letter station that could be named: keyword evidence, and a lead over the other off-letter stations and over the
-	// best station of the letter that was read
-	var alt *sc
-	if len(off) > 0 && off[0].kw >= minKeyword {
-		lead := off[0].total
-		if len(off) > 1 {
-			lead = math.Min(lead, off[0].total-off[1].total+minMargin)
-		}
-		if len(all) > 0 {
-			lead = math.Min(lead, off[0].total-all[0].total+minMargin)
-		}
-		if lead >= minMargin {
-			alt = &off[0]
+	// Off-letter stations with keyword evidence are only offered as candidates: a station may also transmit out of its slot, or
+	// read out messages for other areas, so the operator decides.
+	type cand struct {
+		sc
+		off bool
+	}
+	var list []cand
+	for _, a := range all {
+		list = append(list, cand{a, false})
+	}
+	for n := 0; n < len(off) && n < maxOffLetter; n++ {
+		if off[n].kw >= minKeyword {
+			list = append(list, cand{off[n], true})
+			res.LetterDiffers = true
 		}
 	}
-	if alt != nil {
-		res.Candidates = append(res.Candidates, Candidate{Index: alt.i, Score: round2(alt.total), Keyword: alt.kw, Terms: alt.terms})
-		res.Index, res.Score, res.LetterDiffers = alt.i, round2(alt.total), true
-		res.Method = "GID"
-		if alt.uid > 0 {
-			res.Method = "UID"
+	sort.SliceStable(list, func(a, b int) bool { return list[a].total > list[b].total })
+	for n, c := range list {
+		if len(res.Candidates) >= maxCandidates {
+			break
 		}
-	}
-	for n := 0; n < len(all) && len(res.Candidates) < maxCandidates; n++ {
-		if all[n].total > 0 || n == 0 {
-			res.Candidates = append(res.Candidates, Candidate{Index: all[n].i, Score: round2(all[n].total), Keyword: all[n].kw, Terms: all[n].terms})
+		if c.total > 0 || n == 0 {
+			res.Candidates = append(res.Candidates, Candidate{Index: c.i, Score: round2(c.total), Keyword: c.kw, Terms: c.terms})
 		}
-	}
-	if alt != nil {
-		return res
 	}
 	if len(all) == 0 {
-		return Result{Index: -1}
+		return res
 	}
 	best := all[0]
 	margin := math.Inf(1)

@@ -37,7 +37,7 @@ var addendumTable []byte
 // FileName is the station table inside the data directory.
 const FileName = "navtexd_stations.txt"
 
-// LegacyFileName is the name that versions before v0.9.2 used. A file with this name is moved to FileName at the first start,
+// LegacyFileName is the name that versions before v0.10 used. A file with this name is moved to FileName at the first start,
 // and kept as LegacyOldName.
 const (
 	LegacyFileName = "YAND_STATIONS.txt"

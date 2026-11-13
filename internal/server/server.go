@@ -34,7 +34,7 @@ import (
 var webFS embed.FS
 
 // Version is shown in the client.
-const Version = "0.9"
+const Version = "0.10"
 
 // Server serves the API, the live event stream and the web client.
 type Server struct {
