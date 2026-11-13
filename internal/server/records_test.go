@@ -559,6 +559,44 @@ func TestStationTableImportKeepsBackup(t *testing.T) {
 	}
 }
 
+func TestStationTableMergeImport(t *testing.T) {
+	cfg := config.Default()
+	cfg.Input.File.Path = "/nonexistent.wav"
+	cfg.Input.Source = "file"
+	s, _, _, dir := setup(t, cfg)
+	admin := httptest.NewServer(s.handler(false))
+	defer admin.Close()
+	post := func(mode, body string) (int, map[string]any) {
+		req, _ := http.NewRequest("POST", admin.URL+"/api/stations/import?mode="+mode, strings.NewReader(body))
+		req.Header.Set("X-Navtex", "1")
+		r, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer r.Body.Close()
+		var m map[string]any
+		json.NewDecoder(r.Body).Decode(&m)
+		return r.StatusCode, m
+	}
+	before, _ := os.ReadFile(filepath.Join(dir, "navtexd_stations.txt"))
+	file := "VERSION5\r\n1#490#A#EJM#Malin Head for NW app UK#IRL#Ireland#55.363#-7.340#00:00#04:00#08:00#12:00#16:00#20:00#MYNEWWORD##\r\n" +
+		"1#490#Z#TST#Test#IRL#Ireland#50#-7#00:50#04:50#08:50#12:50#16:50#20:50#TESTPLACE##\r\n"
+	code, m := post("merge", file)
+	if code != 200 || m["added"].(float64) != 1 || m["changed"].(float64) != 1 || m["keywords"].(float64) != 1 || m["backup"] == "" {
+		t.Fatalf("merge: %d %v", code, m)
+	}
+	after, _ := os.ReadFile(filepath.Join(dir, "navtexd_stations.txt"))
+	if !strings.Contains(string(after), "MYNEWWORD") || !strings.Contains(string(after), "#TST#Test#") || len(after) <= len(before) {
+		t.Error("the merge is not in the table file")
+	}
+	if code, m := post("merge", file); code != 200 || m["added"].(float64) != 0 || m["changed"].(float64) != 0 || m["backup"] != "" {
+		t.Errorf("merging again: %d %v", code, m)
+	}
+	if code, _ := post("nonsense", file); code != 400 {
+		t.Errorf("unknown mode: %d", code)
+	}
+}
+
 // From / To take a date or a date and minute; To includes the whole day or the whole minute named.
 func TestLogFilterTimes(t *testing.T) {
 	for _, c := range []struct{ to, want string }{

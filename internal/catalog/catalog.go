@@ -11,6 +11,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -148,9 +149,6 @@ func Open(dir string, st *store.Store) (*Catalog, error) {
 			}
 		}
 	}
-	if err := c.addAddendum(dir); err != nil {
-		return nil, err
-	}
 	b, err := os.ReadFile(c.path)
 	if err != nil {
 		return nil, err
@@ -171,103 +169,6 @@ func Open(dir string, st *store.Store) (*Catalog, error) {
 		}
 	}
 	return c, nil
-}
-
-// AppliedFile remembers which stations of the addendum were offered to the table of this data folder.
-const AppliedFile = "station_addendum_applied.json"
-
-// addAddendum adds the stations of the addendum that the table file lacks, so that a table made before them gets them without an
-// import. Each station is offered once: one that the user deleted later does not come back, and a row that is there is never
-// changed (the user may have edited it). The table is saved to backups first, and Notice says what was added.
-func (c *Catalog) addAddendum(dir string) error {
-	live, err := os.ReadFile(c.path)
-	if err != nil {
-		return err
-	}
-	appliedPath := filepath.Join(dir, AppliedFile)
-	var f struct {
-		Applied []string `json:"applied"`
-	}
-	if b, err := os.ReadFile(appliedPath); err == nil {
-		_ = json.Unmarshal(b, &f)
-	}
-	applied := map[string]bool{}
-	for _, k := range f.Applied {
-		applied[k] = true
-	}
-	have := map[string]bool{}
-	for _, l := range strings.Split(strings.ReplaceAll(string(live), "\r\n", "\n"), "\n") {
-		if k := rowKey(l); k != "" {
-			have[k] = true
-		}
-	}
-	var add []string
-	perFreq := map[string]int{}
-	var freqs []string
-	all := map[string]bool{}
-	for _, l := range strings.Split(strings.ReplaceAll(string(addendumTable), "\r\n", "\n"), "\n") {
-		k := rowKey(l)
-		if k == "" {
-			continue
-		}
-		all[k] = true
-		if !have[k] && !applied[k] {
-			add = append(add, l)
-			fr := strings.Split(k, "#")[1]
-			if perFreq[fr] == 0 {
-				freqs = append(freqs, fr)
-			}
-			perFreq[fr]++
-		}
-	}
-	changed := len(add) > 0
-	for k := range all {
-		if !applied[k] {
-			changed = true
-			applied[k] = true
-		}
-	}
-	if len(add) > 0 {
-		backup, err := c.backupLocked()
-		if err != nil {
-			return fmt.Errorf("could not save the station table first: %w", err)
-		}
-		text := strings.TrimRight(strings.ReplaceAll(string(live), "\r\n", "\n"), "\n")
-		text = strings.ReplaceAll(text+"\n"+strings.Join(add, "\n")+"\n", "\n", "\r\n")
-		if err := os.WriteFile(c.path+".tmp", []byte(text), 0o644); err != nil {
-			return err
-		}
-		if err := os.Rename(c.path+".tmp", c.path); err != nil {
-			return err
-		}
-		var parts []string
-		for _, fr := range freqs {
-			parts = append(parts, fmt.Sprintf("%d for %s kHz", perFreq[fr], fr))
-		}
-		note := fmt.Sprintf("Added %d stations to the station table that come with this version of the program (%s)", len(add), strings.Join(parts, ", "))
-		if backup != "" {
-			note += "; the table was saved first as backups/" + backup
-		}
-		note += ". Use Identify again (Log tab, Database) for messages already logged."
-		if c.Notice != "" {
-			c.Notice += " "
-		}
-		c.Notice += note
-	}
-	if changed {
-		keys := make([]string, 0, len(applied))
-		for k := range applied {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		b, _ := json.MarshalIndent(struct {
-			Applied []string `json:"applied"`
-		}{keys}, "", "  ")
-		if err := os.WriteFile(appliedPath, b, 0o644); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // LoggingFile holds the selective-logging choice in the data directory.
@@ -658,6 +559,99 @@ func (c *Catalog) Import(data []byte) (n int, backup string, err error) {
 	}
 	_, err = c.resync() // (records follow their stations to their new places)
 	return len(tab.Stations), backup, err
+}
+
+// MergeResult says what a merge import did.
+type MergeResult struct {
+	Stations int    // stations in the table now
+	Added    int    // stations of the file that the table lacked
+	Changed  int    // stations of the table that the file changed (new keywords, or replaced)
+	Keywords int    // keywords added to existing stations
+	Skipped  int    // keywords that did not fit in the 300 characters of a list
+	Backup   string // the table as it was, saved first (empty when nothing changed)
+}
+
+// ImportMerge merges the stations of a file into the table. A station that the table lacks (same frequency, NAVAREA, ID letter and
+// call sign) is added at the end, so that the places of the others stay. A station that the table has keeps its fields; with
+// replace false the keywords of the file's row that it lacks are added to its lists (its own stay, in their order), with replace
+// true the row of the file takes its place. The table is saved first (backups folder) when anything changes.
+func (c *Catalog) ImportMerge(data []byte, replace bool) (MergeResult, error) {
+	var res MergeResult
+	imp, err := stations.Parse(bytes.NewReader(data))
+	if err != nil {
+		return res, err
+	}
+	if len(imp.Stations) == 0 {
+		return res, errors.New("the file contains no stations")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	have := map[string]int{}
+	for i, k := range c.keys {
+		have[k] = i
+	}
+	impKeys, _ := StationKeys(imp.Stations)
+	merged := make([]stations.Station, len(c.tab.Stations))
+	copy(merged, c.tab.Stations)
+	union := func(mine, theirs []string) ([]string, int, int) {
+		out := append([]string(nil), mine...)
+		added, skipped := 0, 0
+	next:
+		for _, k := range theirs {
+			k = strings.TrimSpace(k)
+			if k == "" {
+				continue
+			}
+			for _, m := range out {
+				if strings.EqualFold(strings.TrimSpace(m), k) {
+					continue next
+				}
+			}
+			if len(strings.Join(append(append([]string(nil), out...), k), ",")) > MaxKeywordChars {
+				skipped++
+				continue
+			}
+			out = append(out, k)
+			added++
+		}
+		return out, added, skipped
+	}
+	for n, st := range imp.Stations {
+		i, ok := have[impKeys[n]]
+		switch {
+		case !ok:
+			have[impKeys[n]] = len(merged)
+			merged = append(merged, st)
+			res.Added++
+		case replace:
+			if !reflect.DeepEqual(merged[i], st) {
+				merged[i] = st
+				res.Changed++
+			}
+		default:
+			g, ga, gs := union(merged[i].GID, st.GID)
+			u, ua, us := union(merged[i].UID, st.UID)
+			res.Skipped += gs + us
+			if ga+ua > 0 {
+				merged[i].GID, merged[i].UID = g, u
+				res.Keywords += ga + ua
+				res.Changed++
+			}
+		}
+	}
+	res.Stations = len(merged)
+	if res.Added == 0 && res.Changed == 0 {
+		return res, nil
+	}
+	if res.Backup, err = c.backupLocked(); err != nil {
+		return res, fmt.Errorf("could not save the current table first: %w", err)
+	}
+	c.set(&stations.Table{Version: c.tab.Version, Stations: merged})
+	if err = c.save(); err != nil {
+		return res, err
+	}
+	_, err = c.resync()
+	return res, err
 }
 
 // backupLocked copies the table file to backups/navtexd_stations-<time it was last saved>.txt and returns that name (empty when

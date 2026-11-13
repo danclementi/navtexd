@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -67,8 +68,8 @@ func TestOpenMovesTheOldFileName(t *testing.T) {
 		t.Error("no notice")
 	}
 	got, _ := os.ReadFile(filepath.Join(dir, FileName))
-	if !bytes.HasPrefix(got, mine) { // (the stations of the addendum follow)
-		t.Error("the new file does not start with the old one")
+	if !bytes.Equal(got, mine) {
+		t.Error("the new file is not a copy of the old one")
 	}
 	if _, err := os.Stat(filepath.Join(dir, LegacyFileName)); err == nil {
 		t.Error("the old file is still there")
@@ -97,44 +98,83 @@ func TestOpenSeedsFromTheShippedTable(t *testing.T) {
 	}
 }
 
-func TestOpenAddsTheAddendumRowsOnce(t *testing.T) {
+func TestImportMerge(t *testing.T) {
 	dir := t.TempDir()
 	st, _ := store.Open(dir)
 	defer st.Close()
-	// a table of an earlier version: the community's table with a row edited by the user, none of the addendum
-	mine := []byte(strings.Replace(string(baseTable), "Malin Head", "My Malin Head", 1))
-	if err := os.WriteFile(filepath.Join(dir, FileName), mine, 0o644); err != nil {
+	table := "VERSION5\r\n" +
+		"1#490#A#EJM#Malin Head#IRL#Ireland#55.363#-7.340#00:00#04:00#08:00#12:00#16:00#20:00#MINE,SHARED#OWN#\r\n" +
+		"1#490#B#OST#Ostend#BEL#Belgium#51.183#2.808#00:10#04:10#08:10#12:10#16:10#20:10#OOSTENDE#OST#\r\n"
+	if err := os.WriteFile(filepath.Join(dir, FileName), []byte(table), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	c, err := Open(dir, st)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(c.Notice, "6 for 486 kHz") || !strings.Contains(c.Notice, "backups/") {
-		t.Errorf("notice %q", c.Notice)
-	}
-	b, _ := os.ReadFile(filepath.Join(dir, FileName))
-	if !strings.Contains(string(b), "My Malin Head") || !strings.Contains(string(b), "#486#E#XSG#Shanghai#") {
-		t.Error("the user's edit or the new rows are missing")
-	}
-	if m, _ := filepath.Glob(filepath.Join(dir, "backups", "navtexd_stations-*")); len(m) != 1 {
-		t.Errorf("backups: %v", m)
-	}
-	// the user deletes the Shanghai 486 row; it stays deleted
-	var keep []string
-	for _, l := range strings.Split(strings.TrimRight(string(b), "\r\n"), "\r\n") {
-		if !strings.Contains(l, "#486#E#XSG#") {
-			keep = append(keep, l)
-		}
-	}
-	if err := os.WriteFile(filepath.Join(dir, FileName), []byte(strings.Join(keep, "\r\n")+"\r\n"), 0o644); err != nil {
+	n0 := len(c.tab.Stations)
+	file := []byte("VERSION5\r\n" +
+		"1#490#A#EJM#Malin Head X#IRL#Ireland#55.363#-7.340#00:00#04:00#08:00#12:00#16:00#20:00#shared,THEIRS#NEWUID#\r\n" +
+		"1#490#C#NEW#Newplace#IRL#Ireland#50#-7#00:20#04:20#08:20#12:20#16:20#20:20#NEWPLACE##\r\n")
+	res, err := c.ImportMerge(file, false)
+	if err != nil {
 		t.Fatal(err)
 	}
-	c2, err := Open(dir, st)
-	if err != nil || c2.Notice != "" {
-		t.Fatalf("second start: %v %q", err, c2.Notice)
+	if res.Added != 1 || res.Changed != 1 || res.Keywords != 2 || res.Backup == "" || res.Stations != n0+1 {
+		t.Errorf("merge result %+v", res)
 	}
-	if b2, _ := os.ReadFile(filepath.Join(dir, FileName)); strings.Contains(string(b2), "#486#E#XSG#") {
-		t.Error("a deleted row came back")
+	a := c.tab.Stations[0]
+	if strings.Join(a.GID, ",") != "MINE,SHARED,THEIRS" || strings.Join(a.UID, ",") != "OWN,NEWUID" || a.Name != "Malin Head" {
+		t.Errorf("keywords were not added to the station: %+v", a)
+	}
+	if last := c.tab.Stations[len(c.tab.Stations)-1]; last.Callsign != "NEW" {
+		t.Errorf("the new station is not last: %+v", last)
+	}
+	// again: nothing to do, no new backup
+	if res, err = c.ImportMerge(file, false); err != nil || res.Added+res.Changed != 0 || res.Backup != "" {
+		t.Errorf("second merge %+v %v", res, err)
+	}
+	// replace: the file's row takes the place of the table's, own keywords included
+	if res, err = c.ImportMerge(file, true); err != nil || res.Added != 0 || res.Changed != 1 {
+		t.Errorf("replacing merge %+v %v", res, err)
+	}
+	if a := c.tab.Stations[0]; a.Name != "Malin Head X" || strings.Join(a.GID, ",") != "shared,THEIRS" {
+		t.Errorf("row not replaced: %+v", a)
+	}
+	// the file on disk follows
+	b, _ := os.ReadFile(filepath.Join(dir, FileName))
+	if !strings.Contains(string(b), "#NEW#Newplace#") {
+		t.Error("the table file does not have the new station")
+	}
+	// a keyword list that is full takes no more
+	var long []string
+	for i := 0; i < 30; i++ { // 30 words of 9 letters: 299 characters with the commas
+		long = append(long, fmt.Sprintf("KEYWORD%02d", i))
+	}
+	if err := c.SetKeywords(2, "GID", long); err != nil {
+		t.Fatal(err)
+	}
+	res, err = c.ImportMerge([]byte("VERSION5\r\n1#490#B#OST#Ostend#BEL#Belgium#51.183#2.808#00:10#04:10#08:10#12:10#16:10#20:10#MORE#\r\n"), false)
+	if err != nil || res.Skipped != 1 || res.Keywords != 0 {
+		t.Errorf("full list: %+v %v", res, err)
+	}
+}
+
+// the addendum file of a release gives a table made earlier its stations when it is merged in
+func TestMergeTheAddendumIntoAnOldTable(t *testing.T) {
+	dir := t.TempDir()
+	st, _ := store.Open(dir)
+	defer st.Close()
+	if err := os.WriteFile(filepath.Join(dir, FileName), baseTable, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Open(dir, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := len(c.tab.Stations)
+	res, err := c.ImportMerge(addendumTable, false)
+	if err != nil || res.Added != 25 || res.Changed != 0 || len(c.tab.Stations) != n+25 {
+		t.Errorf("merge of the addendum: %+v %v (%d stations, were %d)", res, err, len(c.tab.Stations), n)
 	}
 }

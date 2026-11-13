@@ -850,6 +850,26 @@ func (s *Server) stationImport(w http.ResponseWriter, r *http.Request, id Identi
 		fail(w, 400, err)
 		return
 	}
+	// mode: replace (the default; the file becomes the table), merge (add the stations that are missing, and the file's keywords to
+	// the ones that are there) or merge-replace (add the missing stations, and the file's rows replace the ones that are there)
+	switch mode := r.URL.Query().Get("mode"); mode {
+	case "merge", "merge-replace":
+		res, err := s.cat.ImportMerge(data, mode == "merge-replace")
+		if err != nil {
+			fail(w, 400, err)
+			return
+		}
+		if res.Added+res.Changed > 0 {
+			s.run.Log("info", fmt.Sprintf("station table merged with an import: %d stations added, %d changed, %d keywords added (the previous table is saved as backups/%s)", res.Added, res.Changed, res.Keywords, res.Backup))
+			s.hub.Publish("stations", map[string]any{"changed": 0}, false, false)
+		}
+		writeJSON(w, 200, map[string]any{"stations": res.Stations, "added": res.Added, "changed": res.Changed, "keywords": res.Keywords, "skipped": res.Skipped, "backup": res.Backup, "merged": true})
+		return
+	case "", "replace":
+	default:
+		fail(w, 400, fmt.Errorf("unknown import mode %q", mode))
+		return
+	}
 	n, backup, err := s.cat.Import(data)
 	if err != nil {
 		fail(w, 400, err)

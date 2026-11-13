@@ -92,20 +92,31 @@
   $("st-file").onchange = async () => {
     const f = $("st-file").files[0]; $("st-file").value = "";
     if (!f) return;
-    if (!confirm(`Replace the whole station table with ${f.name}?\n\nThe current table is saved first in the backups folder, with the date and time it was last saved in the file name.`)) return;
+    const mode = $("st-mode").value;
+    const ask = {
+      "merge": `Merge ${f.name} into the station table?\n\nStations that are missing are added; for the stations you have, the keywords of the file that you lack are added to your lists (yours stay).`,
+      "merge-replace": `Merge ${f.name} into the station table, with its rows replacing yours?\n\nStations that are missing are added; every station that the file has replaces your row of it, with your own keywords.`,
+      "replace": `Replace the whole station table with ${f.name}?`,
+    }[mode] + "\n\nThe current table is saved first in the backups folder, with the date and time it was last saved in the file name.";
+    if (!confirm(ask)) return;
     try {
       const text = await f.text();
-      const r = await fetch("/api/stations/import", { method: "POST", headers: { "X-Navtex": "1", "Content-Type": "text/plain" }, body: text, credentials: "same-origin" });
+      const r = await fetch("/api/stations/import?mode=" + encodeURIComponent(mode), { method: "POST", headers: { "X-Navtex": "1", "Content-Type": "text/plain" }, body: text, credentials: "same-origin" });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error);
-      $("st-msg").textContent = `${j.stations} stations imported.` + (j.backup ? ` The previous table is saved as backups/${j.backup}.` : "");
+      if (j.merged) {
+        $("st-msg").textContent = !j.added && !j.changed ? "Nothing to merge: the table already has everything in the file."
+          : `${j.added} stations added, ${j.changed} changed (${j.keywords} keywords added), ${j.stations} stations now.` + (j.skipped ? ` ${j.skipped} keywords did not fit in the ${300} characters of a list and were left out.` : "") + (j.backup ? ` The previous table is saved as backups/${j.backup}.` : "");
+      } else {
+        $("st-msg").textContent = `${j.stations} stations imported.` + (j.backup ? ` The previous table is saved as backups/${j.backup}.` : "");
+      }
       D.sel = null; await load();
     } catch (e) { $("st-msg").textContent = "Not imported: " + e.message; }
   };
 
   function roles() {
     const a = admin();
-    document.querySelectorAll("#tableio input, #tableio button:not(#st-export)").forEach((x) => { x.disabled = !a; });
+    document.querySelectorAll("#tableio input, #tableio select, #tableio button:not(#st-export)").forEach((x) => { x.disabled = !a; });
     renderKeywords();
   }
   NX.listen("role", roles);

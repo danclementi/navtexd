@@ -159,8 +159,9 @@
     </div>
     <div class="cols">
       <fieldset class="col" id="tableio"><legend>Station table</legend>
-        <div class="row small">The station table (navtexd_stations.txt). Import replaces it entirely; the table that is replaced is saved first in the backups folder of the data folder, with the date and time it was last saved in its name.</div>
-        <div class="row"><button id="st-export">Export table</button><input id="st-file" type="file" accept=".txt,.TXT" hidden><button id="st-import">Import table…</button></div>
+        <div class="row small">The station table (navtexd_stations.txt). Import can merge a file into it, or replace it entirely. Merging adds the stations that are missing, and either adds the file's keywords to the stations you have (yours stay) or lets the file's rows replace yours. Whatever it changes, the table is saved first in the backups folder of the data folder, with the date and time it was last saved in its name.</div>
+        <div class="row"><button id="st-export">Export table</button><input id="st-file" type="file" accept=".txt,.TXT" hidden><button id="st-import">Import table…</button>
+          <select id="st-mode" title="What importing a file does"><option value="merge">merge: add missing stations and new keywords</option><option value="merge-replace">merge: add missing stations, file replaces matching rows</option><option value="replace">replace the whole table</option></select></div>
         <div id="st-msg" class="small"></div>
       </fieldset>
       <fieldset class="col" id="clipbox"><legend>Saved audio clips</legend>
