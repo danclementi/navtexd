@@ -1071,3 +1071,6 @@ func (r *Runner) finishClip(c *chain, ring *clip.Ring, src *source.Opened) {
 		r.logc(c.idx, "info", fmt.Sprintf("audio clip saved: %s (%.0f s, %d kB)", name, m.Seconds, len(frames)*4/1024))
 	}()
 }
+
+// DataDir is the data folder.
+func (r *Runner) DataDir() string { return r.dir }

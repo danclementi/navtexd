@@ -472,17 +472,11 @@ fieldset.specgrp { flex: 1 1 200px; min-width: 150px; padding: 4px 8px 6px; flex
 .fswitch { font-weight: 600; white-space: nowrap; }
 .fsum { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 .fsum.off { color: var(--dim); }
-dialog#f-dlg { width: min(720px, 94vw); padding: 0; border: 2px solid var(--tabline); border-radius: 8px; background: var(--panel); color: var(--ink); }
+dialog#f-dlg { width: min(1040px, 96vw); padding: 0; border: 2px solid var(--tabline); border-radius: 8px; background: var(--panel); color: var(--ink); }
 dialog#f-dlg::backdrop { background: rgba(0, 0, 0, .45); }
 #f-dlg .fform { display: grid; grid-template-columns: 1fr; gap: 14px 32px; padding: 16px 20px; }
 #f-dlg .fcol { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-#f-dlg .fleft .field { display: grid; grid-template-columns: 84px 110px; align-items: center; }
-#f-dlg .fleft .field[hidden] { display: none; }
 #f-dlg .frowd { display: flex; align-items: center; gap: 14px; }
-#f-dlg .fright .field { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
-#f-dlg .fright .field.grow { gap: 8px; }
-#f-dlg .fright .field.grow input { flex: 1 1 auto; }
-#f-dlg .fright #f-km-wrap input[type=number] { width: 80px; }
 #f-dlg .fform select, #f-dlg .fform input[type=date], #f-dlg .fform input[type=number], #f-dlg .fform input[type=text] { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; min-width: 0; }
 #f-dlg .fform .check { font-size: 13px; color: var(--ink); }
 #f-dlg .dlgfoot { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--line); }
@@ -551,10 +545,9 @@ button.mw:disabled, button.mw:disabled:hover { cursor: default; opacity: 1; colo
 #log-dlg #rec-text, #log-dlg #rec-text *, #log-dlg input, #log-dlg textarea { -webkit-user-select: text; user-select: text; }
 input.tm { width: 64px; flex: none; box-sizing: border-box; font: inherit; font-variant-numeric: tabular-nums; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; text-align: center; }
 input.tm.bad { border-color: var(--bad); }
-#f-dlg .fdt { display: grid; grid-template-columns: auto auto auto auto; justify-content: start; align-items: center; gap: 6px 8px; }
-#f-dlg .fdt input.iso { width: 100px; }
-#f-dlg .fdt .dim { color: var(--dim); font-size: 12px; }
-#f-dlg .fdt > span:not(.dim) { color: var(--dim); font-size: 13px; }
+select.rel { font: inherit; font-size: 12px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 3px 2px; }
+select.rel:disabled { opacity: .45; }
+input.tm.rel.bad { border-color: var(--bad); }
 #role.ok { cursor: pointer; }
 #adm-in { width: 100%; box-sizing: border-box; }
 
@@ -596,3 +589,40 @@ nav #helplink:hover { color: var(--ink); }
 #log-dlg .bdg { border: 1px solid var(--line); border-radius: 9px; padding: 0 7px; line-height: 15px; cursor: help; }
 #log-dlg .bdg.strike { text-decoration: line-through; color: var(--dim); }
 #rec-text mark.kwhit { background: color-mix(in srgb, #e8c020 55%, transparent); color: inherit; border-radius: 2px; }
+
+
+/* the filter dialog: pick lists on the left, everything else in one grid on the right; the buttons are in the heading */
+#f-dlg .fhead { display: flex; align-items: center; gap: 8px; padding: 8px 12px; }
+#f-dlg .fform { grid-template-columns: minmax(360px, 420px) 1fr; align-items: start; }
+#f-dlg .fpick { grid-column: 1; border-top: 0; padding-top: 0; }
+#f-dlg .fgrid { grid-column: 2; display: grid; grid-template-columns: 96px max-content max-content max-content max-content max-content; gap: 8px 8px; align-items: center; justify-content: start; }
+#f-dlg .frow { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; align-items: center; min-height: 28px; }
+#f-dlg .frow[hidden] { display: none; }
+#f-dlg .fl { color: var(--dim); font-size: 13px; white-space: nowrap; }
+#f-dlg .frow > .span, #f-dlg .frow > .prebtns, #f-dlg .frow > .frowd, #f-dlg .frow > .premsg { grid-column: 2 / -1; }
+#f-dlg .frow > .span2 { grid-column: 3 / -1; }
+#f-dlg .frow > input.span { width: auto; }
+#f-dlg .frow .dim { color: var(--dim); font-size: 12px; white-space: nowrap; }
+#f-dlg .kmbox { display: inline-flex; align-items: center; gap: 8px; color: var(--dim); font-size: 13px; }
+#f-dlg .kmbox input[type=number] { width: 80px; }
+#f-dlg .dtbox { display: inline-flex; align-items: center; }
+#f-dlg .frow input.iso { width: 100px; }
+#f-dlg .frow input.tm { width: 56px; text-align: center; }
+#f-dlg .frow input.rel { color: var(--accent); font-style: italic; }
+#f-dlg .frow input.tm.rel.bad { border-color: var(--bad); }
+#f-dlg .prebtns { display: grid; grid-template-columns: repeat(10, 34px); gap: 4px; }
+#f-dlg .prebtns button { padding: 3px 0; font-variant-numeric: tabular-nums; color: var(--dim); border-style: dashed; background-repeat: no-repeat; background-position: left; background-size: 0 100%; }
+#f-dlg .prebtns button.full { color: var(--ink); border-style: solid; }
+#f-dlg .prebtns button.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); color: var(--accent); font-weight: 600; }
+#f-dlg .prebtns button.hold { background-image: linear-gradient(color-mix(in srgb, var(--accent) 35%, transparent), color-mix(in srgb, var(--accent) 35%, transparent)); animation: prehold .6s linear forwards; }
+@keyframes prehold { to { background-size: 100% 100%; } }
+#f-dlg .premsg { min-height: 18px; }
+#f-dlg .premsg button { margin-left: 6px; padding: 0 6px; font-size: 12px; }
+#f-dlg .frow select, #f-dlg .frow input[type=text], #f-dlg .frow input[type=number] { min-width: 0; }
+.presel { font: inherit; font-size: 12px; max-width: 150px; height: 30px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 2px 4px; align-self: center; }
+.presel:disabled { opacity: .5; }
+@media (max-width: 900px) {
+  #f-dlg .fform { grid-template-columns: 1fr; }
+  #f-dlg .fpick { grid-column: 1; border-top: 1px solid var(--line); padding-top: 10px; order: 2; }
+  #f-dlg .fgrid { grid-column: 1; order: 1; }
+}

@@ -18,10 +18,12 @@ import (
 	"navtex/internal/catalog"
 	"navtex/internal/sitor"
 	"navtex/internal/store"
+	"navtex/internal/when"
 	"navtex/internal/yand"
 )
 
 func (s *Server) recordRoutes(mux *http.ServeMux, tunnel bool) {
+	mux.HandleFunc("GET /api/when", s.viewer(tunnel, s.whenInfo))
 	mux.HandleFunc("GET /api/messages", s.viewer(tunnel, s.messages))
 	mux.HandleFunc("GET /api/messages/locate", s.viewer(tunnel, s.locate))
 	mux.HandleFunc("GET /api/messages/{id}", s.viewer(tunnel, s.message))
@@ -65,9 +67,106 @@ func parseTime(v string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("bad date %q (want yyyy-mm-dd)", v)
 }
 
+const localPrefix = "local:"
+
+// parseWhen reads one end of a date range. Without a prefix it is UTC: yyyy-mm-dd, or yyyy-mm-ddThh:mm. With the prefix
+// "local:" it is in the receiver's zone and reads DATE or DATE@TIME, where DATE is yyyy-mm-dd, today or today-N (N up to 7) and
+// TIME is hh:mm, sunrise or sunset with an optional offset (sunset-1h, sunrise+90m). A date alone means the whole day, from its
+// start (From) to its end (To); with a time To includes that minute. end says it is the To value.
+func parseWhen(v string, end bool, z when.Zone, now time.Time) (time.Time, error) {
+	if v == "" {
+		return time.Time{}, nil
+	}
+	if !strings.HasPrefix(v, localPrefix) {
+		t, err := parseTime(v)
+		if err != nil || t.IsZero() || !end {
+			return t, err
+		}
+		switch len(v) {
+		case 10:
+			t = t.Add(24 * time.Hour) // a date means the whole day
+		case 16:
+			t = t.Add(time.Minute) // yyyy-mm-ddThh:mm includes that minute
+		}
+		return t, nil
+	}
+	v = strings.TrimPrefix(v, localPrefix)
+	ds, ts, hasTime := strings.Cut(v, "@")
+	if !hasTime && len(v) == 16 && v[10] == 'T' { // the form the fixed values have in the UTC query
+		ds, ts, hasTime = v[:10], v[11:], true
+	}
+	dr, err := when.ParseDateRef(ds)
+	if err != nil {
+		return time.Time{}, err
+	}
+	d := dr.Resolve(now, z.Loc)
+	if !hasTime {
+		if end {
+			return when.EndOfDay(d, z.Loc), nil
+		}
+		return when.StartOfDay(d, z.Loc), nil
+	}
+	tr, err := when.ParseTimeRef(ts)
+	if err != nil {
+		return time.Time{}, err
+	}
+	t, ok := z.At(d, tr)
+	if !ok {
+		if !z.HavePos {
+			return time.Time{}, errors.New("sunrise and sunset need the receiving position (Options, Station)")
+		}
+		return time.Time{}, fmt.Errorf("the sun does not rise or set on %s at the receiving position", d)
+	}
+	if end {
+		t = t.Add(time.Minute)
+	}
+	return t, nil
+}
+
+// parseRange reads the From and To values of a filter.
+func parseRange(from, to string, z when.Zone, now time.Time) (f, t time.Time, err error) {
+	if f, err = parseWhen(from, false, z, now); err != nil {
+		return
+	}
+	t, err = parseWhen(to, true, z, now)
+	return
+}
+
+// zone is the receiver's zone and position.
+func (s *Server) zone() when.Zone { return s.run.Config().Operator.Zone() }
+
+// whenInfo serves the Log filter's date and time boxes. Without a parameter it describes the zone (name, abbreviation, offset,
+// whether sunrise and sunset are available). With v=DATE[@TIME], prefixed utc: or local:, it resolves the value now and gives it in
+// both zones: the filter dialog uses it to show what "today-1" and "sunset-1h" are, and to move a fixed value between UTC and local.
+func (s *Server) whenInfo(w http.ResponseWriter, r *http.Request, id Identity) {
+	z, now := s.zone(), time.Now()
+	abbr, off := now.In(z.Loc).Zone()
+	out := map[string]any{"zone": z.Loc.String(), "abbr": abbr, "offset_min": off / 60, "sun": z.HavePos}
+	if v := r.URL.Query().Get("v"); v != "" {
+		v = strings.TrimPrefix(v, "utc:")
+		hasTime := strings.Contains(v, "@") || len(strings.TrimPrefix(v, localPrefix)) >= 16
+		t, err := parseWhen(v, false, z, now)
+		if err != nil {
+			fail(w, 400, err)
+			return
+		}
+		out["utc_date"], out["utc_time"] = t.UTC().Format("2006-01-02"), t.UTC().Format("15:04")
+		lt := t.In(z.Loc)
+		out["local_date"], out["local_time"] = lt.Format("2006-01-02"), lt.Format("15:04")
+		out["has_time"] = hasTime
+	}
+	writeJSON(w, 200, out)
+}
+
 // logFilter reads the log filter from the query of a request (the Log tab's filter dialog); withDist says whether the distance
 // limits are honoured (viewers may not be told distances).
 func logFilter(q url.Values, withDist bool) (store.Filter, error) {
+	return logFilterZ(q, withDist, when.Zone{Loc: time.UTC}, time.Now())
+}
+
+// logFilterZ is logFilter with the receiver's zone and the time "today" is taken from: a From or To that starts "local:" is
+// in the receiver's zone and may be relative (see parseWhen).
+func logFilterZ(q url.Values, withDist bool, z when.Zone, now time.Time) (store.Filter, error) {
 	f := store.Filter{Text: q.Get("text"), B1: q.Get("b1"), Newest: q.Get("order") == "newest", Unidentified: q.Get("unid") == "1"}
 	if v := q.Get("freq"); v != "" { // kHz (4209.5), or a list: 490,518
 		f.Channels = map[int]bool{}
@@ -123,19 +222,8 @@ func logFilter(q url.Values, withDist bool) (store.Filter, error) {
 	f.Limit, _ = strconv.Atoi(q.Get("limit"))
 	f.Offset, _ = strconv.Atoi(q.Get("offset"))
 	var err error
-	if f.From, err = parseTime(q.Get("from")); err != nil {
+	if f.From, f.To, err = parseRange(q.Get("from"), q.Get("to"), z, now); err != nil {
 		return f, err
-	}
-	if f.To, err = parseTime(q.Get("to")); err != nil {
-		return f, err
-	}
-	if !f.To.IsZero() {
-		switch len(q.Get("to")) {
-		case 10:
-			f.To = f.To.Add(24 * time.Hour) // a date means the whole day
-		case 16:
-			f.To = f.To.Add(time.Minute) // yyyy-mm-ddThh:mm includes that minute
-		}
 	}
 	if withDist {
 		f.MaxDistance, _ = strconv.ParseFloat(q.Get("maxkm"), 64)
@@ -146,7 +234,7 @@ func logFilter(q url.Values, withDist bool) (store.Filter, error) {
 
 func (s *Server) messages(w http.ResponseWriter, r *http.Request, id Identity) {
 	dist := s.withDist(id)
-	f, err := logFilter(r.URL.Query(), dist)
+	f, err := logFilterZ(r.URL.Query(), dist, s.zone(), time.Now())
 	if err != nil {
 		fail(w, 400, err)
 		return
@@ -164,7 +252,7 @@ func (s *Server) messages(w http.ResponseWriter, r *http.Request, id Identity) {
 
 // locate gives the position of record ?id= in the list the same filter and order parameters select (-1: not in it).
 func (s *Server) locate(w http.ResponseWriter, r *http.Request, id Identity) {
-	f, err := logFilter(r.URL.Query(), s.withDist(id))
+	f, err := logFilterZ(r.URL.Query(), s.withDist(id), s.zone(), time.Now())
 	if err != nil {
 		fail(w, 400, err)
 		return
@@ -665,7 +753,7 @@ func (s *Server) maintReident(w http.ResponseWriter, r *http.Request, id Identit
 
 // dbExport downloads the log (all records, or those matching the Log tab's filter parameters).
 func (s *Server) dbExport(w http.ResponseWriter, r *http.Request, id Identity) {
-	f, err := logFilter(r.URL.Query(), true)
+	f, err := logFilterZ(r.URL.Query(), true, s.zone(), time.Now())
 	if err != nil {
 		fail(w, 400, err)
 		return

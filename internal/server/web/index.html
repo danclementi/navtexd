@@ -116,6 +116,7 @@
       <span class="sp"></span>
       <button id="f-btn" type="button" class="tb" aria-pressed="false" title="Switch the filter on or off.&#10;The filter settings are kept either way."><svg class="ic" aria-hidden="true"><use href="#i-filter"/></svg><span>filter</span></button>
       <button id="f-edit" type="button" class="tb" title="Choose what the list shows"><svg class="ic" aria-hidden="true"><use href="#i-filter-edit"/></svg><span>edit</span></button>
+      <select id="f-presel" class="presel" aria-label="Filter presets" title="Apply a stored filter preset.&#10;Presets are stored in the filter dialog (edit)."></select>
       <span class="sp"></span>
       <button id="n-undo" type="button" class="tb ghost" title="Take back the last deletion or edit of a record" disabled><svg class="ic" aria-hidden="true"><use href="#i-arrow-back-up"/></svg><span>undo</span></button>
       <svg class="ic vsep" aria-hidden="true"><use href="#i-minus-vertical"/></svg>
@@ -321,17 +322,14 @@ until the report list changes."><svg class="ic" aria-hidden="true"><use href="#i
   <div class="dlgfoot"><span class="grow"></span><button id="db-close" type="button">Close</button></div>
 </dialog>
 <dialog id="f-dlg" aria-label="Log filter">
-  <div class="dlghead"><b>Filter the log</b></div>
+  <div class="dlghead fhead">
+    <b>Filter the log</b>
+    <span class="grow"></span>
+    <button id="f-clear" type="button" class="tb" title="Empty every field of the filter.&#10;Press apply to use the empty filter."><svg class="ic" aria-hidden="true"><use href="#i-filter-x"/></svg><span>clear</span></button>
+    <button id="f-cancel" type="button" class="tb" title="Close without changing the filter (Esc)"><svg class="ic" aria-hidden="true"><use href="#i-cancel"/></svg><span>cancel</span></button>
+    <button id="f-apply" type="button" class="tb" title="Use these settings as the filter.&#10;Enter in a field does the same."><svg class="ic" aria-hidden="true"><use href="#i-thumb-up"/></svg><span>apply</span></button>
+  </div>
   <div class="fform">
-    <div class="fcol fright">
-      <div class="fdt">
-        <span>From</span><input id="f-from" class="iso" type="text" placeholder="yyyy-mm-dd"><input id="f-fromt" class="tm" type="text" maxlength="5" placeholder="hh:mm" title="Time of day, 24 hours (optional: without it From is the start of the day)"><span class="dim">UTC</span>
-        <span>To</span><input id="f-to" class="iso" type="text" placeholder="yyyy-mm-dd"><input id="f-tot" class="tm" type="text" maxlength="5" placeholder="hh:mm" title="Time of day, 24 hours (optional: without it To is the end of the day)"><span class="dim">UTC</span>
-      </div>
-      <span class="field" id="f-km-wrap">Distance <input id="f-kmin" type="number" min="0" step="any" placeholder="0" title="Minimum distance (km)"> to <input id="f-kmax" type="number" min="0" step="any" placeholder="&#8734;" title="Maximum distance (km); empty = no limit"> km</span>
-      <div class="frowd"><label class="check"><input id="f-unid" type="checkbox"> UNID only</label> <label class="check"><input id="f-omit" type="checkbox"> Omit UNID</label></div>
-      <label class="field grow">Body text <input id="f-text" type="text" placeholder="search the message text"></label>
-    </div>
     <div class="fpick">
       <div class="pickgrp" id="p-rcv"><div class="pickbtns"><b>Channel</b><button type="button" data-all="1">ALL</button><button type="button" data-all="0">CLEAR</button></div><div class="pickboxes"></div><input id="f-rcv" type="hidden"></div>
       <div class="pickgrp" id="p-freq"><div class="pickbtns"><b>Frequency</b><button type="button" data-all="1">ALL</button><button type="button" data-all="0">CLEAR</button></div><div class="pickboxes"></div><input id="f-freq" type="hidden"></div>
@@ -339,12 +337,17 @@ until the report list changes."><svg class="ic" aria-hidden="true"><use href="#i
       <div class="pickgrp" id="p-b1"><div class="pickbtns"><b>ID letter</b><button type="button" data-all="1">ALL</button><button type="button" data-all="0">CLEAR</button></div><div class="pickboxes"></div><input id="f-b1" type="hidden"></div>
       <div class="pickgrp" id="p-kind"><div class="pickbtns"><b>Kind</b><button type="button" data-all="1">ALL</button><button type="button" data-all="0">CLEAR</button></div><div class="pickboxes"></div><input id="f-kind" type="hidden"></div>
     </div>
-  </div>
-  <div class="dlgfoot">
-    <button id="f-clear" type="button" class="tb" title="Empty every field of the filter.&#10;Press apply to use the empty filter."><svg class="ic" aria-hidden="true"><use href="#i-filter-x"/></svg><span>clear</span></button>
-    <span class="grow"></span>
-    <button id="f-cancel" type="button" class="tb" title="Close without changing the filter (Esc)"><svg class="ic" aria-hidden="true"><use href="#i-cancel"/></svg><span>cancel</span></button>
-    <button id="f-apply" type="button" class="tb" title="Use these settings as the filter.&#10;Enter in a field does the same."><svg class="ic" aria-hidden="true"><use href="#i-thumb-up"/></svg><span>apply</span></button>
+    <div class="fgrid">
+      <div class="frow"><span class="fl">Presets</span><div class="prebtns" id="f-prebtns"></div></div>
+      <div class="frow"><span></span><span class="dim premsg" id="f-premsg" aria-live="polite"></span></div>
+      <div class="frow"><label class="fl" for="f-prename">Preset name</label><input id="f-prename" class="span" type="text" maxlength="24" autocomplete="off" spellcheck="false" placeholder="shown in the Log tab's list of presets" title="The name of the preset that you store next (up to 24 characters; each name is used once).&#10;Shown in the Log tab's list; empty: Preset 1, Preset 2 ..."></div>
+      <div class="frow"><span></span><div class="frowd"><label class="check"><input id="f-unid" type="checkbox"> UNID only</label> <label class="check"><input id="f-omit" type="checkbox"> Omit UNID</label></div></div>
+      <div class="frow" id="f-km-wrap"><span class="fl">Distance</span><span class="span kmbox"><input id="f-kmin" type="number" min="0" step="any" placeholder="0" title="Minimum distance (km)"> to <input id="f-kmax" type="number" min="0" step="any" placeholder="&#8734;" title="Maximum distance (km); empty = no limit"> km</span></div>
+      <div class="frow"><label class="fl" for="f-tz">Times in</label><select id="f-tz" title="UTC, or the receiver's local time (Options, Station: time zone). Only local times can be relative to today, sunrise and sunset"><option value="utc">UTC</option><option value="local">Local</option></select><span class="dim span2" id="f-tzinfo"></span></div>
+      <div class="frow"><span class="fl">From</span><span class="dtbox"><input id="f-from" class="iso" type="text" placeholder="yyyy-mm-dd"></span><select id="f-fromd" class="rel" title="Relative to today in the receiver's local time, so a saved filter always means the right day. Fixed = the date typed in the box"></select><input id="f-fromt" class="tm" type="text" maxlength="5" placeholder="hh:mm" title="Time of day, 24 hours (optional: without it From is the start of the day)"><select id="f-fsun" class="rel" title="Relative to the local sunset at the receiving position. Fixed = the time typed in the box"></select><span class="dim" id="f-tzfrom"></span></div>
+      <div class="frow"><span class="fl">To</span><span class="dtbox"><input id="f-to" class="iso" type="text" placeholder="yyyy-mm-dd"></span><select id="f-tod" class="rel" title="Relative to today in the receiver's local time, so a saved filter always means the right day. Fixed = the date typed in the box"></select><input id="f-tot" class="tm" type="text" maxlength="5" placeholder="hh:mm" title="Time of day, 24 hours (optional: without it To is the end of the day)"><select id="f-tsun" class="rel" title="Relative to the local sunrise at the receiving position. Fixed = the time typed in the box"></select><span class="dim" id="f-tzto"></span></div>
+      <div class="frow"><label class="fl" for="f-text">Body text</label><input id="f-text" class="span" type="text" placeholder="search the message text"></div>
+    </div>
   </div>
 </dialog>
 <dialog id="log-dlg" aria-label="Log record">

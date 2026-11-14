@@ -19,6 +19,7 @@ import (
 	"navtex/internal/iq"
 	"navtex/internal/segment"
 	"navtex/internal/sitor"
+	"navtex/internal/when"
 )
 
 // TimeFormat is the layout of every time shown to the user. All times are UTC.
@@ -159,11 +160,21 @@ type Meters struct {
 
 // Operator holds the operator's own information.
 type Operator struct {
-	Comment string  `json:"comment" doc:"Operational comment stored with every record, e.g. the antenna in use"`
-	LatDeg  float64 `json:"latitude_deg" unit:"deg" doc:"Receiving position, latitude, north positive (0 with longitude 0 = not set). Used for distances, bearings and sun times; never sent to viewers"`
-	LonDeg  float64 `json:"longitude_deg" unit:"deg" doc:"Receiving position, longitude, east positive"`
-	Info    string  `json:"info" doc:"Personal and equipment information (name, receiver, antenna) for reception reports"`
-	Public  bool    `json:"public_location_info" doc:"Let view-only (remote) users see location-based information: sunrise/sunset, distances and bearings in the Log, Schedule and Report tabs, and the Ephemeris tab. These reveal roughly where the receiver is, so the default is off"`
+	Comment  string  `json:"comment" doc:"Operational comment stored with every record, e.g. the antenna in use"`
+	LatDeg   float64 `json:"latitude_deg" unit:"deg" doc:"Receiving position, latitude, north positive (0 with longitude 0 = not set). Used for distances, bearings and sun times; never sent to viewers"`
+	LonDeg   float64 `json:"longitude_deg" unit:"deg" doc:"Receiving position, longitude, east positive"`
+	TimeZone string  `json:"time_zone" doc:"Time zone of the receiving position, as an IANA name such as America/New_York or Europe/Oslo (empty = the zone of the computer running navtexd). Daylight saving time follows from the name. It defines 'local' days and the local sunrise and sunset in the Log filter; stored times stay UTC"`
+	Info     string  `json:"info" doc:"Personal and equipment information (name, receiver, antenna) for reception reports"`
+	Public   bool    `json:"public_location_info" doc:"Let view-only (remote) users see location-based information: sunrise/sunset, distances and bearings in the Log, Schedule and Report tabs, and the Ephemeris tab. These reveal roughly where the receiver is, so the default is off"`
+}
+
+// Zone is the receiver's time zone and position (a zone name that does not load falls back to the computer's zone; Validate reports it).
+func (o Operator) Zone() when.Zone {
+	loc, err := when.LoadLocation(o.TimeZone)
+	if err != nil {
+		loc = time.Local
+	}
+	return when.Zone{Loc: loc, Lat: o.LatDeg, Lon: o.LonDeg, HavePos: o.LatDeg != 0 || o.LonDeg != 0}
 }
 
 // Logging controls what the displays show about stored text.
@@ -453,6 +464,11 @@ func (c Config) validate(top bool) error {
 	}
 	if top && (c.Server.MaxViewers < 0 || c.Server.MaxPerViewer < 0 || c.Server.ViewerRate < 0) {
 		bad("server.max_viewers, max_per_viewer and viewer_rate cannot be negative (0 = no limit)")
+	}
+	if top {
+		if _, err := when.LoadLocation(c.Operator.TimeZone); err != nil {
+			bad("operator.time_zone: %v", err)
+		}
 	}
 	if top && c.Clips.MaxMemoryMB < 1 {
 		bad("clips.max_memory_mb must be at least 1")

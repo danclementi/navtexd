@@ -34,7 +34,24 @@
   // To the end of the day. The four boxes are remembered between visits.
   const tmOk = (v) => /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
   const KEEP = "nx-log-";
-  const stamp = (k) => { const d = $("f-" + k).value.trim(), t = $("f-" + k + "t").value.trim(); return !isoOk(d) ? "" : tmOk(t) ? d + "T" + t : d; };
+  // the two ends of the date range: the date and time boxes, and the selects that make either relative (today-1, sunset-1h).
+  // UTC: the boxes are sent as typed. Local (the receiver's zone): "local:DATE@TIME" is sent, where DATE and TIME are the
+  // select's words when one is chosen (the server resolves them each time, so the filter keeps meaning "yesterday") and
+  // the box's text otherwise.
+  const REL = { from: { date: "f-from", time: "f-fromt", d: "f-fromd", s: "f-fsun", sun: "sunset", dflt: "today-1" }, to: { date: "f-to", time: "f-tot", d: "f-tod", s: "f-tsun", sun: "sunrise", dflt: "today" } };
+  const EXTRA = ["tz", "fromd", "fsun", "tod", "tsun"]; // the controls beside `ids` that a saved filter must hold too
+  const PRE = { slots: [], note: 0 }; // the filter presets (see below)
+  const isLocal = () => $("f-tz").value === "local";
+  const stamp = (k) => {
+    const c = REL[k], d = $(c.date).value.trim(), t = $(c.time).value.trim();
+    if (isLocal()) {
+      const date = $(c.d).value || (isoOk(d) ? d : "");
+      if (!date) return "";
+      const tm = $(c.s).value || (tmOk(t) ? t : "");
+      return "local:" + date + (tm ? "@" + tm : "");
+    }
+    return !isoOk(d) ? "" : tmOk(t) ? d + "T" + t : d;
+  };
   function isoField(inp) {
     const wrap = document.createElement("span"); wrap.className = "isodate";
     const btn = document.createElement("button"); btn.type = "button"; btn.className = "cal"; btn.title = "Pick a date from a calendar"; btn.setAttribute("aria-label", "Pick a date");
@@ -60,6 +77,98 @@
       el.addEventListener("blur", () => { const v = el.value.trim(); if (v && !tmOk(v)) el.classList.add("bad"); });
     }
   }
+  // ---- relative dates and times ----
+  const W = { zone: "", abbr: "", off: 0, sun: false }; // the receiver's zone, from /api/when
+  const whenGet = (v) => api("GET", "/api/when?v=" + encodeURIComponent(v));
+  const spanWord = (m) => (m === 0 ? "" : (m < 0 ? "-" : "+") + (Math.abs(m) % 60 === 0 ? Math.abs(m) / 60 + "h" : Math.abs(m) + "m"));
+  const spanText = (m) => (m === 0 ? "" : (m < 0 ? " \u2212 " : " + ") + Math.floor(Math.abs(m) / 60) + ":" + String(Math.abs(m) % 60).padStart(2, "0"));
+  for (const k of ["from", "to"]) {
+    const c = REL[k], dsel = $(c.d), ssel = $(c.s);
+    dsel.append(new Option("fixed", ""));
+    for (let n = 0; n <= 7; n++) dsel.append(new Option(n ? "today-" + n : "today", n ? "today-" + n : "today"));
+    ssel.append(new Option("fixed", ""));
+    for (let m = -180; m <= 180; m += 30) ssel.append(new Option(c.sun + spanText(m), c.sun + spanWord(m)));
+  }
+  const tzLabel = () => (W.abbr ? "local (" + W.abbr + ")" : "local");
+  // what the boxes look like: linked ones are marked, selects are only live in local time, the sun ones need a position
+  function decorate() {
+    const loc = isLocal();
+    for (const k of ["from", "to"]) {
+      const c = REL[k];
+      $(c.d).disabled = !loc; $(c.s).disabled = !loc || !W.sun;
+      $(c.s).title = W.sun ? "Relative to the local " + c.sun + " at the receiving position. Fixed = the time typed in the box" : "Sunrise and sunset need the receiving position (Options, Station)";
+      $(c.date).classList.toggle("rel", loc && !!$(c.d).value);
+      $(c.time).classList.toggle("rel", loc && !!$(c.s).value);
+    }
+    $("f-tzfrom").textContent = $("f-tzto").textContent = loc ? tzLabel() : "UTC";
+    $("f-tz").options[1].textContent = "Local" + (W.abbr ? " (" + W.abbr + ")" : "");
+    $("f-tzinfo").textContent = loc && W.zone ? W.zone + ", UTC" + (W.off < 0 ? "\u2212" : "+") + Math.floor(Math.abs(W.off) / 60) + (Math.abs(W.off) % 60 ? ":" + String(Math.abs(W.off) % 60).padStart(2, "0") : "") : "";
+  }
+  async function loadZone() {
+    try { const j = await api("GET", "/api/when"); W.zone = j.zone; W.abbr = j.abbr; W.off = j.offset_min; W.sun = !!j.sun; } catch (e) { /* keep what is known */ }
+    decorate();
+  }
+  // show what a linked end means now (today and the sun move on); the server resolves the real query by itself
+  async function refreshEnd(k) {
+    const c = REL[k], ds = $(c.d).value, ss = $(c.s).value, dEl = $(c.date), tEl = $(c.time);
+    decorate();
+    if (!isLocal()) return;
+    try {
+      if (ds) dEl.value = (await whenGet("local:" + ds)).local_date;
+      if (ss && isoOk(dEl.value)) { const j = await whenGet("local:" + dEl.value + "@" + ss); tEl.value = j.local_time; tEl.title = ""; tEl.classList.remove("bad"); }
+    } catch (e) {
+      if (ss) { tEl.value = ""; tEl.classList.add("bad"); tEl.title = e.message; }
+    }
+  }
+  const refreshAll = () => Promise.all([refreshEnd("from"), refreshEnd("to")]);
+  for (const k of ["from", "to"]) {
+    const c = REL[k];
+    $(c.d).onchange = () => refreshEnd(k);
+    $(c.s).onchange = () => {
+      if ($(c.s).value && !$(c.d).value && !isoOk($(c.date).value.trim())) $(c.d).value = c.dflt; // a sun time needs a day: the usual one
+      $(c.time).title = ""; $(c.time).classList.remove("bad");
+      refreshEnd(k);
+    };
+    $(c.date).addEventListener("input", () => { if ($(c.d).value) $(c.d).value = ""; decorate(); if ($(c.s).value && isoOk($(c.date).value.trim())) refreshEnd(k); }); // typing makes a date fixed again
+    $(c.time).addEventListener("input", () => { if ($(c.s).value) $(c.s).value = ""; decorate(); });
+  }
+  // switching between UTC and local keeps the same moments: the boxes are converted, relative ones are worked out and fixed
+  let tzWas = "utc";
+  const kept = {}; // the relative choices set aside while the boxes show UTC, with the UTC text they were turned into
+  async function switchZone() {
+    const to = $("f-tz").value, from = tzWas;
+    if (to === from) return;
+    tzWas = to;
+    for (const k of ["from", "to"]) {
+      const c = REL[k], ds = $(c.d).value, ss = $(c.s).value;
+      const d = ds || $(c.date).value.trim(), t = ss || $(c.time).value.trim();
+      const k0 = kept[k]; delete kept[k];
+      if (to === "local" && k0 && $(c.date).value.trim() === k0.date && $(c.time).value.trim() === k0.time) { // untouched while in UTC: relative again
+        $(c.d).value = k0.d; $(c.s).value = k0.s;
+        continue;
+      }
+      try {
+        if (ds || isoOk(d)) {
+          if (ss || tmOk(t)) { // a moment: the same one in the other zone
+            const j = await whenGet(from === "local" ? "local:" + d + "@" + t : "utc:" + d + "T" + t);
+            $(c.date).value = to === "local" ? j.local_date : j.utc_date;
+            $(c.time).value = to === "local" ? j.local_time : j.utc_time;
+          } else if (ds) {
+            $(c.date).value = (await whenGet("local:" + ds)).local_date; // a day alone keeps its digits
+          }
+        }
+      } catch (e) { /* leave the boxes as they are */ }
+      if (to === "utc") {
+        if (ds || ss) kept[k] = { d: ds, s: ss, date: $(c.date).value.trim(), time: $(c.time).value.trim() };
+        $(c.d).value = ""; $(c.s).value = "";
+      }
+    }
+    decorate();
+    if (to === "local") refreshAll();
+  }
+  $("f-tz").onchange = switchZone;
+  decorate();
+
   function params() {
     const p = new URLSearchParams();
     for (const k of ids) { let v = $("f-" + k).value.trim(); if (k === "fromt" || k === "tot") continue; if (k === "from" || k === "to") v = stamp(k); if (v) p.set(k === "freq" ? "freq" : k === "area" ? "navarea" : k === "kmin" ? "minkm" : k === "kmax" ? "maxkm" : k, v); }
@@ -735,19 +844,135 @@
   $("n-date").onkeydown = (e) => { if (e.key === "Enter") gotoDate(); };
   // the filter is edited in a pop-up: Apply (or Enter) uses the settings, Cancel (or Esc) puts the old ones back, Clear empties the boxes
   const fdlg = $("f-dlg");
-  const snap = () => ({ v: ids.map((k) => $("f-" + k).value), u: $("f-unid").checked, o: $("f-omit").checked });
+  const snap = () => ({ v: ids.map((k) => $("f-" + k).value), x: EXTRA.map((k) => $("f-" + k).value), u: $("f-unid").checked, o: $("f-omit").checked });
   let before = snap();
-  const restore = (s) => { ids.forEach((k, i) => { if (PICK[k]) setPick(k, s.v[i]); else $("f-" + k).value = s.v[i]; }); $("f-unid").checked = s.u; $("f-omit").checked = s.o; };
+  const restore = (s) => { ids.forEach((k, i) => { if (PICK[k]) setPick(k, s.v[i]); else $("f-" + k).value = s.v[i]; }); EXTRA.forEach((k, i) => { $("f-" + k).value = s.x[i]; }); tzWas = $("f-tz").value; delete kept.from; delete kept.to; decorate(); $("f-unid").checked = s.u; $("f-omit").checked = s.o; try { preMark(); } catch (e) { /* before the presets are set up */ } };
   const applyDlg = () => { for (const k of Object.keys(PICK)) fixEmpty(k); if (!$("f-on").checked && summaryText(true)) $("f-on").checked = true; fdlg.close(); reload(); indicate(); };
-  $("f-edit").onclick = () => { before = snap(); fdlg.showModal(); };
+  $("f-edit").onclick = () => { before = snap(); fdlg.showModal(); preLoad(); loadZone().then(refreshAll).then(preMark); };
   fdlg.addEventListener("cancel", (e) => { e.preventDefault(); $("f-cancel").click(); });
   $("f-cancel").onclick = () => { restore(before); fdlg.close(); indicate(); };
   $("f-apply").onclick = applyDlg;
   $("f-on").onchange = () => { reload().then(indicate); };
   $("f-btn").onclick = () => { $("f-on").checked = !$("f-on").checked; $("f-on").onchange(); indicate(); };
-  $("f-clear").onclick = () => { for (const k of ids) { if (PICK[k]) setPick(k, ""); else $("f-" + k).value = ""; } $("f-unid").checked = false; $("f-omit").checked = false; indicate(); };
+  $("f-clear").onclick = () => { for (const k of ids) { if (PICK[k]) setPick(k, ""); else $("f-" + k).value = ""; } for (const k of ["fromd", "fsun", "tod", "tsun"]) $("f-" + k).value = ""; delete kept.from; delete kept.to; decorate(); $("f-unid").checked = false; $("f-omit").checked = false; $("f-prename").value = ""; indicate(); preMark(); };
   $("f-unid").addEventListener("change", () => { if ($("f-unid").checked) $("f-omit").checked = false; }); // UNID only and Omit UNID exclude each other
   $("f-omit").addEventListener("change", () => { if ($("f-omit").checked) $("f-unid").checked = false; });
+
+  // ---- filter presets: 10 numbered buttons. A short press loads the preset into the dialog (to use it as the start of another one);
+  // a press held for 0.6 s (or Shift-click) stores the filter as it stands in the dialog, with the name typed beside the buttons;
+  // Alt-click empties the slot. The Log tab's list applies a preset in one step. They live on the server, so every browser sees the
+  // same ones; viewers can recall but not store. A relative date or time is stored as its words (today-1, sunset-1h), not as the
+  // date it showed, so recalling a preset on another day means that day.
+  const LONG = 600;
+  const presetNow = () => {
+    const v = {}; for (const k of ids) v[k] = $("f-" + k).value.trim();
+    const loc = isLocal();
+    const end = (k) => { const c = REL[k], d = loc ? $(c.d).value : "", sn = loc ? $(c.s).value : ""; return { date: d ? "" : v[k], time: sn ? "" : v[k + "t"], d, s: sn }; };
+    return { version: 1, zone: loc ? "local" : "utc", from: end("from"), to: end("to"), freq: v.freq, rcv: v.rcv, area: v.area, b1: v.b1, kind: v.kind, text: v.text, kmin: v.kmin, kmax: v.kmax, unid: $("f-unid").checked, omit: $("f-omit").checked };
+  };
+  const nowKey = () => canon(presetNow()) + (Object.keys(PICK).some((k) => pickBoxes(k).every((x) => !x.checked)) ? "!" : ""); // "!": a list with nothing ticked never matches
+  const canon = (f) => JSON.stringify([f.zone, [f.from.date, f.from.time, f.from.d, f.from.s], [f.to.date, f.to.time, f.to.d, f.to.s], f.freq, f.rcv, f.area, f.b1, f.kind, f.text, f.kmin, f.kmax, !!f.unid, !!f.omit]);
+  const presetDescribe = (f) => {
+    const parts = [], list = (x) => x.replace(/,/g, ", ");
+    if (f.freq) parts.push("Frequency " + list(f.freq)); if (f.rcv) parts.push("Channel " + list(f.rcv));
+    if (f.area) parts.push("NAVAREA " + list(f.area)); if (f.b1) parts.push("ID letter " + list(f.b1)); if (f.kind) parts.push("Kind " + list(f.kind));
+    const t = (e) => { const d = e.d || e.date, tm = e.s || e.time; return d ? d + (tm ? " " + tm : "") : "…"; };
+    if (f.from.d || f.from.date || f.to.d || f.to.date) parts.push("Dates " + t(f.from) + " to " + t(f.to) + (f.zone === "local" ? " local" : " UTC"));
+    if (f.kmin || f.kmax) parts.push("Distance " + (f.kmin || "0") + "–" + (f.kmax || "∞") + " km");
+    if (f.unid) parts.push("UNID only"); if (f.omit) parts.push("UNID omitted");
+    if (f.text) parts.push("Body text “" + f.text + "”");
+    return parts.join(" · ") || "no filters (all records)";
+  };
+  const preBtns = [];
+  const preName = (i) => (PRE.slots[i] && PRE.slots[i].name) || "Preset " + (i + 1);
+  function preMark() { // which slots hold something, and which one is what the dialog shows now
+    const now = nowKey();
+    preBtns.forEach((b, i) => {
+      const f = PRE.slots[i];
+      b.classList.toggle("full", !!f);
+      b.classList.toggle("on", !!f && canon(f) === now);
+      b.title = f ? preName(i) + "\n" + presetDescribe(f) : (i + 1) + ": empty";
+      b.title += admin() ? "\nClick: load it here \u00b7 hold, or Shift-click: store the filter shown here" + (f ? " \u00b7 Alt-click: empty it" : "") : "\nClick: load it here";
+      b.setAttribute("aria-label", f ? preName(i) + ": " + presetDescribe(f) : "Preset " + (i + 1) + ", empty");
+    });
+    $("f-prename").disabled = !admin();
+    selSync();
+  }
+  // the Log tab's list: the stored presets by name; the one that matches the filter in use is selected, "custom" says none does
+  function selSync() {
+    const sel = $("f-presel"), on = $("f-on").checked, now = nowKey();
+    const used = PRE.slots.map((f, i) => (f ? i : -1)).filter((i) => i >= 0);
+    const cur = on ? used.find((i) => canon(PRE.slots[i]) === now) : undefined;
+    sel.replaceChildren(new Option(on && cur === undefined ? "custom" : "presets\u2026", ""), ...used.map((i) => new Option(preName(i), String(i + 1))));
+    sel.value = cur === undefined ? "" : String(cur + 1);
+    sel.disabled = used.length === 0;
+    sel.title = used.length ? "Apply a stored filter preset" : "No presets are stored yet: set a filter in edit, then hold a preset button";
+  }
+  function preNote(text, undo) {
+    const m = $("f-premsg"), id = ++PRE.note;
+    m.textContent = text;
+    if (undo) { const b = el("button", { type: "button", text: "undo" }); b.onclick = () => { m.textContent = ""; undo(); }; m.append(b); }
+    setTimeout(() => { if (id === PRE.note) m.textContent = ""; }, 9000);
+  }
+  async function preLoad() {
+    try { PRE.slots = (await api("GET", "/api/presets")).slots || []; } catch (e) { /* keep what is shown */ }
+    preMark();
+  }
+  async function preWrite(n, f) { // f null: empty the slot
+    const j = f ? await api("PUT", "/api/presets/" + n, f) : await api("DELETE", "/api/presets/" + n);
+    PRE.slots = j.slots || PRE.slots; preMark();
+  }
+  async function preStore(n) {
+    if (!admin()) return;
+    const prev = PRE.slots[n - 1] || null;
+    try {
+      await preWrite(n, { ...presetNow(), name: $("f-prename").value.trim() });
+      preNote("Stored in " + n + (prev ? " (replacing: " + presetDescribe(prev) + ")" : "") + ".", () => preWrite(n, prev).then(() => preNote("Put back."), (e) => preNote(e.message)));
+    } catch (e) { preNote("Not stored: " + e.message); }
+  }
+  async function preLoadForm(n) { // put preset n into the dialog's fields (and its name into the name box)
+    const f = PRE.slots[n - 1];
+    if (!f) return false;
+    const pick = [f.freq, f.rcv, f.area, f.b1, f.kind, f.text, f.from.date, f.from.time, f.to.date, f.to.time, f.kmin, f.kmax]; // in the order of `ids`
+    restore({ v: pick, x: [f.zone, f.from.d, f.from.s, f.to.d, f.to.s], u: !!f.unid, o: !!f.omit });
+    $("f-prename").value = f.name || "";
+    await refreshAll(); // the boxes show what the relative words mean today
+    preMark();
+    return true;
+  }
+  async function preUse(n) { // a short press: load it, so that it can be adjusted and stored as another preset; Apply uses it
+    if (!(await preLoadForm(n))) preNote(admin() ? "Preset " + n + " is empty: hold the button to store the filter shown here." : "Preset " + n + " is empty.");
+    else preNote(preName(n - 1) + " loaded.");
+  }
+  async function preApply(n) { // from the Log tab's list
+    if (await preLoadForm(n)) applyDlg();
+  }
+  const prebox = $("f-prebtns");
+  for (let n = 1; n <= 10; n++) {
+    const b = el("button", { type: "button", text: String(n) });
+    let timer = 0, held = false;
+    const stop = () => { clearTimeout(timer); timer = 0; b.classList.remove("hold"); };
+    b.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0 || !admin() || e.shiftKey || e.altKey) return;
+      held = false; b.classList.remove("hold"); void b.offsetWidth; b.classList.add("hold"); // (restarts the fill)
+      timer = setTimeout(() => { held = true; stop(); preStore(n); }, LONG);
+    });
+    for (const ev of ["pointerup", "pointerleave", "pointercancel"]) b.addEventListener(ev, stop);
+    b.addEventListener("contextmenu", (e) => e.preventDefault()); // a held touch would otherwise open the browser's menu
+    b.addEventListener("click", async (e) => {
+      if (held) { held = false; return; } // the hold already stored it
+      if (e.altKey) {
+        if (!admin() || !PRE.slots[n - 1] || !confirm("Empty preset " + n + "?\n" + presetDescribe(PRE.slots[n - 1]))) return;
+        const prev = PRE.slots[n - 1];
+        try { await preWrite(n, null); preNote("Preset " + n + " emptied.", () => preWrite(n, prev).then(() => preNote("Put back."), (er) => preNote(er.message))); } catch (er) { preNote(er.message); }
+      } else if (e.shiftKey) preStore(n);
+      else preUse(n);
+    });
+    prebox.appendChild(b); preBtns.push(b);
+  }
+  fdlg.addEventListener("input", preMark); fdlg.addEventListener("change", preMark);
+  $("f-presel").onchange = () => { const n = Number($("f-presel").value); if (n) preApply(n); else selSync(); };
+  preLoad();
   // what the filter boxes say, in one line (also used when the filter is switched off)
   function summaryText() {
     const v = (k) => $("f-" + k).value.trim(), parts = [];
@@ -756,7 +981,10 @@
     if (v("area")) parts.push("NAVAREA " + v("area").replace(/,/g, ", "));
     if (v("b1")) parts.push("ID letter " + v("b1").replace(/,/g, ", "));
     if (v("kind")) parts.push("Kind " + v("kind").replace(/,/g, ", "));
-    if (v("from") || v("to")) { const t = (k) => v(k) ? v(k) + (tmOk(v(k + "t")) ? " " + v(k + "t") : "") : "\u2026"; parts.push("Dates " + t("from") + " to " + t("to") + " UTC"); }
+    if (v("from") || v("to") || (isLocal() && ($("f-fromd").value || $("f-tod").value))) {
+      const t = (k) => { const c = REL[k], d = (isLocal() && $(c.d).value) || v(k), tm = (isLocal() && $(c.s).value) || (tmOk(v(k + "t")) ? v(k + "t") : ""); return d ? d + (tm ? " " + tm : "") : "\u2026"; };
+      parts.push("Dates " + t("from") + " to " + t("to") + (isLocal() ? " local" : " UTC"));
+    }
     if (v("kmin") || v("kmax")) parts.push("Distance " + (v("kmin") || "0") + "\u2013" + (v("kmax") || "\u221e") + " km");
     if ($("f-unid").checked) parts.push("UNID only");
     if ($("f-omit").checked) parts.push("UNID omitted");
@@ -771,6 +999,7 @@
   }
   // the filter indicator: what is applied, how much it hides, and what arrived since that the filter hides; the Log tab gets a dot
   function indicate() {
+    try { selSync(); } catch (e) { /* not set up yet */ }
     const on = filterOn();
     const hid = Math.max(0, (L.la - L.lt) - L.hid0);
     $("f-ind").classList.toggle("on", on);

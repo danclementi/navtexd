@@ -200,6 +200,8 @@ func TestLiveListMatchesRestartRule(t *testing.T) {
 			}
 		case "channel.frequency_hz":
 			v = "486000"
+		case "operator.time_zone":
+			v = "Europe/Oslo"
 		}
 		if err := Set(&next, f.Path, v); err != nil {
 			t.Errorf("%s: %v", f.Path, err)
@@ -595,5 +597,25 @@ func TestOldSwapIQBecomesMirrorIQ(t *testing.T) {
 	if !c.Input.SpyServer.MirrorIQ || !c.Input.Device.MirrorIQ || c.Input.HPSDR.MirrorIQ || !c.Extra[0].Input.SDRconnect.MirrorIQ || c.Extra[0].Input.File.MirrorIQ {
 		t.Errorf("migrated values: spy %v device %v hpsdr %v extra sdrconnect %v file %v", c.Input.SpyServer.MirrorIQ, c.Input.Device.MirrorIQ,
 			c.Input.HPSDR.MirrorIQ, c.Extra[0].Input.SDRconnect.MirrorIQ, c.Extra[0].Input.File.MirrorIQ)
+	}
+}
+
+func TestTimeZoneOption(t *testing.T) {
+	c := Default()
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	c.Operator.TimeZone = "Europe/Oslo"
+	c.Operator.LatDeg, c.Operator.LonDeg = 59.9, 10.7
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	z := c.Operator.Zone()
+	if z.Loc.String() != "Europe/Oslo" || !z.HavePos {
+		t.Errorf("zone = %+v", z)
+	}
+	c.Operator.TimeZone = "Oslo"
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "operator.time_zone") {
+		t.Errorf("a bad zone name gave %v", err)
 	}
 }

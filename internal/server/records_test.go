@@ -17,6 +17,7 @@ import (
 	"navtex/internal/config"
 	"navtex/internal/sitor"
 	"navtex/internal/store"
+	"navtex/internal/when"
 )
 
 func addMsg(t *testing.T, st *store.Store, cat interface{ Enrich(*store.Record) }, b1 string, at time.Time, lines ...string) store.Record {
@@ -610,6 +611,90 @@ func TestLogFilterTimes(t *testing.T) {
 	}
 }
 
+// A From or To that starts "local:" is in the receiver's zone and may be relative; "today" is the receiver's today.
+func TestLogFilterLocalTimes(t *testing.T) {
+	loc, err := when.LoadLocation("America/New_York")
+	if err != nil {
+		t.Fatal(err)
+	}
+	z := when.Zone{Loc: loc, Lat: 40.71, Lon: -74.0, HavePos: true}
+	now := time.Date(2026, 11, 13, 3, 0, 0, 0, time.UTC) // 22:00 on the 12th in New York
+	ts := func(f, to string) (string, string, error) {
+		fl, err := logFilterZ(url.Values{"from": {f}, "to": {to}}, false, z, now)
+		return fl.From.UTC().Format("2006-01-02T15:04Z"), fl.To.UTC().Format("2006-01-02T15:04Z"), err
+	}
+	// yesterday and today, whole days: the 11th 00:00 EST to the end of the 12th
+	if f, to, err := ts("local:today-1", "local:today"); err != nil || f != "2026-11-11T05:00Z" || to != "2026-11-13T05:00Z" {
+		t.Errorf("days: %s %s %v", f, to, err)
+	}
+	// a fixed local date and time, To including its minute
+	if f, to, err := ts("local:2026-11-10@08:00", "local:2026-11-10@09:30"); err != nil || f != "2026-11-10T13:00Z" || to != "2026-11-10T14:31Z" {
+		t.Errorf("fixed: %s %s %v", f, to, err)
+	}
+	// the evening before to an hour after sunrise: sunset on the 11th is 16:40 EST, sunrise on the 12th 06:36 EST
+	f, to, err := ts("local:today-1@sunset-1h", "local:today@sunrise+1h")
+	if err != nil || f[:11] != "2026-11-11T" || f[11:13] != "20" || to[:11] != "2026-11-12T" || to[11:13] != "12" {
+		t.Errorf("last night: %s %s %v", f, to, err)
+	}
+	// UTC values are unchanged
+	if f, to, err := ts("2026-11-10", "2026-11-10"); err != nil || f != "2026-11-10T00:00Z" || to != "2026-11-11T00:00Z" {
+		t.Errorf("utc: %s %s %v", f, to, err)
+	}
+	// mistakes and a missing sun are reported
+	for _, bad := range []string{"local:today-9", "local:today@noon", "local:tomorrow", "local:2026-11-10@25:00"} {
+		if _, _, err := ts(bad, ""); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+	z.HavePos = false
+	if _, _, err := ts("local:today@sunset", ""); err == nil || !strings.Contains(err.Error(), "position") {
+		t.Errorf("sun without a position: %v", err)
+	}
+	z.HavePos, z.Lat, z.Lon = true, 69.65, 18.96
+	if _, _, err := ts("local:2026-06-21@sunset", ""); err == nil || !strings.Contains(err.Error(), "does not rise or set") {
+		t.Errorf("midnight sun: %v", err)
+	}
+}
+
+// /api/when describes the zone and resolves a value in both zones (the filter dialog's boxes).
+func TestWhenEndpoint(t *testing.T) {
+	cfg := config.Default()
+	cfg.Input.File.Path = "/nonexistent.wav"
+	cfg.Input.Source = "file"
+	cfg.Operator.TimeZone = "America/New_York"
+	cfg.Operator.LatDeg, cfg.Operator.LonDeg = 40.71, -74.0
+	s, _, _, _ := setup(t, cfg)
+	srv := httptest.NewServer(s.handler(false))
+	defer srv.Close()
+	tunnel := httptest.NewServer(s.handler(true)) // viewers may use it too
+	defer tunnel.Close()
+	code, j := do(t, tunnel, "GET", "/api/when", nil, nil)
+	if code != 200 || j["zone"] != "America/New_York" || j["sun"] != true {
+		t.Fatalf("zone: %d %v", code, j)
+	}
+	// a fixed value moves between the zones: 2026-11-10 08:00 local (EST) is 13:00 UTC
+	code, j = do(t, srv, "GET", "/api/when?v=local:2026-11-10@08:00", nil, nil)
+	if code != 200 || j["utc_date"] != "2026-11-10" || j["utc_time"] != "13:00" || j["local_time"] != "08:00" || j["has_time"] != true {
+		t.Errorf("local to utc: %d %v", code, j)
+	}
+	// 2026-11-10 02:30 UTC is the evening of the 9th in New York
+	code, j = do(t, srv, "GET", "/api/when?v=utc:2026-11-10T02:30", nil, nil)
+	if code != 200 || j["local_date"] != "2026-11-09" || j["local_time"] != "21:30" {
+		t.Errorf("utc to local: %d %v", code, j)
+	}
+	// a relative value resolves now; a date alone has no time part
+	code, j = do(t, srv, "GET", "/api/when?v=local:today-1", nil, nil)
+	if want := time.Now().In(s.zone().Loc).AddDate(0, 0, -1).Format("2006-01-02"); code != 200 || j["local_date"] != want || j["has_time"] != false {
+		t.Errorf("today-1: want %s: %d %v", want, code, j)
+	}
+	if code, j = do(t, srv, "GET", "/api/when?v=local:today@sunset-1h", nil, nil); code != 200 || j["local_time"] == "" {
+		t.Errorf("sunset: %d %v", code, j)
+	}
+	if code, _ = do(t, srv, "GET", "/api/when?v=local:today-9", nil, nil); code != 400 {
+		t.Errorf("a bad value: %d", code)
+	}
+}
+
 // The trash can be listed (the latest deletion first), searched, and any of its messages restored, whichever deletion they
 // were in; viewers may not touch it.
 func TestTrashListAndRestore(t *testing.T) {
@@ -711,5 +796,61 @@ func TestRevisionMayHoldThePoundSign(t *testing.T) {
 	}
 	if _, d := do(t, admin, "GET", url, nil, nil); d["eff"].([]any)[1] != "WEATHER <£IG£>" {
 		t.Errorf("effective %v", d["eff"])
+	}
+}
+
+// The numbered filter presets: viewers read them, only an administrator stores or clears one, and they outlive the program.
+func TestFilterPresets(t *testing.T) {
+	cfg := config.Default()
+	cfg.Input.File.Path = "/nonexistent.wav"
+	cfg.Input.Source = "file"
+	s, _, _, dir := setup(t, cfg)
+	admin := httptest.NewServer(s.handler(false))
+	defer admin.Close()
+	tunnel := httptest.NewServer(s.handler(true))
+	defer tunnel.Close()
+	code, j := do(t, tunnel, "GET", "/api/presets", nil, nil)
+	if sl, _ := j["slots"].([]any); code != 200 || len(sl) != 10 || sl[0] != nil {
+		t.Fatalf("empty list: %d %v", code, j)
+	}
+	f := map[string]any{"version": 1, "zone": "local", "from": map[string]any{"d": "today-1", "s": "sunset-1h"}, "to": map[string]any{"d": "today", "s": "sunrise+1h"}, "freq": "518", "kind": "message", "name": "Night"}
+	if code, _ = do(t, tunnel, "PUT", "/api/presets/2", f, nil); code != 403 && code != 401 {
+		t.Errorf("a viewer stored a preset: %d", code)
+	}
+	if code, _ = do(t, tunnel, "DELETE", "/api/presets/2", nil, nil); code != 403 && code != 401 {
+		t.Errorf("a viewer cleared a preset: %d", code)
+	}
+	if code, j = do(t, admin, "PUT", "/api/presets/2", f, nil); code != 200 {
+		t.Fatalf("store: %d %v", code, j)
+	}
+	// the relative words are kept, and a viewer sees them
+	_, j = do(t, tunnel, "GET", "/api/presets", nil, nil)
+	two, _ := j["slots"].([]any)[1].(map[string]any)
+	if from, _ := two["from"].(map[string]any); two == nil || from["d"] != "today-1" || from["s"] != "sunset-1h" || from["date"] != "" || two["freq"] != "518" || two["name"] != "Night" {
+		t.Errorf("stored: %v", two)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "navtexd_filter_presets.json")); err != nil {
+		t.Errorf("no preset file: %v", err)
+	}
+	for name, body := range map[string]any{
+		"unknown field":   map[string]any{"version": 1, "zone": "utc", "evil": 1},
+		"bad relative":    map[string]any{"version": 1, "zone": "local", "from": map[string]any{"d": "today-9"}},
+		"relative in utc": map[string]any{"version": 1, "zone": "utc", "from": map[string]any{"d": "today"}},
+	} {
+		if code, _ = do(t, admin, "PUT", "/api/presets/3", body, nil); code != 400 {
+			t.Errorf("%s: %d", name, code)
+		}
+	}
+	if code, _ = do(t, admin, "PUT", "/api/presets/11", f, nil); code != 404 {
+		t.Errorf("slot 11: %d", code)
+	}
+	if code, j = do(t, admin, "PUT", "/api/presets/4", f, nil); code != 400 || !strings.Contains(fmt.Sprint(j["error"]), "preset 2") {
+		t.Errorf("a name used twice: %d %v", code, j)
+	}
+	if code, _ = do(t, admin, "DELETE", "/api/presets/2", nil, nil); code != 200 {
+		t.Errorf("clear: %d", code)
+	}
+	if _, j = do(t, tunnel, "GET", "/api/presets", nil, nil); j["slots"].([]any)[1] != nil {
+		t.Errorf("not cleared: %v", j)
 	}
 }

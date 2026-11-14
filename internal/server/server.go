@@ -26,6 +26,7 @@ import (
 	"navtex/internal/catalog"
 	"navtex/internal/config"
 	"navtex/internal/engine"
+	"navtex/internal/presets"
 	"navtex/internal/sitor"
 	"navtex/internal/store"
 )
@@ -49,6 +50,7 @@ type Server struct {
 	rate   rateLimiter  // requests of viewers
 	warnAt atomic.Int64 // when the system log was last told about a refused viewer (unix seconds)
 	cat    *catalog.Catalog
+	pre    *presets.Store // the Log filter presets
 	run    *app.Runner
 	hub    *Hub
 	acc    *Access
@@ -76,6 +78,7 @@ func New(st *store.Store) *Server { return &Server{st: st, hub: NewHub(), places
 // Attach connects the runner whose state and controls the server exposes.
 func (s *Server) Attach(r *app.Runner, cat *catalog.Catalog) {
 	s.run, s.cat = r, cat
+	s.pre = presets.Open(r.DataDir())
 	s.acc = NewAccess(func() config.Server { return r.Config().Server })
 	s.acc.Limiter = &s.logins
 }
@@ -430,6 +433,7 @@ func (s *Server) handler(tunnel bool) http.Handler {
 	mux.HandleFunc("GET /api/state", s.viewer(tunnel, func(w http.ResponseWriter, r *http.Request, id Identity) { writeJSON(w, 200, s.hello(id)) }))
 	mux.HandleFunc("GET /api/events", s.events(tunnel))
 	s.recordRoutes(mux, tunnel)
+	s.presetRoutes(mux, tunnel)
 	s.extraRoutes(mux, tunnel)
 	mux.HandleFunc("GET /api/settings", s.admin(tunnel, s.getSettings))
 	mux.HandleFunc("PUT /api/settings", s.admin(tunnel, s.putSettings))
