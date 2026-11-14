@@ -1,0 +1,10 @@
+Fragments: offer stations due at that time as candidates
+
+A fragment has no header, so no B1 or NAVAREA and nothing was scored.
+ident.Fragment now scores the stations of the frequency whose slot
+covers the reception time and offers up to 3 with keyword evidence as
+candidates (never named). catalog.fragmentWhy shows them in Why?, keeps
+the forced-ID chip, and evidence() is shared with Explain.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01NtdzyoDL7BwYD4fLhAcepE

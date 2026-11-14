@@ -202,3 +202,34 @@ func TestMisreadB1OffersStationDueAtThatTime(t *testing.T) {
 		t.Errorf("no keywords: offered %v", r.Candidates)
 	}
 }
+
+// A fragment has no header, so no B1 and no area: the stations due at that time with keywords in the text are offered, none is named.
+func TestFragmentOffersStationsDueAtThatTime(t *testing.T) {
+	id := load(t)
+	text := "SOUTH OF NANTUCKET SHOALS"
+	r := id.Fragment(Input{FreqKHz: 518, When: at(0, 52), Text: text})
+	if r.Index != -1 || r.Method != "" || len(r.Candidates) == 0 || name(id, Result{Index: r.Candidates[0].Index}) != "NMF Boston" {
+		t.Errorf("due station: index %d method %q cands %v", r.Index, r.Method, r.Candidates)
+	}
+	if len(r.Candidates) > maxFragment {
+		t.Errorf("%d candidates", len(r.Candidates))
+	}
+	for _, c := range r.Candidates {
+		if c.Keyword < fragMinKeyword {
+			t.Errorf("a candidate without keyword evidence: %+v", c)
+		}
+	}
+	if r := id.Fragment(Input{FreqKHz: 518, When: at(2, 10), Text: text}); len(r.Candidates) != 0 {
+		t.Errorf("out of slot: %v", r.Candidates)
+	}
+	if r := id.Fragment(Input{FreqKHz: 518, When: at(0, 52), Text: "NO USEFUL WORDS"}); len(r.Candidates) != 0 {
+		t.Errorf("no keywords: %v", r.Candidates)
+	}
+	if r := id.Fragment(Input{FreqKHz: 518, Text: text}); len(r.Candidates) != 0 {
+		t.Errorf("time unknown: %v", r.Candidates)
+	}
+	// a B1 or area passed in is not used: the fragment may come from any station of the frequency
+	if r := id.Fragment(Input{FreqKHz: 518, B1: "Q", NavArea: 9, When: at(0, 52), Text: text}); len(r.Candidates) == 0 {
+		t.Error("B1 and area were used")
+	}
+}

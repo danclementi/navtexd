@@ -56,11 +56,7 @@ func (c *Catalog) Explain(r store.Record, loc bool) *Why {
 	b1 := r.B1
 	w.B1Known = len(b1) == 1 && b1[0] >= 'A' && b1[0] <= 'Z' || len(b1) == 1 && b1[0] >= 'a' && b1[0] <= 'z'
 	if r.Kind == "fragment" {
-		w.Chips = append(w.Chips, Chip{"info", "fragment", "A fragment has no start, so no station is worked out for it; the operator can give it one."})
-		if r.StationID > 0 {
-			w.Chips = append(w.Chips, Chip{"warn", "forced ID", "The station was chosen by the operator; the message text does not support it."})
-		}
-		return w
+		return c.fragmentWhy(r, w, loc)
 	}
 	counts := map[int]int(nil)
 	if c.st != nil {
@@ -145,46 +141,7 @@ func (c *Catalog) Explain(r store.Record, loc bool) *Why {
 		chip("warn", "B1 differs", fmt.Sprintf("The station sends with B1 %s, not the %s that was read: the letter was probably misread, and the station is the one due to transmit at that time whose keywords fit.", c.tab.Stations[r.StationID-1].ID, strings.ToUpper(r.B1)))
 	}
 	if main != nil {
-		uid, gid, shared, loose, dup := 0, 0, 0, false, false
-		seen := map[string]bool{}
-		for _, t := range main.Terms {
-			switch t.Kind {
-			case "uid":
-				uid++
-			case "gid":
-				gid++
-				if t.Shared > 1 {
-					shared++
-				}
-			case "slot":
-				if t.Used && t.Points > 0 {
-					chip("ok", "slot ✓", "The message started inside the station's transmission time slot (B1 was not read, so the time counts).")
-				}
-			}
-			if (t.Kind == "uid" || t.Kind == "gid") && t.Points >= 0 {
-				if t.Keyword != "" && !seen[t.Keyword] {
-					seen[t.Keyword] = true
-					w.Keywords = append(w.Keywords, t.Keyword)
-				}
-				loose = loose || t.Loose
-				dup = dup || t.Dup
-			}
-		}
-		if uid > 0 {
-			chip("ok", fmt.Sprintf("UID ×%d", uid), "Keywords of this station found in the text, each only used by it.")
-		}
-		if gid > 0 {
-			chip("ok", fmt.Sprintf("GID ×%d", gid), "Area keywords found in the text.")
-		}
-		if uid == 0 && gid > 0 && shared == gid {
-			chip("warn", "shared keywords", "All keyword evidence is also used by other stations of this frequency, so each hit counts for only a share.")
-		}
-		if loose {
-			chip("warn", "inside a word", "A keyword was found only as part of a longer word.")
-		}
-		if dup {
-			chip("warn", "repeated keyword", "The station's keyword list holds a keyword twice, so it was counted twice.")
-		}
+		w.evidence(main)
 	}
 	if w.B1Known {
 		chip("info", "B1 "+b1, "The station letter as received. If it was misread, the stations are narrowed down wrongly.")
@@ -199,6 +156,110 @@ func (c *Catalog) Explain(r store.Record, loc bool) *Why {
 	}
 	if w.Differs != "" {
 		chip("warn", "differs now", "Worked out again with the current station table, this message gives: "+w.Differs)
+	}
+	return w
+}
+
+// evidence adds the chips that describe the keywords and the time slot of the station that the explanation is about, and lists the
+// keywords that were found.
+func (w *Why) evidence(main *WhyCand) {
+	chip := func(k, t, tip string) { w.Chips = append(w.Chips, Chip{k, t, tip}) }
+	uid, gid, shared, loose, dup := 0, 0, 0, false, false
+	seen := map[string]bool{}
+	for _, t := range main.Terms {
+		switch t.Kind {
+		case "uid":
+			uid++
+		case "gid":
+			gid++
+			if t.Shared > 1 {
+				shared++
+			}
+		case "slot":
+			if t.Used && t.Points > 0 {
+				chip("ok", "slot ✓", "The message started inside the station's transmission time slot (B1 was not read, so the time counts).")
+			}
+		}
+		if (t.Kind == "uid" || t.Kind == "gid") && t.Points >= 0 {
+			if t.Keyword != "" && !seen[t.Keyword] {
+				seen[t.Keyword] = true
+				w.Keywords = append(w.Keywords, t.Keyword)
+			}
+			loose = loose || t.Loose
+			dup = dup || t.Dup
+		}
+	}
+	if uid > 0 {
+		chip("ok", fmt.Sprintf("UID ×%d", uid), "Keywords of this station found in the text, each only used by it.")
+	}
+	if gid > 0 {
+		chip("ok", fmt.Sprintf("GID ×%d", gid), "Area keywords found in the text.")
+	}
+	if uid == 0 && gid > 0 && shared == gid {
+		chip("warn", "shared keywords", "All keyword evidence is also used by other stations of this frequency, so each hit counts for only a share.")
+	}
+	if loose {
+		chip("warn", "inside a word", "A keyword was found only as part of a longer word.")
+	}
+	if dup {
+		chip("warn", "repeated keyword", "The station's keyword list holds a keyword twice, so it was counted twice.")
+	}
+}
+
+// fragmentWhy explains a fragment. It has no start, so B1 and the NAVAREA are unknown and no station is worked out for it; the
+// stations that are due at the time and have keywords in the text are shown as candidates, for the operator to choose from.
+func (c *Catalog) fragmentWhy(r store.Record, w *Why, loc bool) *Why {
+	w.B1, w.B1Known = "", false
+	w.Chips = append(w.Chips, Chip{"info", "fragment", "A fragment has no start, so B1 and the NAVAREA are unknown and no station is named for it. Stations that are due to transmit at that time and have keywords in the text are offered as candidates."})
+	counts := map[int]int(nil)
+	if c.st != nil {
+		counts = c.st.CountByStation()
+	}
+	c.mu.Lock() // the identifier's History hook is shared
+	defer c.mu.Unlock()
+	in := ident.Input{FreqKHz: float64(r.Channel) / 1000, When: r.Received, Text: bodyText(&r)}
+	if loc && c.Position != nil {
+		in.OpLat, in.OpLon, in.HaveOp = c.Position()
+	}
+	c.id.History = func(i int) int { return counts[i+1] }
+	res := c.id.Fragment(in)
+	w.Rivals = res.Rivals
+	if !math.IsInf(res.Margin, 0) && !math.IsNaN(res.Margin) {
+		w.Margin = math.Round(res.Margin*100) / 100
+	}
+	add := func(cd ident.Candidate) {
+		w.Cands = append(w.Cands, WhyCand{ID: cd.Index + 1, Label: Label(c.tab.Stations[cd.Index]), Score: cd.Score, Keyword: math.Round(cd.Keyword*100) / 100, Terms: cd.Terms, Chosen: cd.Index+1 == r.StationID})
+	}
+	have := false
+	for _, cd := range res.Candidates {
+		add(cd)
+		have = have || cd.Index+1 == r.StationID
+	}
+	if r.StationID > 0 {
+		w.Chips = append(w.Chips, Chip{"warn", "forced ID", "The station was chosen by the operator; a fragment has no header to check it against."})
+		if !have && r.StationID <= len(c.tab.Stations) {
+			add(c.id.Explain(in, r.StationID-1))
+		}
+	}
+	var main *WhyCand
+	for i := range w.Cands {
+		if w.Cands[i].Chosen {
+			main = &w.Cands[i]
+		}
+	}
+	if main == nil && len(w.Cands) > 0 {
+		main = &w.Cands[0]
+	}
+	if r.StationID == 0 {
+		if main == nil {
+			w.Reason = "No station of this frequency that is due at this time has keywords in the text."
+		} else {
+			w.Reason = "The candidates are the stations due at this time with keywords in the text; choose one if it is right."
+		}
+		w.Chips = append(w.Chips, Chip{"warn", "UNID", "A fragment is not named automatically. " + w.Reason})
+	}
+	if main != nil {
+		w.evidence(main)
 	}
 	return w
 }

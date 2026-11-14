@@ -38,6 +38,10 @@ const (
 	minMargin     = 0.75
 	maxCandidates = 6
 	maxOffLetter  = 2 // stations of other letters offered as candidates when B1 may have been misread
+	// A fragment has no start, so no B1 and no area: stations that are due to transmit at the time of reception and have at least
+	// fragMinKeyword points from keywords in the text are offered as candidates (at most maxFragment), never named.
+	fragMinKeyword = 1.0
+	maxFragment    = 3
 )
 
 // Input is what is known about a received message.
@@ -452,6 +456,43 @@ func (id *Identifier) Identify(in Input) Result {
 		}
 	default:
 		res.Ambiguous = best.kw >= minKeyword
+	}
+	return res
+}
+
+// Fragment looks for the stations that may have sent a fragment of a message, which has no header: B1 and the NAVAREA are
+// unknown, so every station of the frequency whose slot covers the time of reception (inside it, or up to 30 minutes after its
+// start) is scored on its keywords, the time of day, distance and history, and those with keyword evidence are returned as
+// candidates. No station is ever named, only offered: Index stays -1.
+func (id *Identifier) Fragment(in Input) Result {
+	res := Result{Index: -1}
+	if in.When.IsZero() {
+		return res
+	}
+	in.B1, in.NavArea = "?", 0
+	text := Normalize(in.Text)
+	type sc struct {
+		i int
+		score
+	}
+	var list []sc
+	for _, i := range id.byFreq[in.FreqKHz] {
+		if slotFit(id.tab.Stations[i], in.When) == 0 {
+			continue
+		}
+		if o := id.score(i, in, text); o.kw >= fragMinKeyword {
+			list = append(list, sc{i, o})
+		}
+	}
+	sort.SliceStable(list, func(a, b int) bool { return list[a].total > list[b].total })
+	for n, c := range list {
+		if n >= maxFragment {
+			break
+		}
+		res.Candidates = append(res.Candidates, Candidate{Index: c.i, Score: round2(c.total), Keyword: c.kw, Terms: c.terms})
+	}
+	if len(list) > 1 {
+		res.Margin, res.Rivals = list[0].total-list[1].total, true
 	}
 	return res
 }
