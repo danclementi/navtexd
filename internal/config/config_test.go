@@ -202,6 +202,8 @@ func TestLiveListMatchesRestartRule(t *testing.T) {
 			v = "486000"
 		case "operator.time_zone":
 			v = "Europe/Oslo"
+		case "identify.strictness":
+			v = "lenient"
 		}
 		if err := Set(&next, f.Path, v); err != nil {
 			t.Errorf("%s: %v", f.Path, err)
@@ -617,5 +619,25 @@ func TestTimeZoneOption(t *testing.T) {
 	c.Operator.TimeZone = "Oslo"
 	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "operator.time_zone") {
 		t.Errorf("a bad zone name gave %v", err)
+	}
+}
+
+func TestStrictnessOption(t *testing.T) {
+	c := Default()
+	if c.Identify.Strictness != "balanced" {
+		t.Errorf("default strictness %q, want balanced", c.Identify.Strictness)
+	}
+	for _, v := range []string{"strict", "balanced", "lenient"} {
+		c.Identify.Strictness = v
+		if err := c.Validate(); err != nil {
+			t.Errorf("%s: %v", v, err)
+		}
+	}
+	c.Identify.Strictness = "medium"
+	if c.Validate() == nil {
+		t.Error("an unknown strictness was accepted")
+	}
+	if !IsLive("identify.strictness") {
+		t.Error("the strictness should apply without a restart")
 	}
 }

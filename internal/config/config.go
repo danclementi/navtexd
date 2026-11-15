@@ -37,6 +37,7 @@ type Config struct {
 	Operator    Operator            `json:"operator"`
 	Logging     Logging             `json:"logging"`
 	Autocorrect Autocorrect         `json:"autocorrect"`
+	Identify    Identify            `json:"identify"`
 	Server      Server              `json:"server"`
 	Clips       Clips               `json:"clips"`
 	Compare     Compare             `json:"compare"`
@@ -190,6 +191,11 @@ type Autocorrect struct {
 	MaxUnreadable int    `json:"max_unreadable_percent" unit:"%" doc:"Words with a larger share of unreadable characters are left alone"`
 	MaxCandidates int    `json:"max_candidates" doc:"Show up to this many possible words as [A|B|C]; a word that fits more vocabulary words is left alone"`
 	WordsFile     string `json:"extra_words_file" doc:"Text file (one word per line) with more words for the vocabulary; relative names are in the data directory. Read again when it changes"`
+}
+
+// Identify controls how sure the program must be before it names the station of a message.
+type Identify struct {
+	Strictness string `json:"strictness" doc:"How much evidence a station needs before it is named for a message. strict = fewer stations named and fewer wrong ones; balanced = the default; lenient = more stations named, a few more wrong ones. The messages that are not named keep their best candidates for you to choose from. It matters most for messages whose B1 letter was not read; when B1 was read, the letter and the keywords nearly always agree. Applies to messages received from now on. For stored messages that have no station, Log tab > Database > Identify again uses it (stations already given are not taken away)" choices:"strict,balanced,lenient"`
 }
 
 // Server configures the network server (changes need a restart of navtexd).
@@ -439,6 +445,7 @@ func defaultConfig() Config {
 		Decoder:     sitor.DefaultConfig(),
 		Segment:     segment.DefaultConfig(),
 		Autocorrect: Autocorrect{Enabled: true, MinLen: 5, MaxLen: 16, MaxUnreadable: 50, MaxCandidates: 4, WordsFile: "vocabulary.txt"},
+		Identify:    Identify{Strictness: "balanced"},
 		Meters: Meters{RateHz: 10, SpectrumMaxHz: 2700, SpectrumSmooth: 0.85, SpectrumRaw: true, SpectrumChannel: true, LevelTauS: 0.5, QualityWindowS: 0.5,
 			QualityNoiseCF: 5.0, QualityGoodCF: 2.83, QualityTauS: 1, QualityEyeWeight: 0.8, QualityEyeLowDB: 3, QualityEyeHighDB: 15},
 		Logging: Logging{LineQuality: true},
@@ -561,6 +568,11 @@ func (c Config) validate(top bool) error {
 	}
 	if a := c.Autocorrect; a.MinLen < 3 || a.MaxLen < a.MinLen || a.MaxLen > 40 || a.MaxUnreadable < 0 || a.MaxUnreadable > 90 || a.MaxCandidates < 1 || a.MaxCandidates > 10 {
 		bad("autocorrect: word letters 3..40 (min <= max), unreadable 0..90 %%, candidates 1..10")
+	}
+	switch c.Identify.Strictness {
+	case "strict", "balanced", "lenient":
+	default:
+		bad("identify.strictness %q: want strict, balanced or lenient", c.Identify.Strictness)
 	}
 	m := c.Meters
 	if m.RateHz < 1 || m.RateHz > 50 || m.SpectrumMaxHz < 500 || m.SpectrumSmooth < 0 || m.SpectrumSmooth > 0.99 || m.LevelTauS < 0 ||
@@ -876,7 +888,7 @@ const HPSDRCarrierHz = 3000.0
 // liveFields lists the options (paths, or prefixes ending in ".") that can be applied to a running channel; see
 // RestartNeeded. The tests check that this list and RestartNeeded agree for every option.
 var liveFields = []string{
-	"operator.", "logging.", "compare.", "clips.all_channels", "autocorrect.", "meters.", "segment.", "channel.name", "channel.comment", "decoder.", "input.device.autotune", "input.device.manual_carrier_hz", "input.hpsdr.autotune",
+	"operator.", "identify.", "logging.", "compare.", "clips.all_channels", "autocorrect.", "meters.", "segment.", "channel.name", "channel.comment", "decoder.", "input.device.autotune", "input.device.manual_carrier_hz", "input.hpsdr.autotune",
 	"input.hpsdr.manual_carrier_hz", "input.sdrconnect.autotune", "input.sdrconnect.manual_carrier_hz", "input.spyserver.autotune", "input.spyserver.manual_carrier_hz", "channel.view_offset_hz", "input.stdin.autotune", "input.stdin.manual_carrier_hz", "input.file.autotune", "input.file.manual_carrier_hz",
 	"receiver.demod.presence_db", "receiver.demod.presence_offset_hz", "receiver.demod.timing_gain",
 	"receiver.demod.timing_confidence", "receiver.demod.timing_lost_blocks",
@@ -941,6 +953,7 @@ func restartNeededSingle(a, b Config) bool {
 		c.Clips.AllChannels = false
 		c.Channel.Name, c.Channel.Comment, c.Channel.ViewOffset = "", "", 0
 		c.Autocorrect = Autocorrect{}
+		c.Identify = Identify{}
 		// only the selected source's options matter, and of those the carrier options are live
 		t := c.Tuning()
 		t.Autotune, t.ManualCarrierHz = false, 0

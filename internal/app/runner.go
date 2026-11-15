@@ -24,6 +24,7 @@ import (
 	"navtex/internal/engine"
 	"navtex/internal/gbcode"
 	"navtex/internal/hpsdr"
+	"navtex/internal/ident"
 	"navtex/internal/iq"
 	"navtex/internal/segment"
 	"navtex/internal/sitor"
@@ -119,6 +120,7 @@ type Runner struct {
 // New creates a runner; call Start to begin decoding.
 func New(dataDir string, cfg config.Config, st *store.Store, h Hooks) *Runner {
 	r := &Runner{dir: dataDir, cfg: cfg, st: st, h: h, corr: autocorr.New()}
+	ident.SetStrictness(cfg.Identify.Strictness)
 	for i := range r.chains {
 		r.chains[i] = &chain{idx: i}
 	}
@@ -446,6 +448,7 @@ func (r *Runner) Modify(change func(*config.Config) error) (restart bool, err er
 	}
 	r.cfg = next
 	r.mu.Unlock()
+	ident.SetStrictness(next.Identify.Strictness)
 	for i, l := range live {
 		if l { // whatever can change while running is applied to the engine (the latest configuration, whenever it runs)
 			i := i

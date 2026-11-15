@@ -214,9 +214,9 @@
     $("n-open").disabled = !L.selId;
     if (dlg.open) updateNav();
     $("n-report").disabled = n < 1;
-    $("n-report").title = n > 1 ? `Add the ${n} selected records to your report (kept in this browser)` : "Add the selected record to your report (kept in this browser)";
+    $("n-report").title = (n > 1 ? `Add the ${n} selected records to your report (kept in this browser)` : "Add the selected record to your report (kept in this browser)") + "\nKey: Alt-R";
     $("n-delete").disabled = !admin() || n < 1;
-    $("n-delete").title = n > 1 ? `Delete the ${n} selected records.\nThey are saved first: the undo button brings them back.` : "Delete the selected record.\nIt is saved first: the undo button brings it back.";
+    $("n-delete").title = (n > 1 ? `Delete the ${n} selected records.\nThey are saved first: the undo button brings them back.` : "Delete the selected record.\nIt is saved first: the undo button brings it back.") + "\nKey: Delete";
     const tb = document.querySelector("#log-table tbody");
     const rows = [];
     const spacer = (h) => { const tr = el("tr", { class: "spacer" }); tr.style.height = h + "px"; tr.append(el("td", { colspan: "10" })); return tr; };
@@ -734,7 +734,7 @@
   function syncDelete() {
     const rev = $("rec-showrev").checked;
     $("ld-delete").disabled = !admin() || rev;
-    $("ld-delete").title = rev ? "Not while \"reverse all text\" is checked" : "Delete this record.\nIt is saved first: the undo button brings it back.";
+    $("ld-delete").title = rev ? "Not while \"reverse all text\" is checked" : "Delete this record.\nIt is saved first: the undo button brings it back.\nKey: Delete";
   }
   async function openDialog() {
     if (!L.selId) return;
@@ -830,6 +830,24 @@
     e.preventDefault();
     if (cur < 0) { selectIndex(Math.floor(sc.scrollTop / ROW) + 1); return; }
     selectIndex(to);
+  });
+
+  // ---- keys for the records: Delete, Ctrl-Z (undo), Alt-R (to the report). With the pop-up open they concern the record it shows ----
+  // (what the buttons do; nothing happens when a button is disabled, in a text box, or while another pop-up is open)
+  document.addEventListener("keydown", (e) => {
+    if (NX.state.tab !== "log" || e.defaultPrevented) return;
+    const open = document.querySelector("dialog[open]");
+    if (open && open !== dlg) return;
+    const t = e.target;
+    if (/INPUT|SELECT|TEXTAREA/.test(t.tagName) || t.isContentEditable) return; // (the text there has its own Delete and undo)
+    const pop = !!open;
+    let b = null;
+    if (e.key === "Delete" && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) b = $(pop ? "ld-delete" : "n-delete");
+    else if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "z") b = $(pop ? "ld-undo" : "n-undo");
+    else if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.code === "KeyR") b = $(pop ? "ld-report" : "n-report");
+    if (!b || b.disabled || b.hidden) return;
+    e.preventDefault();
+    b.click();
   });
 
   // ---- navigation and filters ----
@@ -1038,8 +1056,8 @@
     const b = $("n-undo"), ok = !!(u && u.available);
     b.classList.toggle("ghost", !admin()); b.disabled = !ok || !admin();
     $("ld-undo").disabled = !ok || !admin();
-    $("ld-undo").title = ok ? undoTip(u) : "Nothing to undo";
-    b.title = ok ? undoTip(u) : "Nothing to undo";
+    $("ld-undo").title = ok ? undoTip(u) + "\nKey: Ctrl-Z" : "Nothing to undo";
+    b.title = ok ? undoTip(u) + "\nKey: Ctrl-Z" : "Nothing to undo";
   }
   const loadUndo = () => { if (admin()) api("GET", "/api/messages/undo").then(showUndo).catch(() => {}); };
   // the record(s) come back as they were (old numbers and places); the first one is shown (selected) again

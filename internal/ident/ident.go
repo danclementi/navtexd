@@ -18,6 +18,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"navtex/internal/geo"
@@ -43,15 +44,39 @@ const (
 )
 
 // The thresholds for naming a station: the keyword points the best station needs, and how far it must lead the next one. They
-// are variables so that tools/idreplay can measure the trade-off between identifying more messages and naming wrong stations.
-var (
-	minKeyword = 2.0
-	minMargin  = 0.75
-)
+// can change while messages are being identified (the strictness option), so they are read once per message from one value.
+type thresholds struct{ keyword, margin float64 }
 
-// SetThresholds changes the keyword points and the margin needed to name a station (the defaults are 2.0 and 0.75). Call it
-// before identifying, not while other goroutines are identifying.
-func SetThresholds(keyword, margin float64) { minKeyword, minMargin = keyword, margin }
+var th atomic.Pointer[thresholds]
+
+func init() { th.Store(&thresholds{2.0, 0.75}) }
+
+// Strictness names the settings of the "how sure must a station be" option, from the safest to the most generous. Balanced is
+// the default. With strict, fewer messages get a station and fewer get a wrong one; with lenient it is the other way round (the
+// figures come from tools/idreplay on messages with a known station). The difference shows mostly when B1 was not read: when it
+// was, the letter and the keywords of the station agree for nearly every message.
+var Strictness = []string{"strict", "balanced", "lenient"}
+
+var presets = map[string]thresholds{
+	"strict":   {3.0, 1.5},
+	"balanced": {2.0, 0.75},
+	"lenient":  {1.5, 0.5},
+}
+
+// SetStrictness applies one of the names in Strictness ("" means balanced). It reports whether the name is known.
+func SetStrictness(name string) bool {
+	if name == "" {
+		name = "balanced"
+	}
+	p, ok := presets[name]
+	if ok {
+		th.Store(&p)
+	}
+	return ok
+}
+
+// SetThresholds sets the keyword points and the margin needed to name a station directly (tools/idreplay sweeps them).
+func SetThresholds(keyword, margin float64) { th.Store(&thresholds{keyword, margin}) }
 
 // Input is what is known about a received message.
 type Input struct {
@@ -365,6 +390,7 @@ func (id *Identifier) Explain(in Input, index int) Candidate {
 // Identify names the station of a message, or reports that it cannot.
 func (id *Identifier) Identify(in Input) Result {
 	res := Result{Index: -1}
+	minKeyword, minMargin := Thresholds()
 	b1 := strings.ToUpper(strings.TrimSpace(in.B1))
 	known := len(b1) == 1 && b1[0] >= 'A' && b1[0] <= 'Z'
 	var cands []int
@@ -509,4 +535,4 @@ func (id *Identifier) Fragment(in Input) Result {
 func round2(v float64) float64 { return math.Round(v*100) / 100 }
 
 // Thresholds are the keyword score a station needs to be named, and the lead it needs over the next one.
-func Thresholds() (keyword, margin float64) { return minKeyword, minMargin }
+func Thresholds() (keyword, margin float64) { t := th.Load(); return t.keyword, t.margin }

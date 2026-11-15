@@ -233,3 +233,48 @@ func TestFragmentOffersStationsDueAtThatTime(t *testing.T) {
 		t.Error("B1 and area were used")
 	}
 }
+
+func TestStrictnessPresets(t *testing.T) {
+	defer SetStrictness("balanced")
+	want := map[string][2]float64{"strict": {3.0, 1.5}, "balanced": {2.0, 0.75}, "lenient": {1.5, 0.5}}
+	for _, name := range Strictness {
+		if !SetStrictness(name) {
+			t.Fatalf("%s not accepted", name)
+		}
+		if k, m := Thresholds(); k != want[name][0] || m != want[name][1] {
+			t.Errorf("%s: thresholds %v %v, want %v", name, k, m, want[name])
+		}
+	}
+	if !SetStrictness("") {
+		t.Error("empty (old settings) should mean balanced")
+	}
+	if k, m := Thresholds(); k != 2.0 || m != 0.75 {
+		t.Errorf("empty: %v %v", k, m)
+	}
+	k, m := Thresholds()
+	if SetStrictness("harsh") {
+		t.Error("an unknown name was accepted")
+	}
+	if k2, m2 := Thresholds(); k2 != k || m2 != m {
+		t.Error("an unknown name changed the thresholds")
+	}
+}
+
+// A message whose keyword evidence is between the lenient and the balanced requirement is named only with the lenient setting.
+func TestStrictnessChangesTheOutcome(t *testing.T) {
+	defer SetStrictness("balanced")
+	id := load(t)
+	in := Input{FreqKHz: 518, B1: "?", When: at(0, 52), Text: "SOUTH OF NANTUCKET SHOALS"}
+	SetStrictness("balanced")
+	bal := id.Identify(in)
+	SetStrictness("strict")
+	strict := id.Identify(in)
+	if strict.Index >= 0 && bal.Index < 0 {
+		t.Errorf("strict named a station that balanced did not")
+	}
+	SetStrictness("lenient")
+	len_ := id.Identify(in)
+	if bal.Index >= 0 && len_.Index < 0 {
+		t.Errorf("lenient did not name a station that balanced named")
+	}
+}

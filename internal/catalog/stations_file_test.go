@@ -174,7 +174,25 @@ func TestMergeTheAddendumIntoAnOldTable(t *testing.T) {
 	}
 	n := len(c.tab.Stations)
 	res, err := c.ImportMerge(addendumTable, false)
-	if err != nil || res.Added != 25 || res.Changed != 0 || len(c.tab.Stations) != n+25 {
+	if err != nil || res.Added != 25 || len(c.tab.Stations) != n+25 {
 		t.Errorf("merge of the addendum: %+v %v (%d stations, were %d)", res, err, len(c.tab.Stations), n)
+	}
+	// the addendum also carries keywords for stations that the table already has: they are added to the lists, nothing is lost
+	if res.Keywords == 0 {
+		t.Errorf("no keywords were added: %+v", res)
+	}
+	found := false
+	for _, s := range c.tab.Stations {
+		if s.FreqKHz == 518 && s.ID == "E" && s.Callsign == "GNI" {
+			for _, k := range s.GID {
+				found = found || k == "NEWHAVEN"
+			}
+			if len(s.GID) < 20 || len(strings.Join(s.GID, ",")) > MaxKeywordChars {
+				t.Errorf("GNI 518 E: %d keywords, %d characters", len(s.GID), len(strings.Join(s.GID, ",")))
+			}
+		}
+	}
+	if !found {
+		t.Error("NEWHAVEN was not added to Niton on 518 kHz")
 	}
 }
