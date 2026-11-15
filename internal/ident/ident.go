@@ -34,8 +34,6 @@ const (
 	slotMax       = 2.0
 	distMax       = 0.6
 	histMax       = 0.5
-	minKeyword    = 2.0 // keyword evidence needed to name a station
-	minMargin     = 0.75
 	maxCandidates = 6
 	maxOffLetter  = 2 // stations of other letters offered as candidates when B1 may have been misread
 	// A fragment has no start, so no B1 and no area: stations that are due to transmit at the time of reception and have at least
@@ -43,6 +41,17 @@ const (
 	fragMinKeyword = 1.0
 	maxFragment    = 3
 )
+
+// The thresholds for naming a station: the keyword points the best station needs, and how far it must lead the next one. They
+// are variables so that tools/idreplay can measure the trade-off between identifying more messages and naming wrong stations.
+var (
+	minKeyword = 2.0
+	minMargin  = 0.75
+)
+
+// SetThresholds changes the keyword points and the margin needed to name a station (the defaults are 2.0 and 0.75). Call it
+// before identifying, not while other goroutines are identifying.
+func SetThresholds(keyword, margin float64) { minKeyword, minMargin = keyword, margin }
 
 // Input is what is known about a received message.
 type Input struct {
