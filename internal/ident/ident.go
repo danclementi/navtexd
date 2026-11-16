@@ -475,6 +475,9 @@ func (id *Identifier) Identify(in Input) Result {
 		res.Margin, res.Rivals = margin, true
 	}
 	switch {
+	case len(all) == 1 && known && in.NavArea == 0 && res.LetterDiffers && best.kw < minKeyword:
+		// The letter is all that points to the only station that uses it: its keywords are not in the text, but those of a station
+		// that is due to transmit at this time are, so the letter was probably misread. No guess: the operator chooses.
 	case len(all) == 1 && (in.NavArea > 0 || known):
 		res.Index, res.Score = best.i, round2(best.total)
 		res.Method = "B1"

@@ -203,6 +203,36 @@ func TestMisreadB1OffersStationDueAtThatTime(t *testing.T) {
 	}
 }
 
+// The letter alone names the only station that uses it, unless the text points to a station that is due at that time: a one-bit
+// misread (J read as L) must not name a station 6000 km away whose slot is 20 minutes later (the 490 kHz case of record 0x2E09).
+func TestLoneLetterDoesNotOverrideTheText(t *testing.T) {
+	id := load(t)
+	text := "LES ABORDS DE L'ILE DE SABLE\nDETROIT DE CABOT\nBANQUEREAU-NE\nFOURCHU"
+	r := id.Identify(Input{FreqKHz: 490, B1: "L", When: at(1, 31), Text: text})
+	found := false
+	for _, c := range r.Candidates {
+		found = found || name(id, Result{Index: c.Index}) == "VCO Port Caledonia (Sydney)"
+	}
+	if r.Index >= 0 || !found || !r.LetterDiffers {
+		t.Errorf("misread L: named %q, offered=%v differs=%v cands=%v", name(id, r), found, r.LetterDiffers, r.Candidates)
+	}
+	if r := id.Identify(Input{FreqKHz: 490, B1: "J", When: at(1, 31), Text: text}); !strings.HasPrefix(name(id, r), "VCO") {
+		t.Errorf("right letter: got %q", name(id, r))
+	}
+	// no keywords of another station: the letter still names the station
+	if r := id.Identify(Input{FreqKHz: 490, B1: "L", When: at(1, 31), Text: "NO USEFUL WORDS"}); !strings.HasPrefix(name(id, r), "DDH49") || r.Method != "B1" {
+		t.Errorf("letter only: got %q by %q", name(id, r), r.Method)
+	}
+	// the other station is not due at that time: the letter names the station
+	if r := id.Identify(Input{FreqKHz: 490, B1: "L", When: at(3, 0), Text: text}); !strings.HasPrefix(name(id, r), "DDH49") {
+		t.Errorf("out of slot: got %q", name(id, r))
+	}
+	// the operator has set the NAVAREA: no guess is overruled
+	if r := id.Identify(Input{FreqKHz: 490, B1: "L", NavArea: 1, When: at(1, 31), Text: text}); !strings.HasPrefix(name(id, r), "DDH49") {
+		t.Errorf("manual area: got %q", name(id, r))
+	}
+}
+
 // A fragment has no header, so no B1 and no area: the stations due at that time with keywords in the text are offered, none is named.
 func TestFragmentOffersStationsDueAtThatTime(t *testing.T) {
 	id := load(t)
