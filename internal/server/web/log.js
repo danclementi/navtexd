@@ -214,7 +214,7 @@
     $("n-open").disabled = !L.selId;
     if (dlg.open) updateNav();
     $("n-report").disabled = n < 1;
-    $("n-report").title = (n > 1 ? `Add the ${n} selected records to your report (kept in this browser)` : "Add the selected record to your report (kept in this browser)") + "\nKey: Alt-R";
+    $("n-report").title = (n > 1 ? `Add the ${n} selected records to your report (kept in this browser)` : "Add the selected record to your report (kept in this browser)") + "\nAlt-click a row in the list to add just that record";
     $("n-delete").disabled = !admin() || n < 1;
     $("n-delete").title = (n > 1 ? `Delete the ${n} selected records.\nThey are saved first: the undo button brings them back.` : "Delete the selected record.\nIt is saved first: the undo button brings it back.") + "\nKey: Delete";
     const tb = document.querySelector("#log-table tbody");
@@ -776,6 +776,8 @@
     if (!tr) return;
     const id = Number(tr.dataset.id), i = Number(tr.dataset.i);
     sc.focus({ preventScroll: true });
+    // Alt-click: this record goes into the report; the selection stays as it is
+    if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) { e.preventDefault(); addToReport([id]); return; }
     // a double-click opens the record. (The rows are rebuilt on the first click, so the browser's dblclick event is not used.)
     if (e.detail === 2 && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
       window.getSelection().removeAllRanges();
@@ -832,7 +834,7 @@
     selectIndex(to);
   });
 
-  // ---- keys for the records: Delete, Ctrl-Z (undo), Alt-R (to the report). With the pop-up open they concern the record it shows ----
+  // ---- keys for the records: Delete, Ctrl-Z (undo). With the pop-up open they concern the record it shows. (Alt-click on a row adds it to the report.) ----
   // (what the buttons do; nothing happens when a button is disabled, in a text box, or while another pop-up is open)
   document.addEventListener("keydown", (e) => {
     if (NX.state.tab !== "log" || e.defaultPrevented) return;
@@ -844,7 +846,6 @@
     let b = null;
     if (e.key === "Delete" && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) b = $(pop ? "ld-delete" : "n-delete");
     else if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "z") b = $(pop ? "ld-undo" : "n-undo");
-    else if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.code === "KeyR") b = $(pop ? "ld-report" : "n-report");
     if (!b || b.disabled || b.hidden) return;
     e.preventDefault();
     b.click();
