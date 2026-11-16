@@ -361,6 +361,17 @@ dialog#rec-dlg::backdrop { background: rgba(0, 0, 0, .45); }
 #tab-log .logpane { flex: 0 0 auto; height: var(--lp-h, 170px); min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
 #tab-log .logpane[hidden] { display: none; }
 #tab-log .lpinfo { flex: none; padding: 2px 8px; font-size: 12px; color: var(--dim); border-bottom: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ctx { position: fixed; z-index: 60; min-width: 240px; max-width: 460px; padding: 4px 0; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 6px 20px rgba(0, 0, 0, .25); font: 13px var(--font); }
+.ctx[hidden] { display: none; }
+.ctx button { display: flex; justify-content: space-between; gap: 24px; width: 100%; margin: 0; padding: 4px 12px; border: 0; border-radius: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.ctx button span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ctx button .k { flex: none; color: var(--dim); font-size: 12px; }
+.ctx button:hover:not(:disabled), .ctx button:focus-visible { background: var(--bg); outline: none; }
+.ctx button:disabled { color: var(--dim); opacity: .55; cursor: default; }
+.ctx hr { margin: 4px 0; border: 0; border-top: 1px solid var(--line); }
+.clipbuf { position: fixed; left: -1000px; top: 0; }
+#tab-log .lpstat { flex: none; padding: 2px 8px; font: 12px var(--font); color: var(--dim); border-top: 1px solid var(--line); background: var(--panel); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+#tab-log .lpstat b { color: var(--ink); }
 #tab-log .lptext { flex: 1 1 auto; min-height: 0; margin: 0; padding: 4px 8px; overflow: auto; font-family: var(--mono); font-size: 13px; background: var(--msg-bg); color: var(--msg-ink); white-space: pre; }
 #lp-text .fix { background: var(--msg-ink); color: var(--msg-bg); }
 #tab-log .filters { display: block; margin-bottom: 4px; }

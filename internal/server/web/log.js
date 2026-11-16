@@ -343,9 +343,22 @@
     try { localStorage.setItem(PH, JSON.stringify({ h: Math.round(pane.h), shown })); } catch (e) { /* private mode */ }
     if (L.loaded) requestAnimationFrame(render); // the list changed height: its rows are placed again
   }
+  // the status line under the message: the stations on air when the message began (the one it was named for in bold)
+  function paintStat() {
+    const bar = $("lp-stat"), r = L.rec;
+    if (!r || r.id !== L.selId || !r.rx) { bar.replaceChildren(); return; }
+    if (!NX.stationList().length) { NX.loadStations().then(() => { if (L.rec === r) paintStat(); }).catch(() => {}); return; }
+    const f = Number(r.ch) > 100000 ? Number(r.ch) / 1000 : Number(r.ch), a = NX.onAirAt(f, new Date(r.rx), r.sid);
+    const parts = [`ON AIR ${f}kHz ${a.hhmm}UTC  `];
+    if (!a.on.length) parts.push("no station");
+    a.on.forEach((s, i) => { if (i) parts.push("   "); parts.push(s.own ? el("b", { text: s.text }) : s.text); });
+    if (a.notDue) parts.push(`   \u2014   named station ${a.notDue} is not scheduled at this time`);
+    bar.replaceChildren(...parts);
+  }
   function paintPane() {
     const r = L.rec, tx = $("lp-text"), inf = $("lp-info");
-    if (!r || r.id !== L.selId) { tx.replaceChildren(); inf.textContent = L.sel.size > 1 ? `${L.sel.size} records selected` : "No record selected"; return; }
+    if (!r || r.id !== L.selId) { tx.replaceChildren(); $("lp-stat").replaceChildren(); inf.textContent = L.sel.size > 1 ? `${L.sel.size} records selected` : "No record selected"; return; }
+    paintStat();
     inf.textContent = [NX.hex(r.id), NX.stamp(r.rx) + " UTC", r.ch ? r.ch + " kHz" : "", r.st || "", r.kind].filter(Boolean).join("  \u00b7  ");
     NX.fillRecordText(tx, r, { cor: true });
     tx.scrollTop = 0;
@@ -800,6 +813,82 @@
     }
     L.anchor = i; select(id);
   });
+
+  // ---- right-click menu of the list: everything that can be done with the record (or the selected records) ----
+  // Shift + right-click gives the browser's own menu. The Menu key (or Shift-F10) opens this one at the selected row.
+  const ctx = el("div", { class: "ctx", role: "menu", hidden: true });
+  document.body.append(ctx);
+  const ctxClose = () => { if (!ctx.hidden) { ctx.hidden = true; ctx.replaceChildren(); } };
+  async function copyText(text) {
+    try { await navigator.clipboard.writeText(text); return; } catch (e) { /* not a secure page: the old way */ }
+    const ta = el("textarea", { class: "clipbuf" }); ta.value = text; document.body.append(ta); ta.select();
+    try { document.execCommand("copy"); } catch (e) { /* nothing more to try */ }
+    ta.remove();
+  }
+  function ctxBuild(ids) {
+    const one = ids.length === 1, rec = one && L.rec && L.rec.id === ids[0] ? L.rec : null, adm = admin();
+    const n = ids.length > 1 ? ` (${ids.length} records)` : "";
+    const rows = [];
+    const item = (text, key, fn, off, tip) => rows.push({ text, key, fn, off: !!off, tip });
+    const sep = () => { if (rows.length && rows[rows.length - 1].sep !== true) rows.push({ sep: true }); };
+    item("Review", "Enter", () => openDialog(), !one);
+    item("Add to report" + n, "Alt-click", () => addToReport(ids));
+    item(one ? "Copy record number" : "Copy record numbers", "", () => copyText(ids.map((i) => NX.hex(i)).join(" ")));
+    item("Copy message text", "", () => copyText($("lp-text").textContent), !rec, one ? "" : "Select one record");
+    // identification: only for one record, and for administrators
+    const why = rec && rec.why;
+    sep();
+    item("Identify again", "", () => patch({ reident: true }), !one || !adm || !rec, adm ? "" : "Administrators only");
+    const cands = why ? why.cands.filter((c) => !c.chosen).sort((a, b) => b.score - a.score).slice(0, 3) : [];
+    for (const c of cands) item(`Use ${c.label}`, c.score.toFixed(1) + " pts", () => useCandidate(c.id), !adm, adm ? "Identify the record as this station" : "Administrators only");
+    if (rec && rec.sid) item("Keep unidentified", "", () => useCandidate(-1), !adm, adm ? "" : "Administrators only");
+    sep();
+    item("Undo", "Ctrl-Z", () => $("n-undo").click(), $("n-undo").disabled);
+    item("Delete" + n, "Delete", () => $("n-delete").click(), $("n-delete").disabled, adm ? "" : "Administrators only");
+    sep();
+    item("Select all", "Ctrl-A", () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "a", ctrlKey: true, bubbles: true, cancelable: true })));
+    while (rows.length && rows[rows.length - 1].sep) rows.pop();
+    ctx.replaceChildren(...rows.map((r) => {
+      if (r.sep) return el("hr", { role: "separator" });
+      const b = el("button", { type: "button", role: "menuitem", disabled: r.off, title: r.tip || "" }, el("span", { text: r.text }), el("span", { class: "k", text: r.key }));
+      b.onclick = () => { ctxClose(); sc.focus({ preventScroll: true }); r.fn(); };
+      return b;
+    }));
+  }
+  function ctxShow(x, y) {
+    ctx.hidden = false;
+    const w = ctx.offsetWidth, h = ctx.offsetHeight;
+    ctx.style.left = Math.max(4, Math.min(x, window.innerWidth - w - 4)) + "px";
+    ctx.style.top = Math.max(4, Math.min(y, window.innerHeight - h - 4)) + "px";
+    const first = ctx.querySelector("button:not(:disabled)"); if (first) first.focus({ preventScroll: true });
+  }
+  $("logscroll").addEventListener("contextmenu", async (e) => {
+    if (e.shiftKey) return; // the browser's menu
+    let tr = e.target.closest("tr[data-id]"), x = e.clientX, y = e.clientY;
+    if (!tr) {
+      // the Menu key: the selected row, or nothing
+      if (e.clientX || e.clientY || !L.selId) return;
+      tr = tbody.querySelector(`tr[data-id="${L.selId}"]`);
+      if (!tr) return;
+      const b = tr.getBoundingClientRect(); x = b.left + 40; y = b.bottom;
+    }
+    e.preventDefault();
+    const id = Number(tr.dataset.id), i = Number(tr.dataset.i);
+    if (!L.sel.has(id)) { L.anchor = i; await select(id); } // a click on a record outside the selection selects it, as in a file manager
+    ctxBuild(L.sel.size > 1 ? [...L.sel] : [id]);
+    ctxShow(x, y);
+  });
+  ctx.addEventListener("keydown", (e) => {
+    const bs = [...ctx.querySelectorAll("button:not(:disabled)")], k = bs.indexOf(document.activeElement);
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); ctxClose(); sc.focus({ preventScroll: true }); }
+    else if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); if (bs.length) bs[(k + (e.key === "ArrowDown" ? 1 : -1) + bs.length) % bs.length].focus(); }
+    else if (e.key === "Home" || e.key === "End") { e.preventDefault(); if (bs.length) bs[e.key === "Home" ? 0 : bs.length - 1].focus(); }
+    else if (e.key === "Tab") { ctxClose(); }
+  });
+  document.addEventListener("pointerdown", (e) => { if (!ctx.hidden && !ctx.contains(e.target)) ctxClose(); }, true);
+  document.addEventListener("contextmenu", (e) => { if (!ctx.hidden && !ctx.contains(e.target) && !$("logscroll").contains(e.target)) ctxClose(); }, true);
+  window.addEventListener("blur", ctxClose); window.addEventListener("resize", ctxClose);
+  $("logscroll").addEventListener("scroll", ctxClose, { passive: true });
 
   // ---- Ctrl-A: every record of the (filtered) list ----
   let selAllBusy = false;

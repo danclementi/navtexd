@@ -26,6 +26,16 @@
     b.textContent = `SCHEDULE ${f}kHz ${hhmm(m)}UTC  ` + (on.length ? on.map((s) => label(s, false, false)).join("   ") : "no station on air");
   }
 
+  // The stations on air at a moment (a Date) on a frequency: those whose slot began less than 10 minutes before, in the NAVAREAs ticked on
+  // the Schedule tab, plus the station `ownId` (the one a message was named for) when it is on air. Used under the message in the Log tab.
+  NX.onAirAt = (freq, date, ownId) => {
+    const m = date.getUTCHours() * 60 + date.getUTCMinutes();
+    const ticked = pref.get("sched.areas", null), tickedOn = (a) => !ticked || ticked.includes(a);
+    const on = list().filter((s) => s.freq === freq && onAir(s, m) && (tickedOn(s.area) || s.id === ownId));
+    const own = list().find((s) => s.id === ownId);
+    return { hhmm: hhmm(m), on: on.map((s) => ({ text: label(s, false, false), own: s.id === ownId })), notDue: own && !on.some((s) => s.id === ownId) ? label(own, false, false) : "" };
+  };
+
   function renderAreas() {
     const box = $("sc-areas");
     box.replaceChildren();
