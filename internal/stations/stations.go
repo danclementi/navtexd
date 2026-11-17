@@ -1,5 +1,6 @@
 // Package stations reads and writes the NAVTEX station table in the format used by YaND (YAND_STATIONS.txt), which the
-// community keeps updated. The file is ASCII with CRLF line ends: a "VERSION5" line, then one station per line with 17
+// community keeps updated. The file is ASCII (except the keywords of the Chinese stations on 486 kHz, which are Chinese characters in UTF-8)
+// with CRLF line ends: a "VERSION5" line, then one station per line with 17
 // or 18 fields separated by '#':
 //
 //	navarea#freq_kHz#B1#callsign#name#country_code#country#lat#lon#t1#t2#t3#t4#t5#t6#GID keywords#UID keywords#

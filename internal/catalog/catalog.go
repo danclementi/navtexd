@@ -18,6 +18,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"navtex/internal/gbcode"
 	"navtex/internal/geo"
 	"navtex/internal/ident"
 	"navtex/internal/stations"
@@ -33,6 +34,9 @@ var baseTable []byte
 //
 //go:embed navtexd_station_addendum.txt
 var addendumTable []byte
+
+// chineseHz is the carrier of the national NAVTEX service of China, whose text is Chinese (GB 2312, see package gbcode).
+const chineseHz = 486000
 
 // FileName is the station table inside the data directory.
 const FileName = "navtexd_stations.txt"
@@ -371,16 +375,30 @@ func (c *Catalog) Stations() (version string, list []stations.Station) {
 	return c.tab.Version, append([]stations.Station(nil), c.tab.Stations...)
 }
 
-func bodyText(r *store.Record) string {
-	var sb strings.Builder
+// textAndFreq returns the text that the keywords are looked for in, and the frequency (kHz) that the candidates are taken from.
+// The text is the received lines without ZCZC and NNNN. The national service of China sends GB 2312 characters as letters:
+// the keywords are Chinese, so they are looked for in the characters (the station is identified before the text is corrected,
+// so the text is read here). A message that reads like that is of the stations on 486 kHz, on whatever channel it came.
+func textAndFreq(r *store.Record) (string, float64) {
+	var lines []string
 	for i, l := range r.Lines {
 		if strings.HasPrefix(l.Text, "ZCZC") || l.Text == "NNNN" || i == 0 && r.StartFix != "" {
 			continue
 		}
-		sb.WriteString(l.Text)
+		lines = append(lines, l.Text)
+	}
+	khz := float64(r.Channel) / 1000
+	if r.Channel == chineseHz || gbcode.Looks(lines) {
+		if dec, ok := gbcode.Decode(lines, 200); ok {
+			lines, khz = dec, chineseHz/1000
+		}
+	}
+	var sb strings.Builder
+	for _, l := range lines {
+		sb.WriteString(l)
 		sb.WriteByte('\n')
 	}
-	return sb.String()
+	return sb.String(), khz
 }
 
 // Enrich identifies the station of r and sets its station, area, distance and identification fields. A record the
@@ -415,7 +433,8 @@ func (c *Catalog) Enrich(r *store.Record) {
 		}
 		return
 	}
-	in := ident.Input{FreqKHz: float64(r.Channel) / 1000, B1: r.B1, When: r.Received, Text: bodyText(r)}
+	text, khz := textAndFreq(r)
+	in := ident.Input{FreqKHz: khz, B1: r.B1, When: r.Received, Text: text}
 	if r.Manual {
 		in.NavArea = r.NavArea
 	}

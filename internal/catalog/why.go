@@ -64,7 +64,8 @@ func (c *Catalog) Explain(r store.Record, loc bool) *Why {
 	}
 	c.mu.Lock() // the identifier's History hook is shared
 	defer c.mu.Unlock()
-	in := ident.Input{FreqKHz: float64(r.Channel) / 1000, B1: r.B1, When: r.Received, Text: bodyText(&r)}
+	text, khz := textAndFreq(&r)
+	in := ident.Input{FreqKHz: khz, B1: r.B1, When: r.Received, Text: text}
 	if r.Manual {
 		in.NavArea = r.NavArea
 	}
@@ -217,7 +218,8 @@ func (c *Catalog) fragmentWhy(r store.Record, w *Why, loc bool) *Why {
 	}
 	c.mu.Lock() // the identifier's History hook is shared
 	defer c.mu.Unlock()
-	in := ident.Input{FreqKHz: float64(r.Channel) / 1000, When: r.Received, Text: bodyText(&r)}
+	text, khz := textAndFreq(&r)
+	in := ident.Input{FreqKHz: khz, When: r.Received, Text: text}
 	if loc && c.Position != nil {
 		in.OpLat, in.OpLon, in.HaveOp = c.Position()
 	}
