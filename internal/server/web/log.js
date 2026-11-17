@@ -1434,7 +1434,7 @@
   NX.listen("record", (r) => {
     if (r && (r.action === "delete" || r.action === "restore" || r.action === "update")) loadUndo();
     clearTimeout(L.timer);
-    if (NX.state.tab === "log") { L.timer = setTimeout(refresh, 400); return; }
+    if (NX.shown("log")) { L.timer = setTimeout(refresh, 400); return; }
     if (L.loaded && filterOn()) L.timer = setTimeout(liveCounts, 1000); // keep the "new hidden" count and the tab dot current
   });
   async function liveCounts() {

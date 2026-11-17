@@ -651,3 +651,49 @@ nav #helplink:hover { color: var(--ink); }
 .sctable .scval { width: 100%; box-sizing: border-box; font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; }
 .sctable .sc.dim, .sctable .sc .dim { opacity: .55; }
 
+
+/* ---- tiled layouts (layout.js): several tabs side by side on a wide screen ---- */
+nav #layoutsel { margin-left: auto; align-self: center; margin-bottom: 4px; height: 28px; max-width: 220px; }
+nav #layoutsel + #helplink { margin-left: 8px; }
+nav #layoutsel[hidden] + #helplink { margin-left: auto; }
+nav button.vis:not(.on) { color: var(--ink); }
+body.tiled nav, body.tiled main { max-width: none; }
+#tiles { flex: 1 1 auto; min-height: 0; display: flex; align-items: stretch; background: var(--bg); border-radius: 0 8px 8px 8px; }
+.tcol { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
+.tile { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; border: 2px solid var(--tabline); border-radius: 8px; background: var(--panel); overflow: hidden; }
+.tile.focus { border-color: var(--accent); }
+.tilehead { flex: none; display: flex; align-items: center; padding: 1px 6px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--line) 45%, var(--bg)); }
+.tile.focus .tilehead { background: color-mix(in srgb, var(--accent) 18%, var(--panel)); }
+.tilesel { font: inherit; font-weight: 600; color: var(--ink); background: transparent; border: 0; padding: 2px 2px; cursor: pointer; max-width: 100%; }
+.tilesel option { font-weight: 400; background: var(--panel); color: var(--ink); }
+.tilebody { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; container: tile / inline-size; }
+.tilebody > section { background: none; border: 0; border-radius: 0; padding: 10px; }
+.tilebody > section:not([hidden]) { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.gut { flex: none; position: relative; touch-action: none; }
+.gut.v { width: 8px; cursor: col-resize; }
+.gut.h { height: 8px; cursor: row-resize; }
+.gut::after { content: ""; position: absolute; border-radius: 2px; background: var(--line); opacity: .0; transition: opacity .12s; }
+.gut.v::after { left: 3px; right: 3px; top: 0; bottom: 0; }
+.gut.h::after { top: 3px; bottom: 3px; left: 0; right: 0; }
+.gut:hover::after, .gut.drag::after { opacity: 1; background: var(--accent); }
+
+/* a tile is narrower than the window, so what adapts is decided by the tile's width (container queries), not by the window's */
+@container tile (max-width: 1000px) { .chcmt, .chinfo { display: none; } }
+@container tile (max-width: 900px) {
+  .chlines { display: flex; flex-direction: column; margin: 0 0 6px; }
+  .chline { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+  .chline .chinput { flex: 1 1 8em; }
+}
+@container tile (max-width: 640px) { .opt, .opt.wide { grid-template-columns: 1fr; } }
+/* Options: its list of pages becomes a column of vertical tabs when the tile is narrow */
+@container tile (max-width: 760px) {
+  #tab-options:not([hidden]) { display: grid; grid-template-columns: max-content minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); column-gap: 10px; overflow: hidden; }
+  #opt-bar { display: contents; }
+  #opt-bar .subtabs { grid-column: 1; grid-row: 1 / -1; flex-direction: column; flex-wrap: nowrap; align-content: flex-start; overflow-y: auto; margin: 0; padding: 0 8px 0 0; border: 0; border-right: 1px solid var(--line); }
+  #opt-bar .subtabs button { text-align: left; white-space: nowrap; }
+  #opt-bar .optact { grid-column: 2; grid-row: 1; justify-self: end; margin-bottom: 6px; }
+  #opt-note { grid-column: 2; grid-row: 2; }
+  #opt-scroll { grid-column: 2; grid-row: 3; min-height: 0; overflow: auto; }
+}
+@container tile (max-width: 1000px) { .lognav .tb span { display: none; } .lognav .tb { width: 36px; height: 36px; } }
+@container tile (max-width: 1000px) { .lognav { flex-wrap: wrap; overflow-x: visible; } }

@@ -147,5 +147,8 @@
   };
 
   NX.listen("role", render);
+  // in a tiled layout the Report can be on screen while records are added in the Log tile
+  let rlt = 0;
+  NX.listen("replist", () => { if (NX.shown("report")) { clearTimeout(rlt); rlt = setTimeout(load, 80); } });
   NX.tabs.report = load;
 })();

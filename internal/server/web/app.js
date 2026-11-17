@@ -198,8 +198,8 @@
     $("b-showlogin").hidden = !canLogin;
     $("b-logout").hidden = !(h && h.remote);
     $("login").hidden = !(needToken || (canLogin && state.loginOpen));
-    if (state.tab === "options") loadOptions(true);
-    if (state.tab === "syslog") loadLog();
+    if (NX.shown("options")) loadOptions(true);
+    if (NX.shown("syslog")) loadLog();
     renderLines();
     fire("role", role);
   }
@@ -278,7 +278,7 @@
   function drawSpec(cv, mini, ch) {
     const CH = state.chans[ch];
     const V = state.view[cv.id];
-    if (!mini && state.tab !== "spectrum") return;
+    if (!mini && !NX.shown("spectrum")) return;
     const dpr = window.devicePixelRatio || 1;
     const w = cv.clientWidth, h = cv.clientHeight;
     if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
@@ -552,7 +552,7 @@
       fire("record", r);
     });
     on("stations", (r) => fire("stations", r));
-    on("log", (e) => { if (state.tab === "syslog") appendLog(e); });
+    on("log", (e) => { if (NX.shown("syslog")) appendLog(e); });
   }
 
   // ---- decoding channels ----
@@ -635,15 +635,22 @@
   }
 
   // ---- tabs ----
+  // NX.shown(tab): the tab is on screen (the one open tab, or any tab in a tile of a tiled layout, see layout.js); state.tab is the tab
+  // you are working in (in tiles: the tile you used last), which is where the keyboard shortcuts of the Log and the Report apply
+  NX.shown = (t) => (NX.layout && NX.layout.active() ? NX.layout.visible(t) : state.tab === t);
+  NX.activate = (t) => {
+    if (NX.tabs[t]) NX.tabs[t]();
+    if (t === "spectrum") scheduleSpec();
+    if (t === "options") loadOptions();
+    if (t === "syslog") loadLog();
+  };
   document.querySelectorAll("#tabs button").forEach((b) => {
     b.onclick = () => {
+      if (NX.layout && NX.layout.active()) { NX.layout.show(b.dataset.tab); return; }
       document.querySelectorAll("#tabs button").forEach((x) => x.classList.toggle("on", x === b));
       state.tab = b.dataset.tab;
       document.querySelectorAll("main > section").forEach((x) => { x.hidden = x.id !== "tab-" + state.tab; });
-      if (NX.tabs[state.tab]) NX.tabs[state.tab]();
-      if (state.tab === "spectrum") scheduleSpec();
-      if (state.tab === "options") loadOptions();
-      if (state.tab === "syslog") loadLog();
+      NX.activate(state.tab);
     };
   });
 
@@ -858,7 +865,7 @@
   const typed = (f, inp) => (f.kind === "bool" ? inp.checked : f.kind === "int" || f.kind === "float" ? Number(inp.value) : inp.value);
   const valueOf = (inp) => (inp.type === "checkbox" ? String(inp.checked) : inp.value);
   // pending (unsaved) changes: counted per sub-tab; the sub-tab gets a dot, the Save button the total
-  NX.reloadOptions = () => { if (state.tab === "options" && !pendingCount()) loadOptions(true); }; // (unsaved edits are kept; the new view then shows at the next visit)
+  NX.reloadOptions = () => { if (NX.shown("options") && !pendingCount()) loadOptions(true); }; // (unsaved edits are kept; the new view then shows at the next visit)
   const pendingCount = () => { let n = 0; for (const p of optPages.values()) n += p.querySelectorAll(".opt.changed").length; return n; };
   function updatePending() {
     let n = 0;
@@ -909,7 +916,7 @@
     $("log-count").textContent = `${rows.length} of ${LOG.entries.length} lines`;
     if ($("log-follow").checked) pre.scrollTop = pre.scrollHeight;
   }
-  function scheduleLog() { if (!LOG.pending && state.tab === "syslog") { LOG.pending = true; setTimeout(renderLog, 200); } }
+  function scheduleLog() { if (!LOG.pending && NX.shown("syslog")) { LOG.pending = true; setTimeout(renderLog, 200); } }
   function appendLog(e) {
     LOG.entries.push(e);
     if (LOG.entries.length > LOG.max) LOG.entries.splice(0, LOG.entries.length - LOG.max);
