@@ -21,6 +21,9 @@ const MaxBackDays = 7
 // MaxSunOffsetMin is the furthest a sun-relative time may be from sunrise or sunset (minutes, either way).
 const MaxSunOffsetMin = 180
 
+// MaxMidOffsetMin is the furthest a time relative to local midnight may be from it (minutes, either way).
+const MaxMidOffsetMin = 720
+
 // Zone is the receiver's place: its time zone and, when known, its position (needed for sunrise and sunset).
 type Zone struct {
 	Loc      *time.Location
@@ -183,15 +186,20 @@ func (r DateRef) Resolve(now time.Time, loc *time.Location) Date {
 	return DateOf(now, loc).AddDays(-r.Back)
 }
 
-// TimeRef is a time of day of the filter: a clock time, or an offset from sunrise or sunset.
+// TimeRef is a time of day: a clock time, or an offset from sunrise, sunset or local midnight.
 type TimeRef struct {
 	Sun       bool
+	Mid       bool  // an offset from the local midnight that starts the date (the scheduler uses it)
 	Event     Event // Sun only
-	OffsetMin int   // minutes after the event, negative before (Sun only)
-	Hour, Min int   // the clock time (not Sun)
+	OffsetMin int   // minutes after the event or midnight, negative before (Sun or Mid)
+	Hour, Min int   // the clock time (neither Sun nor Mid)
 }
 
-// ParseTimeRef reads "hh:mm", "sunset", "sunset-90m", "sunrise+1h" or "sunset+1:30" (minutes after the event, hours or h:mm).
+// Fixed says that the time is a clock time, not relative to the sun or to midnight.
+func (r TimeRef) Fixed() bool { return !r.Sun && !r.Mid }
+
+// ParseTimeRef reads "hh:mm", "sunset", "sunset-90m", "sunrise+1h" or "sunset+1:30" (minutes after the event, hours or h:mm), and
+// "midnight", "midnight-2h" or "midnight+30m" (local midnight at the start of the date).
 func ParseTimeRef(s string) (TimeRef, error) {
 	s = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(strings.ToLower(strings.TrimSpace(s)), "local")))
 	s = strings.Map(func(r rune) rune {
@@ -200,6 +208,24 @@ func ParseTimeRef(s string) (TimeRef, error) {
 		}
 		return r
 	}, s)
+	if rest, ok := strings.CutPrefix(s, "midnight"); ok {
+		if rest == "" {
+			return TimeRef{Mid: true}, nil
+		}
+		sign := 1
+		switch rest[0] {
+		case '+':
+		case '-':
+			sign = -1
+		default:
+			return TimeRef{}, fmt.Errorf("bad midnight time %q (want midnight, midnight-2h, midnight+30m)", s)
+		}
+		min, err := parseSpan(rest[1:])
+		if err != nil || min > MaxMidOffsetMin {
+			return TimeRef{}, fmt.Errorf("bad midnight time %q (offset up to %d minutes)", s, MaxMidOffsetMin)
+		}
+		return TimeRef{Mid: true, OffsetMin: sign * min}, nil
+	}
 	for name, ev := range map[string]Event{"sunrise": Sunrise, "sunset": Sunset} {
 		if !strings.HasPrefix(s, name) {
 			continue
@@ -254,11 +280,14 @@ func parseSpan(s string) (int, error) {
 
 // String is the form ParseTimeRef reads.
 func (r TimeRef) String() string {
-	if !r.Sun {
+	if r.Fixed() {
 		return fmt.Sprintf("%02d:%02d", r.Hour, r.Min)
 	}
 	name := "sunrise"
-	if r.Event == Sunset {
+	switch {
+	case r.Mid:
+		name = "midnight"
+	case r.Event == Sunset:
 		name = "sunset"
 	}
 	switch {
@@ -272,6 +301,9 @@ func (r TimeRef) String() string {
 
 // At gives the instant of a time of day on a date. ok is false for a sun time on a date with no such event.
 func (z Zone) At(d Date, t TimeRef) (time.Time, bool) {
+	if t.Mid {
+		return Wall(d, 0, 0, z.Loc).Add(time.Duration(t.OffsetMin) * time.Minute), true
+	}
 	if !t.Sun {
 		return Wall(d, t.Hour, t.Min, z.Loc), true
 	}

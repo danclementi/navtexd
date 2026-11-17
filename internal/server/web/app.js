@@ -672,6 +672,7 @@
       ...[0, 1, 2].map((k) => { const p = `extra.${k}.`; return ["channel" + (k + 2), nameOf(p + "channel.name", "Channel " + (k + 2)), ["extra." + k, ...["channel", "input", "input.device", "input.hpsdr", "input.sdrconnect", "input.spyserver", "input.stdin", "input.file", "receiver", "decoder", "segment", "ddc"].map((x) => p + x)]]; }),
       ["logging", "Logging", ["logging", "autocorrect"]],
       ["display", "Display", ["meters"]],
+      ["scheduler", "Scheduler", ["scheduler"]],
       ["clips", "Clips and comparison", ["clips", "compare"]],
       ["network", "Network", ["server"]],
       ["cli", "Command line", ["output"]],
@@ -690,7 +691,7 @@
     const pageEls = new Map(), extra = { box: null }; optPages = pageEls;
     const showPage = (id) => { optPage = id; for (const [k, p] of pageEls) { p.hidden = k !== id; } for (const b of bar.children) b.classList.toggle("on", b.dataset.page === id); };
     for (const [id, label, gs] of pages) {
-      if (!gs.some((g) => groups.has(g)) && id !== "logging") continue;
+      if (!gs.some((g) => groups.has(g)) && id !== "logging" && id !== "scheduler") continue;
       const btn = document.createElement("button"); btn.type = "button"; btn.textContent = label; btn.dataset.page = id; btn.onclick = () => showPage(id); bar.appendChild(btn);
       const page = document.createElement("div"); page.className = "optpage"; page.hidden = true; form.appendChild(page); pageEls.set(id, page);
       const mch = /^channel(\d)$/.exec(id);
@@ -718,6 +719,7 @@
         const n = document.createElement("p"); n.className = "small advnote"; n.textContent = "Advanced options are shown (Receiver, Decoder, Down-converter). To hide them again, click \u201cadmin\u201d at the bottom right and type exit.";
         page.insertBefore(n, page.firstChild);
       }
+      if (id === "scheduler") { if (NX.scheduler) NX.scheduler.mount(page); continue; }
       if (id === "logging") {
         const n = document.createElement("p"); n.className = "small"; n.textContent = "These settings are shared by all channels. Dropping fragments (min_fragment_chars, min_fragment_words and the related settings under Message segmentation) is set separately for each channel, on its Channel tab.";
         page.appendChild(n);

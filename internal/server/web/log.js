@@ -345,19 +345,22 @@
   }
   // the status line under the message: the stations on air when the message began (the one it was named for in bold)
   function paintStat() {
-    const bar = $("lp-stat"), r = L.rec;
-    if (!r || r.id !== L.selId || !r.rx) { bar.replaceChildren(); return; }
+    const bars = [$("lp-stat"), $("ld-stat")], r = L.rec;
+    if (!r || r.id !== L.selId || !r.rx) { bars.forEach((b) => b.replaceChildren()); return; }
     if (!NX.stationList().length) { NX.loadStations().then(() => { if (L.rec === r) paintStat(); }).catch(() => {}); return; }
     const f = Number(r.ch) > 100000 ? Number(r.ch) / 1000 : Number(r.ch), a = NX.onAirAt(f, new Date(r.rx), r.sid);
-    const parts = [`ON AIR ${f}kHz ${a.hhmm}UTC  `];
-    if (!a.on.length) parts.push("no station");
-    a.on.forEach((s, i) => { if (i) parts.push("   "); parts.push(s.own ? el("b", { text: s.text }) : s.text); });
-    if (a.notDue) parts.push(`   \u2014   named station ${a.notDue} is not scheduled at this time`);
-    bar.replaceChildren(...parts);
+    const parts = () => {
+      const p = [`ON AIR ${f}kHz ${a.hhmm}UTC  `];
+      if (!a.on.length) p.push("no station");
+      a.on.forEach((s, i) => { if (i) p.push("   "); p.push(s.own ? el("b", { text: s.text }) : s.text); });
+      if (a.notDue) p.push(`   \u2014   named station ${a.notDue} is not scheduled at this time`);
+      return p;
+    };
+    bars.forEach((b) => b.replaceChildren(...parts()));
   }
   function paintPane() {
     const r = L.rec, tx = $("lp-text"), inf = $("lp-info");
-    if (!r || r.id !== L.selId) { tx.replaceChildren(); $("lp-stat").replaceChildren(); inf.textContent = L.sel.size > 1 ? `${L.sel.size} records selected` : "No record selected"; return; }
+    if (!r || r.id !== L.selId) { tx.replaceChildren(); $("lp-stat").replaceChildren(); $("ld-stat").replaceChildren(); inf.textContent = L.sel.size > 1 ? `${L.sel.size} records selected` : "No record selected"; return; }
     paintStat();
     inf.textContent = [NX.hex(r.id), NX.stamp(r.rx) + " UTC", r.ch ? r.ch + " kHz" : "", r.st || "", r.kind].filter(Boolean).join("  \u00b7  ");
     NX.fillRecordText(tx, r, { cor: true });

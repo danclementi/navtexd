@@ -370,8 +370,8 @@ dialog#rec-dlg::backdrop { background: rgba(0, 0, 0, .45); }
 .ctx button:disabled { color: var(--dim); opacity: .55; cursor: default; }
 .ctx hr { margin: 4px 0; border: 0; border-top: 1px solid var(--line); }
 .clipbuf { position: fixed; left: -1000px; top: 0; }
-#tab-log .lpstat { flex: none; padding: 2px 8px; font: 12px var(--font); color: var(--dim); border-top: 1px solid var(--line); background: var(--panel); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
-#tab-log .lpstat b { color: var(--ink); }
+.lpstat { flex: none; padding: 2px 8px; font: 12px var(--font); color: var(--dim); border-top: 1px solid var(--line); background: var(--panel); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.lpstat b { color: var(--ink); }
 #tab-log .lptext { flex: 1 1 auto; min-height: 0; margin: 0; padding: 4px 8px; overflow: auto; font-family: var(--mono); font-size: 13px; background: var(--msg-bg); color: var(--msg-ink); white-space: pre; }
 #lp-text .fix { background: var(--msg-ink); color: var(--msg-bg); }
 #tab-log .filters { display: block; margin-bottom: 4px; }
@@ -637,3 +637,17 @@ nav #helplink:hover { color: var(--ink); }
   #f-dlg .fpick { grid-column: 1; border-top: 1px solid var(--line); padding-top: 10px; order: 2; }
   #f-dlg .fgrid { grid-column: 1; order: 1; }
 }
+
+/* Options, Scheduler */
+.scgrid { display: grid; grid-template-columns: 3em minmax(0, 1fr); gap: 8px 10px; align-items: center; margin: 10px 0 12px; }
+.scgrid .fl { text-align: right; color: var(--dim); }
+.scrow { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; min-width: 0; }
+.scrow #sdl-value { flex: 1 1 22em; min-width: 12em; font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; }
+.scrow select { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 3px 4px; }
+.scmsg.bad, #sdl-table .bad { color: var(--bad); }
+.sctable { background: var(--panel); display: grid; grid-template-columns: 3em minmax(10em, auto) minmax(14em, 1fr) auto auto auto; gap: 0; align-items: center; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.sctable > span { padding: 4px 8px; border-top: 1px solid var(--line); min-width: 0; }
+.sctable > .sch { border-top: 0; font-weight: 600; background: var(--bg); color: var(--dim); }
+.sctable .scval { width: 100%; box-sizing: border-box; font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; }
+.sctable .sc.dim, .sctable .sc .dim { opacity: .55; }
+

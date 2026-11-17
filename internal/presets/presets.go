@@ -67,7 +67,7 @@ func (e End) validate(name string, local bool) error {
 		}
 	}
 	if e.Time != "" {
-		if r, err := when.ParseTimeRef(e.Time); err != nil || r.Sun {
+		if r, err := when.ParseTimeRef(e.Time); err != nil || !r.Fixed() {
 			return fmt.Errorf("%s time %q: want hh:mm", name, e.Time)
 		}
 	}

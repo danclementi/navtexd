@@ -27,6 +27,7 @@ import (
 	"navtex/internal/config"
 	"navtex/internal/engine"
 	"navtex/internal/presets"
+	"navtex/internal/schedule"
 	"navtex/internal/sitor"
 	"navtex/internal/store"
 )
@@ -50,7 +51,8 @@ type Server struct {
 	rate   rateLimiter  // requests of viewers
 	warnAt atomic.Int64 // when the system log was last told about a refused viewer (unix seconds)
 	cat    *catalog.Catalog
-	pre    *presets.Store // the Log filter presets
+	pre    *presets.Store  // the Log filter presets
+	sched  *schedule.Store // the schedule of the Options tab
 	run    *app.Runner
 	hub    *Hub
 	acc    *Access
@@ -79,6 +81,7 @@ func New(st *store.Store) *Server { return &Server{st: st, hub: NewHub(), places
 func (s *Server) Attach(r *app.Runner, cat *catalog.Catalog) {
 	s.run, s.cat = r, cat
 	s.pre = presets.Open(r.DataDir())
+	s.sched = schedule.Open(r.DataDir())
 	s.acc = NewAccess(func() config.Server { return r.Config().Server })
 	s.acc.Limiter = &s.logins
 }
@@ -369,6 +372,7 @@ func (s *Server) Serve(ctx context.Context, listen, tunnel string) error {
 		return errors.New("nothing to listen on")
 	}
 	s.updateSun()
+	go s.scheduleLoop(ctx)
 	tick := time.NewTicker(time.Minute)
 	defer tick.Stop()
 	for {
@@ -434,6 +438,7 @@ func (s *Server) handler(tunnel bool) http.Handler {
 	mux.HandleFunc("GET /api/events", s.events(tunnel))
 	s.recordRoutes(mux, tunnel)
 	s.presetRoutes(mux, tunnel)
+	s.scheduleRoutes(mux, tunnel)
 	s.extraRoutes(mux, tunnel)
 	mux.HandleFunc("GET /api/settings", s.admin(tunnel, s.getSettings))
 	mux.HandleFunc("PUT /api/settings", s.admin(tunnel, s.putSettings))

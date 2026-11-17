@@ -236,3 +236,27 @@ func TestLastNightWindow(t *testing.T) {
 		t.Errorf("window is %v long", h)
 	}
 }
+
+func TestMidnightTimes(t *testing.T) {
+	for in, want := range map[string]string{"midnight": "midnight", "midnight-2h": "midnight-2h", "midnight+30m": "midnight+30m", "midnight+1:30": "midnight+90m"} {
+		r, err := ParseTimeRef(in)
+		if err != nil || !r.Mid || r.Fixed() || r.String() != want {
+			t.Errorf("%s: %+v %v (%s)", in, r, err, r.String())
+		}
+	}
+	for _, bad := range []string{"midnight*2", "midnight+13h", "midnightish"} {
+		if _, err := ParseTimeRef(bad); err == nil {
+			t.Errorf("%s was accepted", bad)
+		}
+	}
+	loc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Skip("no zone database")
+	}
+	z := Zone{Loc: loc}
+	r, _ := ParseTimeRef("midnight-1h")
+	got, ok := z.At(Date{2026, time.November, 17}, r) // 23:00 on the 16th, EST
+	if !ok || got.UTC().Format("2006-01-02 15:04") != "2026-11-17 04:00" {
+		t.Errorf("midnight-1h: %v %v", got, ok)
+	}
+}
