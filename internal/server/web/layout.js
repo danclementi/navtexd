@@ -25,6 +25,9 @@
     logrep: { name: "Log + Report", cols: [
       { w: 1.6, rows: [{ tab: "log", h: 1 }] },
       { w: 1, rows: [{ tab: "report", h: 1 }] }] },
+    logedit: { name: "Log, Report and text", cols: [
+      { w: 1.4, rows: [{ tab: "log", h: 1 }] },
+      { w: 1, rows: [{ tab: "report", h: 1 }, { tab: "retext", h: 1.2 }] }] },
     grid4: { name: "2 × 2", cols: [
       { w: 1, rows: [{ tab: "status", h: 1 }, { tab: "log", h: 1 }] },
       { w: 1, rows: [{ tab: "spectrum", h: 1 }, { tab: "report", h: 1 }] }] },

@@ -70,6 +70,7 @@
   <button data-tab="spectrum">Spectrum</button>
   <button data-tab="log">Log</button>
   <button data-tab="report">Report</button>
+  <button data-tab="retext">Report text</button>
   <button data-tab="schedule">Schedule</button>
   <button data-tab="database">Stations</button>
   <button data-tab="ephemeris">Ephemeris</button>
@@ -202,7 +203,7 @@
       </fieldset>
       <label class="check" title="The comment of each record (the operator and channel comments from when it was received) goes at the end of its line.&#10;Unchecked: the report has no comments."><input id="rp-comments" type="checkbox" checked> include comments</label>
       <span class="grow"></span>
-      <button id="rp-edit" class="tb" disabled title="Edit the report text before saving or copying it"><svg class="ic" aria-hidden="true"><use href="#i-edit"/></svg><span>edit</span></button>
+      <button id="rp-edit" class="tb" disabled title="Edit the report text before saving or copying it.&#10;It opens in the Report text tab where that is on screen, else in a pop-up."><svg class="ic" aria-hidden="true"><use href="#i-edit"/></svg><span>edit</span></button>
       <button id="rp-save" class="tb" disabled title="Save the report as a text file"><svg class="ic" aria-hidden="true"><use href="#i-device-floppy"/></svg><span>save</span></button>
       <button id="rp-copy" class="tb" disabled title="Copy the report text to the clipboard"><svg class="ic" aria-hidden="true"><use href="#i-clipboard-copy"/></svg><span>copy</span></button>
       <span id="rp-edited" class="small" hidden>edited text <button id="rp-unedit" class="linkbtn" type="button" title="Throw the edits away and use the generated report again">revert</button></span>
@@ -211,6 +212,20 @@
     <div class="tablewrap tall"><table id="rp-table"><thead><tr><th>UTC received</th><th>Freq</th><th>Q</th><th>ID</th><th>Station</th><th class="km">Dist km</th><th>Kind</th></tr></thead><tbody></tbody></table></div>
     <h3>Text <span id="rp-title" class="small"></span></h3>
     <pre id="rp-text"></pre>
+  </section>
+  <section id="tab-retext" hidden>
+    <div id="re-body" class="rebody">
+      <div class="rehead">
+        <button id="re-revert" type="button" class="tb" disabled title="Replace the edited text with the report as it is generated from the list.&#10;Your edits are lost."><svg class="ic" aria-hidden="true"><use href="#i-restore"/></svg><span>revert</span></button>
+        <button id="re-copy" type="button" class="tb" disabled title="Copy the report text to the clipboard"><svg class="ic" aria-hidden="true"><use href="#i-clipboard-copy"/></svg><span>copy</span></button>
+        <button id="re-save" type="button" class="tb" disabled title="Save the report as a text file"><svg class="ic" aria-hidden="true"><use href="#i-device-floppy"/></svg><span>save</span></button>
+        <span class="grow"></span>
+        <span id="re-msg" class="small"></span>
+        <span id="re-count" class="small"></span>
+      </div>
+      <p class="small redit-note">The text follows the report list until you edit it. Your edits change only this text, never the log records. While it is edited the list cannot change without asking you first; revert brings the generated text back.</p>
+      <textarea id="re-text" spellcheck="false" wrap="off" placeholder="The report list is empty. Add records from the Log tab (Alt-click, or the context menu)."></textarea>
+    </div>
   </section>
   <section id="tab-statistics" hidden><p class="note">Reception statistics are planned for the next milestone.</p></section>
   <section id="tab-schedule" hidden>
@@ -258,19 +273,15 @@
 </main>
 <dialog id="rp-dlg" aria-label="Edit report">
   <div class="dlghead">
-    <b>Edit report</b><span id="re-count" class="small"></span>
+    <b>Edit report</b>
     <span class="grow"></span>
     <button id="re-close" type="button" title="Close without keeping the changes (Esc)" aria-label="Close">&#10005;</button>
   </div>
-  <p class="small redit-note">Changes affect only this report text, never the log records. Accept keeps them for save and copy in the Report tab until the report list changes; revert regenerates the text from the list.</p>
-  <textarea id="re-text" spellcheck="false" wrap="off"></textarea>
+  <div id="re-host"></div>
   <div class="dlgfoot">
-    <button id="re-revert" type="button" class="tb" title="Replace the text with the report as it is generated from the list.
-Your edits in this window are lost."><svg class="ic" aria-hidden="true"><use href="#i-restore"/></svg><span>revert</span></button>
-    <span class="grow"></span><span id="re-msg" class="small"></span>
+    <span class="grow"></span>
     <button id="re-cancel" type="button" class="tb" title="Close without keeping the changes (Esc)"><svg class="ic" aria-hidden="true"><use href="#i-cancel"/></svg><span>cancel</span></button>
-    <button id="re-accept" type="button" class="tb" title="Keep the edited text as the report text
-until the report list changes."><svg class="ic" aria-hidden="true"><use href="#i-thumb-up"/></svg><span>accept</span></button>
+    <button id="re-accept" type="button" class="tb" title="Keep the edited text as the report text"><svg class="ic" aria-hidden="true"><use href="#i-thumb-up"/></svg><span>accept</span></button>
   </div>
 </dialog>
 <dialog id="db-dlg" aria-label="Log database">

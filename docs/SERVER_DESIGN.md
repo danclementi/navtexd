@@ -159,7 +159,7 @@ Testing aid: `navtexd -realtime -in x.wav` plays a recording at real speed; `NAV
 
 ## 14. Milestone 3 status (done)
 - **Identification** (`internal/ident`, `internal/catalog`): candidates = stations on the frequency (with the B1 letter if read, and the NAVAREA if the operator set it). Score = UID hits (10, +2 each further, cap 14) + GID hits (4 / number of stations on that frequency sharing the keyword, cap 8) + slot term (max 2, half for US stations; only used when B1 is unread, because every station with the same letter shares the slot) + distance prior (max 0.6) + history (max 0.5). A station is named when keyword evidence is at least 2 and leads the runner-up by 0.75, or when it is the only station with the operator-set area and letter. Otherwise the record stays UNID and the best candidates with scores are stored (shown in the Log, with a "Use" button that sets B1 and NAVAREA). Keywords: short ones (3 characters or fewer) must be whole words; a leading/trailing space makes any keyword whole-word; others match as substrings.
-- **Station table**: `<data>/navtexd_stations.txt` in the exact YaND format (created if missing from the copy built into the program: the community's table with `navtexd_station_addendum.txt` merged over it, same frequency + NAVAREA + ID letter + call sign replaces a row, other rows are added; a `YAND_STATIONS.txt` of an earlier version is copied to the new name instead and kept as `YAND_STATIONS.old`). A table made by an earlier version does not get them by itself; the import of a file in the Stations tab can merge it (adds the stations the table lacks, and the keywords of the file to the user's lists; or the file's rows replace the user's). Station ID = 1-based line number. An import applies to new messages only; stored records keep the station they were given. Keyword lists are limited to 300 characters each, duplicates dropped, stored in upper case.
+- **Station table**: `<data>/YAND_STATIONS.txt` in the exact YaND format (created from the copy built into the program if missing). Station ID = 1-based line number; after an import, "re-identify" refreshes the stored records. Keyword lists are limited to 300 characters each, duplicates dropped, stored in upper case.
 - **Manual override**: editing B1 and/or NAVAREA (double-click in the Log grid, or the API) marks the record `manual`; the station is then looked up for that pair and re-identification keeps the pair.
 - **Privacy change**: distances and bearings to known stations reveal where the receiver is (two or three of them pin it down), and so do sunrise/sunset times. Viewers therefore get neither, unless `operator.public_location_info` is turned on. (The first design had said viewers see distance and bearing; that was wrong.)
 - **API added**: `GET /api/messages` with all filters (freq, navarea, b1, text, from, to, kind, unid, maxkm (admin), limit, offset, order), `GET|PATCH|DELETE /api/messages/{id}`, `POST /api/maintenance/{delete|compact|reidentify}`, `GET /api/stations`, `GET /api/stations/export`, `PUT /api/stations/{id}/keywords`, `POST /api/stations/import`, `POST /api/reverse`.
@@ -307,17 +307,28 @@ clamped it while the focused cell was replaced, and Escape no longer scrolls the
   `-listen` is never changed.
 - `server.open_browser` (default true) opens the interface in the default browser once the web server is listening.
 
-## 32. Edit report
+## 32. Report text
 
-- The Report tab has an **Edit report** button (left of Save Report) for everyone, viewers included. It opens a modal text box
-  holding the report as generated (header or footer included), monospace, no wrapping, with a line and character count.
-- **Accept** keeps the text as the report text: Save Report and Copy to Clipboard then use it, and an "edited text / revert"
-  note appears. **Revert** (in the pane) replaces the text with the generated report; **Save** saves the pane's text as a file
-  and accepts it; **Copy** copies it; **Cancel**, the close button and Esc ask before throwing away changes.
-- The edit lives in the browser only (`R.edited` in `report.js`): it never touches the log records or the server. It is
-  discarded, after a confirmation, when the list or the Personal info choice changes; if records were added in the Log tab, the
-  Report tab asks when it is next opened (OK = discard the edit, Cancel = keep the edited text).
-- Saved and copied edited text uses CRLF line endings like the generated report.
+- The **Report text** tab (`#tab-retext`, `report.js`) shows the report as generated for the list (header or footer included),
+  in a monospace text box without wrapping, with a line and character count, and **revert**, **copy** and **save** buttons.
+  It is a tab like the others: it can be moved into any tile (the layout preset "Log, Report and text" puts it under the Report).
+  Everyone, viewers included, can edit it.
+- The text **follows the list**: while it has not been edited, a change of the list or of the Personal info / include comments
+  choices makes it again (the scroll position is kept). The text is not made while the tab is not on screen; it is made when it
+  is shown.
+- The edit lives in the browser only (`R.edited = {text, key}` in `report.js`; `key` is the list and choices the text was made
+  for): it never touches the log records or the server. While the text is **edited**, a change of the list is asked about first
+  (`NX.replist.guard`, set by `report.js`): OK discards the edits and goes on, Cancel leaves everything as it is. This covers
+  Add to report in the Log tab (the message under the list says "not added" when refused), remove and clear in the Report
+  tab, and the Personal info and include comments choices. A list change that is not the user's (records deleted from the
+  log drop out of the list) keeps the edited text and says in the count line that the list has changed.
+- **Revert** (asks first when edited) makes the text again from the list. The "edited text / revert" note of the Report tab shows
+  the same state. Save and Copy (here and in the Report tab) use the edited text if there is one, with CRLF line ends like
+  the generated report.
+- The **Edit** button of the Report tab goes to the text box of the Report text tab when that tab is on screen. Where it is not
+  (the plain tabs, or a layout without it), it opens a pop-up (`#rp-dlg`) that holds the same editor: the section `#re-body` is
+  moved into the pop-up and back, as `#hdrbody` is for the Instruments tab, so every id stays unique. In the pop-up, Cancel
+  (also the close button and Esc; it asks when something changed) puts back what was there when it opened; Accept keeps it.
 
 ## 33. Decoding channels
 
@@ -415,7 +426,7 @@ clamped it while the focused cell was replaced, and Escape no longer scrolls the
 
 - The Database tab's station table block has only **Export table** and **Import table**. Import replaces the whole table; the file is
   parsed and checked first (a file without stations is refused), then the current table is copied to
-  `backups/navtexd_stations-<time it was last saved>.txt` (a `-2`, `-3` suffix if that name exists), and the confirmation says so.
+  `backups/YAND_STATIONS-<time it was last saved>.TXT` (a `-2`, `-3` suffix if that name exists), and the confirmation says so.
   The result line names the backup.
 - Removed for now: "re-identify records" on import, "Re-identify all records now" and "Redo autocorrection of all records"
   (`/api/maintenance/reidentify` and `/recorrect`). `Catalog.Reidentify` stays as a library function.

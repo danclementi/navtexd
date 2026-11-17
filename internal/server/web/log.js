@@ -3,7 +3,7 @@
 (() => {
   const NX = window.NX, $ = NX.$, el = NX.el, api = NX.api;
   const CH = 100, ROW = 22, HDR = 26; // fetch chunk size, row height and header height in pixels
-  const L = { total: 0, all: 0, cache: new Map(), chunks: new Set(), gen: 0, sel: new Set(), selId: 0, anchor: -1, rec: null, loaded: false, timer: 0, q: "", hid0: 0, la: 0, lt: 0 };
+  const L = { total: 0, all: 0, cache: new Map(), chunks: new Set(), gen: 0, sel: new Set(), selId: 0, anchor: -1, rec: null, loaded: false, timer: 0, q: "", hid0: 0, la: 0, lt: 0, dir: 1, end: false };
   const admin = () => NX.state.role === "admin";
   const sc = $("logscroll");
 
@@ -392,6 +392,7 @@
   // show one record (the "current" one) in the text pane; `keep` leaves the selection set alone
   async function select(id, keep) {
     L.selId = id; if (!keep) L.gone = false;
+    if (id) { L.end = false; $("rec-text").classList.remove("endlist"); }
     if (!keep) L.sel = id ? new Set([id]) : new Set();
     render();
     if (!id) { paintPane(); $("rec-text").textContent = ""; $("rev-sug").hidden = true; $("rec-info").replaceChildren(); $("rec-ident").replaceChildren(); $("rec-title").textContent = ""; L.rec = null; return; }
@@ -719,7 +720,7 @@
   const pos = () => (L.selId && L.anchor >= 0 ? L.anchor : (() => { const i = idxOf(L.selId); return i >= 0 ? i : L.anchor; })());
   async function locate() {
     const i = pos();
-    if (!L.selId || i < 0) { L.gone = false; return; }
+    if (!L.selId || i < 0) { if (!L.end) L.gone = false; return; } // (at the end of the list the gap is the position)
     const from = Math.max(0, i - 3);
     try {
       const j = await fetchRange(from, 7);
@@ -743,18 +744,18 @@
     $("rec-title").textContent = L.rec ? `${L.rec.kind}${where}` : "";
     $("ld-prev").disabled = !canStep(earlier());
     $("ld-next").disabled = !canStep(-earlier());
-    $("ld-report").hidden = false;
+    $("ld-report").hidden = L.end;
     syncDelete();
   }
   // (not while all the text is shown reversed: it is too easy to forget that, and to take the message for garbage)
   function syncDelete() {
     const rev = $("rec-showrev").checked;
-    $("ld-delete").disabled = !admin() || rev;
+    $("ld-delete").disabled = !admin() || rev || L.end;
     $("ld-delete").title = rev ? "Not while \"reverse all text\" is checked" : "Delete this record.\nIt is saved first: the undo button brings it back.\nKey: Delete";
   }
   async function openDialog() {
     if (!L.selId) return;
-    if (!dlg.open) dlg.showModal();
+    if (!dlg.open) { dlg.showModal(); L.dir = 1; }
     updateNav();
     if (!L.rec || L.rec.id !== L.selId) select(L.selId, true); // the pane may still show an older record
   }
@@ -768,7 +769,7 @@
       const i = pos(), to = L.gone ? (d > 0 ? i : i - 1) : i + d;
       const j = await fetchRange(to, 1), r = j.records[0];
       if (!r) return;
-      L.gone = false; L.anchor = to; L.cache.set(to, r);
+      L.dir = d; L.gone = false; L.anchor = to; L.cache.set(to, r);
       scrollToIndex(to);
       select(r.id);
     } finally { stepping = false; }
@@ -776,7 +777,10 @@
   $("ld-prev").onclick = () => step(earlier());
   $("ld-next").onclick = () => step(-earlier());
   $("ld-close").onclick = () => dlg.close();
-  dlg.addEventListener("close", () => { sc.focus({ preventScroll: true }); render(); });
+  dlg.addEventListener("close", () => {
+    if (L.end) { L.end = false; L.gone = false; $("rec-text").classList.remove("endlist"); }
+    sc.focus({ preventScroll: true }); render();
+  });
   dlg.addEventListener("keydown", (e) => {
     if (e.ctrlKey || e.altKey || e.metaKey || /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
     if (e.key === "ArrowLeft") { e.preventDefault(); step(earlier()); }
@@ -1136,7 +1140,22 @@
     L.gen++; L.cache.clear(); L.chunks.clear();
     try { const j = await fetchRange(0, 1); L.total = j.total; L.all = j.all; L.lt = j.total; L.la = j.all; } catch (e) { return; }
     sc.scrollTop = top; select(0);
-    if (dlg.open) { if (L.total && at >= 0) selectIndex(Math.min(at, L.total - 1)); else dlg.close(); }
+    if (dlg.open) {
+      // the next record in the direction the pop-up was being stepped (down the list unless the last step was up), so that no record is shown
+      // twice; where there is none, a page that says it is the end of the list
+      const down = (L.dir || 1) > 0, nxt = down ? at : at - 1;
+      if (L.total && at >= 0 && nxt >= 0 && nxt < L.total) selectIndex(nxt);
+      else if (L.total && at >= 0) showEnd(down ? L.total : 0);
+      else dlg.close();
+    }
+  }
+  // The pop-up has run off the end of the list (the last record in the direction of travel was deleted). The gap is where that record was:
+  // the arrows then go to its neighbour on the side that is left, and nothing is skipped.
+  async function showEnd(gap) {
+    await select(0);
+    L.end = true; L.gone = true; L.anchor = gap;
+    $("rec-text").textContent = "End of list"; $("rec-text").classList.add("endlist");
+    updateNav();
   }
   // Undo: the server keeps every deletion and every edit of a record (30 days) on one stack; this takes back the last one
   // what Undo would do: the last action (a deletion or an edit of a record), with the date of the message it concerns
@@ -1345,9 +1364,9 @@
   function addToReport(list) {
     if (!list.length) return;
     const n = NX.replist.add(list);
-    const msg = n === list.length ? `${n} added to your report` : n ? `${n} added to your report (the rest were already there)` : "already in your report";
+    const msg = n < 0 ? "not added: the report text has your edits (revert it first)" : n === list.length ? `${n} added to your report` : n ? `${n} added to your report (the rest were already there)` : "already in your report";
     $("n-selinfo").textContent = msg;
-    if (dlg.open) $("rec-title").textContent += "  \u2014 " + (n ? "added to your report" : "already in your report");
+    if (dlg.open) $("rec-title").textContent += "  \u2014 " + (n < 0 ? "not added: the report text has your edits" : n ? "added to your report" : "already in your report");
     clearTimeout(reportNote); reportNote = setTimeout(render, 2500);
   }
   $("n-report").onclick = () => addToReport([...L.sel]);

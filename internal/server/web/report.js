@@ -2,7 +2,7 @@
 // Report tab: the records this user added from the Log tab (the list is kept in this browser, see replist.js), in time order.
 (() => {
   const NX = window.NX, $ = NX.$, el = NX.el, api = NX.api;
-  const R = { rows: [], sel: new Set(), anchor: -1, edited: null }; // edited: { text, key } while the operator's edited report text is in use
+  const R = { rows: [], sel: new Set(), anchor: -1, edited: null }; // edited: { text, key } while the report text has been edited by hand (key: the list and choices the generated text was made for)
   const admin = () => NX.state.role === "admin";
 
   function render() {
@@ -25,11 +25,6 @@
     const have = new Set(R.rows.map((r) => r.id));
     NX.replist.keepOnly(R.rows.map((r) => r.id)); // records deleted from the log drop out of the list
     R.sel = new Set([...R.sel].filter((id) => have.has(id))); R.anchor = -1;
-    if (R.edited && R.edited.key !== key()) {
-      // the list changed (records added in the Log tab) since the text was edited
-      if (confirm("The report list has changed since you edited the report text.\n\nOK = discard your edits and use the new list.\nCancel = keep your edited text (it will not include the new list).")) R.edited = null;
-      else R.edited.key = key();
-    }
     render();
   }
   async function show(id) {
@@ -59,12 +54,20 @@
     if (/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
     e.preventDefault(); R.sel = new Set(R.rows.map((r) => r.id)); render();
   });
-  const dropEdits = () => { if (!R.edited) return true; if (!confirm("Your edits to the report text will be discarded. Continue?")) return false; R.edited = null; return true; };
-  $("rp-remove").onclick = async () => { if (!dropEdits()) return; NX.replist.remove([...R.sel]); R.sel = new Set(); R.anchor = -1; await load(); };
+  // The report text follows the list until it is edited by hand. While it is edited, a change of the list (or of the choices that make the
+  // text) asks first: the edit belongs to the text as it was generated for one list. NX.replist asks through guard.
+  const clearEdits = () => { R.edited = null; genKey = null; }; // (genKey: the generated text is made again when it is next shown)
+  const dropEdits = () => {
+    if (!R.edited) return true;
+    if (!confirm("The report text has your edits, and changing the report discards them.\n\nOK = discard the edits and go on.\nCancel = leave everything as it is.")) return false;
+    clearEdits(); render(); return true;
+  };
+  NX.replist.guard = dropEdits;
+  $("rp-remove").onclick = async () => { if (NX.replist.remove([...R.sel]) === false) return; R.sel = new Set(); R.anchor = -1; await load(); };
   $("rp-clear").onclick = async () => {
     if (!confirm("Remove all records from the report list? (The records stay in the log.)")) return;
-    if (!dropEdits()) return;
-    NX.replist.clear(); R.sel = new Set(); await load();
+    if (NX.replist.clear() === false) return;
+    R.sel = new Set(); await load();
   };
   // ---- the report as text: save (with the browser's save dialog where it has one) or copy ----
   const infoMode = () => (admin() ? (document.querySelector("input[name=rp-info]:checked") || {}).value || "omit" : "omit");
@@ -73,7 +76,7 @@
   document.querySelectorAll("input[name=rp-info]").forEach((r) => {
     r.onchange = () => {
       if (!dropEdits()) { document.querySelector(`input[name=rp-info][value=${lastInfo}]`).checked = true; return; } // keep the edited text and the old choice
-      lastInfo = r.value; render();
+      lastInfo = r.value; render(); textChanged();
       try { localStorage.setItem("nx-rp-info", r.value); } catch (e) { /* no storage */ }
     };
   });
@@ -82,11 +85,12 @@
   try { if (localStorage.getItem("nx-rp-comments") === "0") $("rp-comments").checked = false; } catch (e) { /* no storage */ }
   $("rp-comments").onchange = () => {
     if (!dropEdits()) { $("rp-comments").checked = !$("rp-comments").checked; return; } // keep the edited text and the old choice
-    render();
+    render(); textChanged();
     try { localStorage.setItem("nx-rp-comments", commentsOn() ? "1" : "0"); } catch (e) { /* no storage */ }
   };
-  const key = () => R.rows.map((r) => r.id).join(",") + "|" + infoMode() + "|" + (commentsOn() ? "c" : "");
-  const note = (t) => { $("rp-msg").textContent = t; clearTimeout(note.t); note.t = setTimeout(() => { $("rp-msg").textContent = ""; }, 4000); };
+  const key = () => NX.replist.ids().join(",") + "|" + infoMode() + "|" + (commentsOn() ? "c" : "");
+  // a short message, shown in the Report tab and in the Report text tab
+  const note = (t) => { $("rp-msg").textContent = $("re-msg").textContent = t; clearTimeout(note.t); note.t = setTimeout(() => { $("rp-msg").textContent = $("re-msg").textContent = ""; }, 4000); };
   const crlf = (t) => t.replace(/\r?\n/g, "\r\n");
   const generated = async () => {
     const r = await fetch("/api/report/text", { method: "POST", credentials: "same-origin", headers: { "X-Navtex": "1", "Content-Type": "application/json" }, body: JSON.stringify({ ids: NX.replist.ids(), info: infoMode(), comments: commentsOn() }) });
@@ -122,41 +126,68 @@
   }
   $("rp-save").onclick = async () => { try { await saveText(await reportText()); } catch (e) { note("Not saved: " + e.message); } };
   $("rp-copy").onclick = async () => { try { await copyText(await reportText()); } catch (e) { note("Not copied: " + e.message); } };
-  $("rp-unedit").onclick = () => { R.edited = null; render(); note("Edits discarded."); };
+  $("rp-unedit").onclick = () => { clearEdits(); render(); textChanged(); note("Edits discarded."); };
 
-  // ---- Edit report: the text can be changed by hand. The edit lives in this browser only, never in the log records. ----
-  const dlg = $("rp-dlg"), ta = $("re-text");
-  let initial = "", gen = "";
-  const counts = () => { const t = ta.value; $("re-count").textContent = `${t ? t.split("\n").length : 0} lines, ${t.length} characters${ta.value !== initial ? " \u2014 changed" : ""}`; };
-  const rmsg = (t) => { $("re-msg").textContent = t; clearTimeout(rmsg.t); rmsg.t = setTimeout(() => { $("re-msg").textContent = ""; }, 4000); };
-  ta.addEventListener("input", counts);
-  $("rp-edit").onclick = async () => {
-    try {
-      gen = (await generated()).replace(/\r\n/g, "\n");
-      ta.value = initial = R.edited ? R.edited.text : gen;
-      $("re-msg").textContent = "";
-      counts(); dlg.showModal(); ta.focus({ preventScroll: true }); ta.setSelectionRange(0, 0); ta.scrollTop = 0;
-    } catch (e) { note("Cannot edit: " + e.message); }
+  // ---- the report text: in the Report text tab or, where that tab is not on screen, in a pop-up that holds the same editor ----
+  // The text is made from the list as it is now, and follows it until you edit it. The edit lives in this browser only, never in the log
+  // records. In the pop-up, cancel puts back what was there when it opened; accept keeps it.
+  const ta = $("re-text"), body = $("re-body"), tabSec = $("tab-retext"), dlg = $("rp-dlg");
+  let gen = "", genKey = null, gseq = 0, tt = 0, snap = null, snapText = "";
+  ta.readOnly = true; // until the first text has been made
+  const stale = () => !!R.edited && R.edited.key !== key(); // records were deleted from the log: the edited text does not follow the list
+  const counts = () => {
+    const t = ta.value;
+    $("re-count").textContent = `${t ? t.split("\n").length : 0} lines, ${t.length} characters${R.edited ? " \u2014 edited" : ""}${stale() ? " \u2014 the list has changed, revert to follow it" : ""}`;
+    $("re-revert").disabled = !R.edited;
+    $("re-copy").disabled = $("re-save").disabled = !NX.replist.count();
   };
-  const close = (force) => {
-    if (!force && ta.value !== initial && !confirm("Discard your changes to the report text?")) return;
-    dlg.close();
-  };
-  const accept = () => { // keep the text for Save Report / Copy, unless it is the generated report again
-    R.edited = ta.value === gen ? null : { text: ta.value, key: key() };
-    render(); dlg.close();
-  };
-  $("re-accept").onclick = accept;
-  $("re-cancel").onclick = $("re-close").onclick = () => close(false);
-  dlg.addEventListener("cancel", (e) => { e.preventDefault(); close(false); });
+  const setText = (t) => { const y = ta.scrollTop, x = ta.scrollLeft; ta.value = t; ta.scrollTop = y; ta.scrollLeft = x; counts(); };
+  async function refresh() {
+    const my = ++gseq, k = key();
+    let text = "";
+    try { if (NX.replist.count()) text = (await generated()).replace(/\r\n/g, "\n"); } catch (e) { note("Cannot make the report: " + e.message); return; }
+    if (my !== gseq || R.edited) return; // a newer request, or edits made while this one was running
+    gen = text; genKey = k; ta.readOnly = false; setText(gen);
+  }
+  const showing = () => NX.shown("retext") || dlg.open;
+  function textChanged() { // the list or a choice changed: an unedited text is made again, an edited one stays
+    counts();
+    if (!showing()) return;
+    clearTimeout(tt); tt = setTimeout(() => { if (!R.edited) refresh(); else counts(); }, 80);
+  }
+  ta.addEventListener("input", () => {
+    if (ta.value === gen) R.edited = null; else if (R.edited) R.edited.text = ta.value; else R.edited = { text: ta.value, key: genKey };
+    counts(); render();
+  });
   $("re-revert").onclick = async () => {
-    if (ta.value !== gen && !confirm("Replace the text with the report as generated from the list?")) return;
-    try { gen = (await generated()).replace(/\r\n/g, "\n"); ta.value = gen; counts(); rmsg("Reverted."); } catch (e) { rmsg("Cannot revert: " + e.message); }
+    if (R.edited && !confirm("Replace the text with the report as generated from the list?\n\nYour edits are lost.")) return;
+    clearEdits(); render(); await refresh(); note("Reverted.");
   };
+  $("re-save").onclick = () => $("rp-save").onclick();
+  $("re-copy").onclick = () => $("rp-copy").onclick();
+  async function openDialog() {
+    if (!R.edited && genKey !== key()) await refresh();
+    snap = R.edited ? { ...R.edited } : null; snapText = ta.value;
+    $("re-host").append(body); counts();
+    dlg.showModal(); ta.focus({ preventScroll: true }); ta.setSelectionRange(0, 0); ta.scrollTop = 0;
+  }
+  $("rp-edit").onclick = () => {
+    if (NX.shown("retext")) { ta.focus(); return; } // the tab is on screen: the text is edited there
+    openDialog().catch((e) => note("Cannot edit: " + e.message));
+  };
+  dlg.addEventListener("close", () => { tabSec.append(body); counts(); render(); });
+  const cancelDialog = () => {
+    if (ta.value !== snapText && !confirm("Discard your changes to the report text?")) return;
+    R.edited = snap; if (!snap) genKey = null; ta.value = snapText; counts(); render(); dlg.close();
+  };
+  $("re-accept").onclick = () => dlg.close();
+  $("re-cancel").onclick = $("re-close").onclick = cancelDialog;
+  dlg.addEventListener("cancel", (e) => { e.preventDefault(); cancelDialog(); });
+  NX.tabs.retext = () => { counts(); if (!R.edited && genKey !== key()) refresh(); };
 
-  NX.listen("role", render);
-  // in a tiled layout the Report can be on screen while records are added in the Log tile
+  NX.listen("role", () => { render(); textChanged(); });
+  // in a tiled layout the Report (and its text) can be on screen while records are added in the Log tile
   let rlt = 0;
-  NX.listen("replist", () => { if (NX.shown("report")) { clearTimeout(rlt); rlt = setTimeout(load, 80); } });
+  NX.listen("replist", () => { if (NX.shown("report")) { clearTimeout(rlt); rlt = setTimeout(load, 80); } textChanged(); });
   NX.tabs.report = load;
 })();
