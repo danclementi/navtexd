@@ -161,7 +161,7 @@ type Meters struct {
 
 // Operator holds the operator's own information.
 type Operator struct {
-	Comment  string  `json:"comment" doc:"Operational comment stored with every record, e.g. the antenna in use"`
+	Comment  string  `json:"comment" doc:"Operational comment stored with every record, e.g. the antenna in use. The Scheduler (Options) can overwrite it at set times of day"`
 	LatDeg   float64 `json:"latitude_deg" unit:"deg" doc:"Receiving position, latitude, north positive (0 with longitude 0 = not set). Used for distances, bearings and sun times; never sent to viewers"`
 	LonDeg   float64 `json:"longitude_deg" unit:"deg" doc:"Receiving position, longitude, east positive"`
 	TimeZone string  `json:"time_zone" doc:"Time zone of the receiving position, as an IANA name such as America/New_York or Europe/Oslo (empty = the zone of the computer running navtexd). Daylight saving time follows from the name. It defines 'local' days and the local sunrise and sunset in the Log filter; stored times stay UTC"`
@@ -395,7 +395,7 @@ func ValidChannelHz(hz float64) bool {
 type Channel struct {
 	FrequencyHz float64 `json:"frequency_hz" unit:"Hz" doc:"nominal carrier frequency of the NAVTEX channel in Hz: 518000, 490000, 486000, 424000 or 4209500"`
 	Name        string  `json:"name" doc:"Channel name (fixed: Channel 1 to 4); other features refer to the channels by these numbers"`
-	Comment     string  `json:"comment" doc:"A note about this channel (receiver, antenna, location ...); it is stored with every record received on it"`
+	Comment     string  `json:"comment" doc:"A note about this channel (receiver, antenna, location ...); it is stored with every record received on it. The Scheduler (Options) can overwrite it at set times of day"`
 	ViewOffset  float64 `json:"view_offset_hz" unit:"Hz" doc:"adjust spectrum x-axis left-or-right; typically set by dragging the graph area in the Spectrum tab"`
 	ViewV2      bool    `json:"view_v2,omitempty" hidden:"true" doc:"Internal: set once the view offset has been reset after it stopped moving the receiver window"`
 }
