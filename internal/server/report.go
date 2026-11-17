@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"navtex/internal/store"
 )
@@ -30,6 +31,79 @@ func reportRank(hz int) int {
 		}
 	}
 	return len(reportOrder)
+}
+
+// The columns of the summary table (a monospaced font lines them up). The station and country have 33 characters (the longest
+// in the station table), the distance is right-aligned in 9. The KHz and CALL columns are as wide as the longest value in the
+// report, at least 3: a report of 518, 490, 486 or 424 kHz stations with three-letter callsigns is exactly 69 characters wide,
+// and one with 4209.5 kHz or a callsign like DDH49 or CTV-251 is wider, the same in every frequency group.
+const (
+	reportStationW = 33
+	reportDistW    = 9
+	reportMaxCall  = 12
+)
+
+// reportRow is one line of the summary table, before it is laid out.
+type reportRow struct {
+	when                         time.Time
+	khz, id, call, station, dist string
+	comment                      string
+}
+
+func (r reportRow) widths() (int, int) { return len(r.khz), len([]rune(r.call)) }
+
+// reportWidths gives the widths of the KHz and CALL columns for a report.
+func reportWidths(rows []reportRow) (khz, call int) {
+	khz, call = 3, 3
+	for _, r := range rows {
+		k, c := r.widths()
+		if k > khz {
+			khz = k
+		}
+		if c > call {
+			call = c
+		}
+	}
+	if call > reportMaxCall {
+		call = reportMaxCall
+	}
+	return khz, call
+}
+
+// reportHeader is the column heading for those widths.
+func reportHeader(khz, call int) string {
+	return fmt.Sprintf("YYYYMMDD HHMM %-*s ID  %-*s %-*s%*s", khz, "KHz", call+1, "CALL", reportStationW, "STATION,COUNTRY", reportDistW, "DIST (Km)")
+}
+
+// text lays the row out: the columns of the heading, then the comment (if any) after them.
+func (r reportRow) text(khz, call int) string {
+	c := []rune(r.call)
+	if len(c) > call {
+		c = c[:call]
+	}
+	line := fmt.Sprintf("%s %-*s %s %-*s %-*s%*s", r.when.UTC().Format("20060102 1504"), khz, r.khz, r.id, call, string(c), reportStationW, fitStation(r.station, reportStationW), reportDistW, r.dist)
+	if r.comment != "" {
+		return line + " [" + r.comment + "]"
+	}
+	return strings.TrimRight(line, " ")
+}
+
+// fitStation shortens "Name,CCC" to w characters (a station added by the user may have a longer name): the name is cut,
+// the country stays.
+func fitStation(name string, w int) string {
+	r := []rune(name)
+	if len(r) <= w {
+		return name
+	}
+	cc := ""
+	if i := strings.LastIndex(name, ","); i >= 0 {
+		cc = name[i:]
+	}
+	keep := w - len([]rune(cc))
+	if keep < 1 {
+		return string(r[:w])
+	}
+	return strings.TrimRight(string([]rune(name[:len(name)-len(cc)])[:keep]), " ") + cc
 }
 
 // reportRecords returns the stored records for ids, once each; IDs that no longer exist are dropped. They are grouped by
@@ -109,7 +183,8 @@ func (s *Server) reportText(w http.ResponseWriter, r *http.Request, id Identity)
 		}
 		put("")
 	}
-	summary := func(rec store.Record) string {
+	rows := make([]reportRow, len(recs))
+	for i, rec := range recs {
 		call, name := "???", "Unknown,??"
 		if st, ok := s.cat.Station(rec.StationID); ok {
 			call = st.Callsign
@@ -119,35 +194,32 @@ func (s *Server) reportText(w http.ResponseWriter, r *http.Request, id Identity)
 		if b1 == "" {
 			b1 = "?"
 		}
-		line := fmt.Sprintf("%s %-3s $%02d%s %-3s %-28s", rec.Received.UTC().Format("20060102 1504"), store.FormatKHz(rec.Channel), rec.NavArea, b1, call, name)
+		km := ""
 		if dist && rec.DistanceKm > 0 {
-			line += fmt.Sprintf("%4.0f", rec.DistanceKm)
-		} else {
-			line += "    "
+			km = fmt.Sprintf("%.0f", rec.DistanceKm)
 		}
-		if rec.Comment != "" {
-			return line + " [" + rec.Comment + "]"
-		}
-		return strings.TrimRight(line, " ")
+		rows[i] = reportRow{when: rec.Received, khz: store.FormatKHz(rec.Channel), id: fmt.Sprintf("$%02d%s", rec.NavArea, b1), call: call, station: name, dist: km, comment: rec.Comment}
 	}
+	khzW, callW := reportWidths(rows)
+	head := reportHeader(khzW, callW)
 	// the summary table: the column heading starts every frequency group (a frequency without messages has no group)
 	for i, rec := range recs {
 		if i == 0 || rec.Channel != recs[i-1].Channel {
 			if i > 0 {
 				put("")
 			}
-			put("YYYYMMDD HHMM KHz ID  CALL STATION,COUNTRY             DIST (Km)")
-			put("%s", strings.Repeat("-", 64))
+			put("%s", head)
+			put("%s", strings.Repeat("-", len(head)))
 		}
-		put("%s", summary(rec))
+		put("%s", rows[i].text(khzW, callW))
 	}
 	if len(recs) > 0 {
 		put("")
 		put("RAW LOG")
 	}
-	for _, rec := range recs {
+	for n, rec := range recs {
 		put("---")
-		put("%s", summary(rec))
+		put("%s", rows[n].text(khzW, callW))
 		text := rec.EffectiveLines()
 		if cor := strings.Split(rec.Corrected, "\n"); rec.Corrected != "" && len(cor) == len(text) {
 			text = cor // with the autocorrections, shown as [WORD] or [A|B]

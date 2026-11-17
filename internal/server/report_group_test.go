@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -83,7 +84,7 @@ func TestReportGroupsByFrequency(t *testing.T) {
 	// the text: 518 (early, late), 490, 486, 4209.5; one heading per group, the groups apart by a blank line
 	txt := string(post("/api/report/text", []int64{a.ID, b.ID, c.ID, d.ID, e.ID}))
 	lines := strings.Split(strings.ReplaceAll(txt, "\r", ""), "\n")
-	const head = "YYYYMMDD HHMM KHz ID  CALL STATION,COUNTRY             DIST (Km)"
+	head := reportHeader(6, 3) // 4209.5 kHz is in the report, so the KHz column is 6 wide
 	var table []string
 	for _, ln := range lines {
 		if ln == "RAW LOG" {
@@ -96,7 +97,7 @@ func TestReportGroupsByFrequency(t *testing.T) {
 		switch {
 		case ln == head:
 			kinds = append(kinds, "H")
-			if i+1 >= len(table) || table[i+1] != strings.Repeat("-", 64) {
+			if i+1 >= len(table) || table[i+1] != strings.Repeat("-", len(head)) {
 				t.Errorf("heading without its rule line at %d", i)
 			}
 			if i > 0 && table[i-1] != "" {
@@ -117,11 +118,107 @@ func TestReportGroupsByFrequency(t *testing.T) {
 	}
 
 	// one group only: one heading; nothing in the report: no heading, no 'no messages' line
-	if n := strings.Count(string(post("/api/report/text", []int64{b.ID})), head); n != 1 {
+	if n := strings.Count(string(post("/api/report/text", []int64{b.ID})), reportHeader(3, 3)); n != 1 { // no 4209.5 here: the KHz column is 3 wide
 		t.Errorf("one group: %d headings", n)
 	}
 	empty := string(post("/api/report/text", []int64{999}))
 	if strings.Contains(empty, "YYYYMMDD") || strings.Contains(empty, "no messages") {
 		t.Errorf("empty report: %q", empty)
+	}
+}
+
+// The columns line up (in a monospaced font): the heading is the one of the sample, the rule is as wide, every row with a distance is
+// as wide, the station starts under STATION and the distance ends under the "m" of "(Km)".
+func TestReportColumns(t *testing.T) {
+	cfg := config.Default()
+	cfg.Input.File.Path = "/nonexistent.wav"
+	cfg.Input.Source = "file"
+	cfg.Operator.LatDeg, cfg.Operator.LonDeg = 36.85, -76.3
+	s, _, st, _ := setup(t, cfg)
+	srv := httptest.NewServer(s.handler(false))
+	defer srv.Close()
+	at := time.Date(2026, 9, 28, 0, 50, 0, 0, time.UTC)
+	a := addMsg(t, st, s.cat, "F", at, "SOUTH OF NANTUCKET SHOALS", "GALE WARNING")
+	if a.DistanceKm == 0 {
+		t.Fatal("test record has no distance")
+	}
+	body, _ := json.Marshal(map[string]any{"ids": []int64{a.ID}})
+	req, _ := http.NewRequest("POST", srv.URL+"/api/report/text", bytes.NewReader(body))
+	req.Header.Set("X-Navtex", "1")
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	out, _ := io.ReadAll(resp.Body)
+	lines := strings.Split(strings.ReplaceAll(string(out), "\r", ""), "\n")
+	const sample = "YYYYMMDD HHMM KHz ID  CALL STATION,COUNTRY                  DIST (Km)"
+	if lines[0] != sample {
+		t.Errorf("heading %q\nwant    %q", lines[0], sample)
+	}
+	if lines[1] != strings.Repeat("-", 69) {
+		t.Errorf("rule %q", lines[1])
+	}
+	row := lines[2]
+	if len(row) != 69 || !strings.HasPrefix(row, "20260928 0050 518 $") {
+		t.Fatalf("row %q (%d)", row, len(row))
+	}
+	if strings.TrimSpace(row[60:]) != fmt.Sprintf("%.0f", a.DistanceKm) || row[60] != ' ' || row[68] == ' ' {
+		t.Errorf("distance not right-aligned under DIST (Km): %q", row[60:])
+	}
+	if row[27] == ' ' || row[26] != ' ' {
+		t.Errorf("station does not start under STATION: %q", row)
+	}
+}
+
+func TestFitStation(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{"Odesa,UKR", "Odesa,UKR"},
+		{"Porto Santo (CENCOMARMADEIRA),MDR", "Porto Santo (CENCOMARMADEIRA),MDR"},
+		{"Porto Santo (CENCOMARMADEIRA EXTRA),MDR", "Porto Santo (CENCOMARMADEIRA,MDR"},
+		{"Zürich Äußere Hafenanlage Süd Kai,CHE", "Zürich Äußere Hafenanlage Süd,CHE"},
+		{"NoCountryNoCountryNoCountryNoCountryNoCountry", "NoCountryNoCountryNoCountryNoCoun"},
+	} {
+		got := fitStation(c.in, 33)
+		if got != c.want || len([]rune(got)) > 33 {
+			t.Errorf("fitStation(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// KHz and CALL are as wide as the longest value in the report, so a long callsign (DDH49, CTV-251) or 4209.5 kHz moves the
+// station, distance and comment columns of every row and of the heading by the same amount.
+func TestReportRowsAlign(t *testing.T) {
+	at := time.Date(2026, 11, 16, 19, 50, 0, 0, time.UTC)
+	rows := []reportRow{
+		{when: at, khz: "490", id: "$03X", call: "UTT", station: "Odesa,UKR", dist: "2483"},
+		{when: at, khz: "518", id: "$01A", call: "DDH49", station: "Pinneberg,DEU", dist: "6021"},
+		{when: at, khz: "518", id: "$02B", call: "CTV-251", station: "Penalva (CENCOMAR),POR", dist: "5001", comment: "note"},
+		{when: at, khz: "4209.5", id: "$01F", call: "???", station: "Unknown,??"},
+	}
+	k, c := reportWidths(rows)
+	if k != 6 || c != 7 {
+		t.Fatalf("widths %d %d", k, c)
+	}
+	head := reportHeader(k, c)
+	col := strings.Index(head, "STATION")
+	end := len(head)
+	for _, r := range rows {
+		line := r.text(k, c)
+		if line[col-1] != ' ' || line[col] == ' ' {
+			t.Errorf("station not under STATION:\n%s\n%s", head, line)
+		}
+		if r.dist != "" && (len(line) < end || strings.TrimRight(line[:end], " ")[end-1] == ' ' || !strings.HasSuffix(strings.TrimRight(line[:end], " "), r.dist)) {
+			t.Errorf("distance not right-aligned:\n%s\n%s", head, line)
+		}
+	}
+	// three-letter callsigns and no 4209.5: the heading of the sample
+	k, c = reportWidths(rows[:1])
+	if reportHeader(k, c) != "YYYYMMDD HHMM KHz ID  CALL STATION,COUNTRY                  DIST (Km)" {
+		t.Errorf("sample heading %q", reportHeader(k, c))
+	}
+	// a callsign longer than the limit is cut
+	if _, c := reportWidths([]reportRow{{call: "ABCDEFGHIJKLMNOP"}}); c != reportMaxCall {
+		t.Errorf("callsign limit %d", c)
 	}
 }
