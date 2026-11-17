@@ -671,8 +671,8 @@ body.tiled nav, body.tiled main { max-width: none; }
 .tabbtn { margin: 0; padding: 2px 4px 2px 9px; border: 0; background: none; color: var(--dim); font: inherit; cursor: pointer; white-space: nowrap; }
 .tabitem.on .tabbtn { color: var(--ink); font-weight: 600; }
 .tabbtn:hover { color: var(--ink); }
-.tx { margin: 0; padding: 0 6px 0 2px; border: 0; background: none; color: var(--dim); font: inherit; line-height: 1; opacity: .55; cursor: pointer; }
-.tx:hover { opacity: 1; color: var(--bad); }
+.tabx { margin: 0; padding: 0 6px 0 2px; border: 0; background: none; color: var(--dim); font: inherit; line-height: 1; opacity: .55; cursor: pointer; }
+.tabx:hover { opacity: 1; color: var(--bad); }
 .tilebtns { flex: none; display: flex; gap: 3px; padding-bottom: 3px; }
 .tilebtn { margin: 0; min-width: 24px; padding: 0 6px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg); color: var(--ink); font: inherit; line-height: 20px; cursor: pointer; }
 .tilebtn:hover { border-color: var(--accent); }

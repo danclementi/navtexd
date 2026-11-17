@@ -133,7 +133,7 @@
 
   function renderHead(t) {
     t.strip.replaceChildren(...t.tabs.map((k) => {
-      const it = mk("div", "tabitem" + (k === t.act ? " on" : "")), b = mk("button", "tabbtn"), x = mk("button", "tx");
+      const it = mk("div", "tabitem" + (k === t.act ? " on" : "")), b = mk("button", "tabbtn"), x = mk("button", "tabx");
       b.type = "button"; b.textContent = labelOf(k); b.title = "Show " + labelOf(k) + " in this tile";
       b.onclick = () => pickTab(t, k);
       x.type = "button"; x.textContent = "×"; x.title = "Take " + labelOf(k) + " out of this tile (the + button or the tab bar brings it back)"; x.setAttribute("aria-label", "Remove " + labelOf(k));
