@@ -245,8 +245,16 @@
     return g;
   }
 
+  // flex-grow values that add up to less than 1 fill only that fraction of the space, so after splits and closings the weights are scaled
+  // to add up to the number of tiles in the column (and the number of columns); the proportions stay
+  function fit() {
+    const ws = S.cols.reduce((a, c) => a + c.w, 0);
+    S.cols.forEach((c) => { c.w *= S.cols.length / ws; const hs = c.rows.reduce((a, r) => a + r.h, 0); c.rows.forEach((r) => { r.h *= c.rows.length / hs; }); });
+  }
+
   // the whole grid again (a preset was chosen, or a tile was added or closed); focusRow: the row to focus afterwards
   function build(focusRow) {
+    fit();
     const had = focusRow || (focusT && focusT.r);
     if (ro) { ro.disconnect(); ro = null; }
     if (root) root.remove();

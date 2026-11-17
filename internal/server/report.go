@@ -19,7 +19,21 @@ type reportReq struct {
 	Info string  `json:"info"`
 }
 
-// reportRecords returns the stored records for ids, once each and in time order; IDs that no longer exist are dropped.
+// reportOrder is the order of the frequency groups in a report: the NAVTEX channels as listed here, then any other
+// frequency (ascending).
+var reportOrder = []int{518000, 490000, 486000, 424000, 4209500}
+
+func reportRank(hz int) int {
+	for i, f := range reportOrder {
+		if f == hz {
+			return i
+		}
+	}
+	return len(reportOrder)
+}
+
+// reportRecords returns the stored records for ids, once each; IDs that no longer exist are dropped. They are grouped by
+// frequency (518, 490, 486, 424, 4209.5 kHz, any other after those) and in time order within a group.
 func (s *Server) reportRecords(ids []int64) []store.Record {
 	seen := map[int64]bool{}
 	var recs []store.Record
@@ -32,7 +46,16 @@ func (s *Server) reportRecords(ids []int64) []store.Record {
 			recs = append(recs, rec)
 		}
 	}
-	sort.SliceStable(recs, func(i, j int) bool { return recs[i].Received.Before(recs[j].Received) })
+	sort.SliceStable(recs, func(i, j int) bool {
+		ri, rj := reportRank(recs[i].Channel), reportRank(recs[j].Channel)
+		if ri != rj {
+			return ri < rj
+		}
+		if ri == len(reportOrder) && recs[i].Channel != recs[j].Channel {
+			return recs[i].Channel < recs[j].Channel
+		}
+		return recs[i].Received.Before(recs[j].Received)
+	})
 	return recs
 }
 
@@ -63,7 +86,7 @@ func (s *Server) reportList(w http.ResponseWriter, r *http.Request, id Identity)
 	writeJSON(w, 200, map[string]any{"records": out})
 }
 
-// reportText answers POST /api/report/text {ids, info}: the report as plain text, in time order. info (the operator's
+// reportText answers POST /api/report/text {ids, info}: the report as plain text, grouped by frequency and in time order. info (the operator's
 // personal information, administrators only) goes before or after the messages, or is left out.
 func (s *Server) reportText(w http.ResponseWriter, r *http.Request, id Identity) {
 	q, ok := readReportReq(w, r)
@@ -86,8 +109,6 @@ func (s *Server) reportText(w http.ResponseWriter, r *http.Request, id Identity)
 		}
 		put("")
 	}
-	put("YYYYMMDD HHMM KHz ID  CALL STATION,COUNTRY             DIST (Km)")
-	put("%s", strings.Repeat("-", 64))
 	summary := func(rec store.Record) string {
 		call, name := "???", "Unknown,??"
 		if st, ok := s.cat.Station(rec.StationID); ok {
@@ -109,14 +130,21 @@ func (s *Server) reportText(w http.ResponseWriter, r *http.Request, id Identity)
 		}
 		return strings.TrimRight(line, " ")
 	}
-	for _, rec := range recs {
+	// the summary table: the column heading starts every frequency group (a frequency without messages has no group)
+	for i, rec := range recs {
+		if i == 0 || rec.Channel != recs[i-1].Channel {
+			if i > 0 {
+				put("")
+			}
+			put("YYYYMMDD HHMM KHz ID  CALL STATION,COUNTRY             DIST (Km)")
+			put("%s", strings.Repeat("-", 64))
+		}
 		put("%s", summary(rec))
 	}
-	if len(recs) == 0 {
-		put("(no messages in the report list)")
+	if len(recs) > 0 {
+		put("")
+		put("RAW LOG")
 	}
-	put("")
-	put("RAW LOG")
 	for _, rec := range recs {
 		put("---")
 		put("%s", summary(rec))
