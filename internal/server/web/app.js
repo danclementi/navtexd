@@ -208,7 +208,7 @@
     let t = r.info || "";
     if (r.error) t = "⚠ " + r.error;
     const tip = (r.running ? "" : "Not running. ") + t;
-    document.querySelectorAll("#hdr .grp:not(.specgrp)").forEach((g) => { g.title = tip; });
+    document.querySelectorAll("#hdrbody .grp:not(.specgrp)").forEach((g) => { g.title = tip; });
     showTips();
   }
   // each small spectrum describes its own channel
@@ -660,10 +660,10 @@
   const ADVANCED = ["receiver", "decoder", "ddc"];
   const advOn = () => { try { return localStorage.getItem("nx-advanced") === "1"; } catch (e) { return false; } };
   NX.advOn = advOn;
-  let fields = [], optHist = [], optPage = "station", optPages = new Map(), optMsgTimer = 0;
+  let fields = [], optHist = [], optPage = "station", optPages = new Map(), optMsgTimer = 0; let optSeq = 0;
   async function loadOptions(force) {
     if (!force && pendingCount()) return; // keep unsaved edits when coming back to this tab
-    const note = $("opt-note"), form = $("opt-form");
+    const note = $("opt-note"), form = $("opt-form"), seq = ++optSeq;
     form.replaceChildren(); $("opt-tabs").replaceChildren();
     if (state.role !== "admin") {
       note.hidden = false; note.textContent = "Settings can only be viewed and changed from the local network.";
@@ -671,6 +671,7 @@
     }
     note.hidden = true; $("opt-bar").hidden = false; $("opt-hint").hidden = false;
     try { const sj = await api("GET", "/api/settings"); fields = sj.fields; optHist = sj.history || []; } catch (e) { note.hidden = false; note.textContent = e.message; return; }
+    if (seq !== optSeq) return; // a newer load of this page has started (two at once would each add the pages)
     const title = { operator: "Operator and position", identify: "Station identification", input: "Input source", "input.device": "Audio input (sound card or virtual audio cable)", "input.hpsdr": "Radio (OpenHPSDR / Metis)", "input.sdrconnect": "SDRplay RSP (through SDRconnect)", "input.spyserver": "Airspy HF+ (through SpyServer)", "input.stdin": "Raw stream (standard input)", "input.file": "WAV file", channel: "Channel", ddc: "Down-converter", decoder: "Decoder", receiver: "Receiver (FSK demodulator)", segment: "Message segmentation", logging: "Logging", autocorrect: "Word autocorrection", meters: "Meters and spectrum", server: "Network server", output: "Output (command line)", clips: "Audio clips", compare: "Compare two channels (saves a clip when their messages differ)" };
     const nameOf = (p, d) => { const f = fields.find((x) => x.path === p); return (f && String(f.value).trim()) || d; };
     const pages = [

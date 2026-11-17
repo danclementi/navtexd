@@ -697,3 +697,12 @@ body.tiled nav, body.tiled main { max-width: none; }
 }
 @container tile (max-width: 1000px) { .lognav .tb span { display: none; } .lognav .tb { width: 36px; height: 36px; } }
 @container tile (max-width: 1000px) { .lognav { flex-wrap: wrap; overflow-x: visible; } }
+
+/* the top bar as a tab ("Instruments"): it sits in a tile when a tile shows it */
+header[hidden] { display: none; }
+#tab-header:not([hidden]) { display: flex; flex-direction: column; overflow: auto; padding: 8px; }
+#tab-header #hdrbody { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+#tab-header .hdrrow { flex: 1 0 auto; }
+#tab-header .specgrp { min-height: 80px; }
+#tab-header .tickerrow { flex: none; }
+@container tile (max-width: 640px) { #tab-header .hdrrow { flex-wrap: wrap; } #tab-header .specgrp { flex: 1 1 100%; min-height: 120px; } }

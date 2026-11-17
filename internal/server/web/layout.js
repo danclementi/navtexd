@@ -10,6 +10,10 @@
       { w: 1, rows: [{ tab: "status", h: 1 }, { tab: "schedule", h: 1 }] },
       { w: 1.7, rows: [{ tab: "spectrum", h: 1 }, { tab: "log", h: 2 }] },
       { w: 1, rows: [{ tab: "report", h: 1 }, { tab: "options", h: 1 }] }] },
+    instr3: { name: "Instruments, 3 columns", cols: [
+      { w: 1, rows: [{ tab: "header", h: 1.1 }, { tab: "status", h: 1 }, { tab: "schedule", h: 1 }] },
+      { w: 1.7, rows: [{ tab: "spectrum", h: 1 }, { tab: "log", h: 2 }] },
+      { w: 1, rows: [{ tab: "report", h: 1 }, { tab: "options", h: 1 }] }] },
     monlog: { name: "Monitor + Log", cols: [
       { w: 1, rows: [{ tab: "status", h: 1 }, { tab: "spectrum", h: 1 }] },
       { w: 1.6, rows: [{ tab: "log", h: 1 }] }] },
@@ -70,6 +74,16 @@
     fillSelect(tile.sel, tab);
   }
 
+  // the Instruments tab is the top bar (dials, clock, small spectra, latest text): when a tile shows it, the bar leaves the top of the
+  // page and sits in that tile; otherwise it is back at the top
+  const hdrBody = $("hdrbody"), hdrHome = $("hdr"), instrBtn = document.querySelector('#tabs button[data-tab="header"]');
+  function syncHeader() {
+    const inTile = on && tiles.some((t) => t.tab === "header");
+    const to = inTile ? $("tab-header") : hdrHome;
+    if (hdrBody.parentNode !== to) to.append(hdrBody);
+    hdrHome.hidden = inTile;
+  }
+
   function updateNav() {
     document.querySelectorAll("#tabs button[data-tab]").forEach((b) => {
       b.classList.toggle("vis", on && tiles.some((t) => t.tab === b.dataset.tab));
@@ -94,6 +108,7 @@
     if (other) { const sn = $("tab-" + t), so = old ? $("tab-" + old) : null; place(tile, t, sn); place(other, old, so); remember(other); } // the two tiles change places
     else { park(old ? $("tab-" + old) : null); place(tile, t); }
     remember(tile); save();
+    syncHeader();
     focusTile(tile);
     NX.activate(t);
     if (other && old) NX.activate(old);
@@ -162,19 +177,20 @@
     });
     main().querySelectorAll(":scope > section").forEach((s) => { s.hidden = true; });
     main().append(root);
+    syncHeader();
     ro = new ResizeObserver(notify); tiles.forEach((t) => ro.observe(t.body));
     focusTile(tiles.find((t) => t.tab === hadFocus) || tiles[0]);
     notify();
   }
 
   function enter() {
-    on = true; document.body.classList.add("tiled");
+    on = true; document.body.classList.add("tiled"); instrBtn.hidden = false;
     build();
     tiles.forEach((t) => { if (t.tab) NX.activate(t.tab); });
   }
   function leave() {
     const keep = state.tab;
-    teardown(); on = false; document.body.classList.remove("tiled");
+    teardown(); on = false; document.body.classList.remove("tiled"); instrBtn.hidden = true; syncHeader();
     const av = avail().map((a) => a.tab);
     if (!av.includes(keep)) state.tab = "status";
     main().querySelectorAll(":scope > section").forEach((s) => { s.hidden = s.id !== "tab-" + state.tab; });
@@ -199,8 +215,7 @@
     const wide = window.innerWidth >= MINW;
     menu.hidden = !wide;
     const want = S.name !== "tabs" && wide;
-    if (want && on) build(); else if (want) enter(); else if (on) leave();
-    if (on) tiles.forEach((t) => { if (t.tab) NX.activate(t.tab); });
+    if (want && on) { build(); tiles.forEach((t) => { if (t.tab) NX.activate(t.tab); }); } else if (want) enter(); else if (on) leave();
   }
   window.addEventListener("resize", () => { const wide = window.innerWidth >= MINW; menu.hidden = !wide; if ((S.name !== "tabs" && wide) !== on) apply(); });
 

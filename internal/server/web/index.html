@@ -33,6 +33,7 @@
 </svg>
 <div id="srvmsg" class="srvmsg" role="alert" hidden><span id="srvmsg-text"></span> <button type="button" id="srvmsg-x" title="Hide this message" aria-label="Hide">&#10005;</button></div>
 <header id="hdr">
+  <div id="hdrbody">
   <div class="hdrrow">
     <fieldset class="grp" id="grp-main">
       <div class="mainrow">
@@ -61,9 +62,11 @@
     <button id="b-login">Unlock</button>
   </div>
   <div class="tickerrow"><div id="ticker" class="ticker" title="Latest decoded text"></div><input id="msg-color" type="color" value="#8cf0a0" title="Colour of the message text"></div>
+  </div>
 </header>
 <nav id="tabs">
   <button data-tab="status" class="on">Monitor</button>
+  <button data-tab="header" hidden>Instruments</button>
   <button data-tab="spectrum">Spectrum</button>
   <button data-tab="log">Log</button>
   <button data-tab="report">Report</button>
@@ -77,6 +80,7 @@
   <a id="helplink" href="/docs/" target="_blank" rel="noopener" title="Help: how navtexd works (opens in a new tab)">Help</a>
 </nav>
 <main>
+  <section id="tab-header" hidden></section>
   <section id="tab-status">
   <div id="chlines" class="chlines">
     <div class="chline" data-ch="0">
