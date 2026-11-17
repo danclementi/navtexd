@@ -77,11 +77,19 @@
       try { localStorage.setItem("nx-rp-info", r.value); } catch (e) { /* no storage */ }
     };
   });
-  const key = () => R.rows.map((r) => r.id).join(",") + "|" + infoMode();
+  // "include comments": the comment of each record goes at the end of its line in the report (kept in this browser; on by default)
+  const commentsOn = () => $("rp-comments").checked;
+  try { if (localStorage.getItem("nx-rp-comments") === "0") $("rp-comments").checked = false; } catch (e) { /* no storage */ }
+  $("rp-comments").onchange = () => {
+    if (!dropEdits()) { $("rp-comments").checked = !$("rp-comments").checked; return; } // keep the edited text and the old choice
+    render();
+    try { localStorage.setItem("nx-rp-comments", commentsOn() ? "1" : "0"); } catch (e) { /* no storage */ }
+  };
+  const key = () => R.rows.map((r) => r.id).join(",") + "|" + infoMode() + "|" + (commentsOn() ? "c" : "");
   const note = (t) => { $("rp-msg").textContent = t; clearTimeout(note.t); note.t = setTimeout(() => { $("rp-msg").textContent = ""; }, 4000); };
   const crlf = (t) => t.replace(/\r?\n/g, "\r\n");
   const generated = async () => {
-    const r = await fetch("/api/report/text", { method: "POST", credentials: "same-origin", headers: { "X-Navtex": "1", "Content-Type": "application/json" }, body: JSON.stringify({ ids: NX.replist.ids(), info: infoMode() }) });
+    const r = await fetch("/api/report/text", { method: "POST", credentials: "same-origin", headers: { "X-Navtex": "1", "Content-Type": "application/json" }, body: JSON.stringify({ ids: NX.replist.ids(), info: infoMode(), comments: commentsOn() }) });
     if (!r.ok) throw new Error(r.statusText);
     return r.text();
   };

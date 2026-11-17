@@ -16,8 +16,9 @@ import (
 // applying the same privacy rules as everywhere else (a viewer gets no distances and no personal information).
 
 type reportReq struct {
-	IDs  []int64 `json:"ids"`
-	Info string  `json:"info"`
+	IDs      []int64 `json:"ids"`
+	Info     string  `json:"info"`
+	Comments *bool   `json:"comments"` // false: the comments of the records are left out (absent: included)
 }
 
 // reportOrder is the order of the frequency groups in a report: the NAVTEX channels as listed here, then any other
@@ -198,7 +199,11 @@ func (s *Server) reportText(w http.ResponseWriter, r *http.Request, id Identity)
 		if dist && rec.DistanceKm > 0 {
 			km = fmt.Sprintf("%.0f", rec.DistanceKm)
 		}
-		rows[i] = reportRow{when: rec.Received, khz: store.FormatKHz(rec.Channel), id: fmt.Sprintf("$%02d%s", rec.NavArea, b1), call: call, station: name, dist: km, comment: rec.Comment}
+		comment := rec.Comment
+		if q.Comments != nil && !*q.Comments {
+			comment = ""
+		}
+		rows[i] = reportRow{when: rec.Received, khz: store.FormatKHz(rec.Channel), id: fmt.Sprintf("$%02d%s", rec.NavArea, b1), call: call, station: name, dist: km, comment: comment}
 	}
 	khzW, callW := reportWidths(rows)
 	head := reportHeader(khzW, callW)

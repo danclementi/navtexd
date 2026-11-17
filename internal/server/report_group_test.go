@@ -222,3 +222,50 @@ func TestReportRowsAlign(t *testing.T) {
 		t.Errorf("callsign limit %d", c)
 	}
 }
+
+// "include comments": the comment of a record is in the report unless the request says false (a request without the field,
+// as from an older page, includes it).
+func TestReportComments(t *testing.T) {
+	cfg := config.Default()
+	cfg.Input.File.Path = "/nonexistent.wav"
+	cfg.Input.Source = "file"
+	s, _, st, _ := setup(t, cfg)
+	srv := httptest.NewServer(s.handler(false))
+	defer srv.Close()
+	at := time.Date(2026, 11, 16, 19, 50, 0, 0, time.UTC)
+	r := store.Record{Channel: 518000, Kind: "message", B1: "F", B2: "E", Serial: "01", Received: at, End: at.Add(time.Minute), Quality: 50, Comment: "active vertical dipole"}
+	r.Lines = append(r.Lines, store.Line{Time: at, Text: "ZCZC FE01"}, store.Line{Time: at, Text: "TEXT"}, store.Line{Time: at, Text: "NNNN"})
+	s.cat.Enrich(&r)
+	rec, err := st.Add(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := func(extra map[string]any) string {
+		req := map[string]any{"ids": []int64{rec.ID}}
+		for k, v := range extra {
+			req[k] = v
+		}
+		body, _ := json.Marshal(req)
+		hr, _ := http.NewRequest("POST", srv.URL+"/api/report/text", bytes.NewReader(body))
+		hr.Header.Set("X-Navtex", "1")
+		resp, err := srv.Client().Do(hr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		out, _ := io.ReadAll(resp.Body)
+		return string(out)
+	}
+	for name, c := range map[string]struct {
+		extra map[string]any
+		want  bool
+	}{"absent": {nil, true}, "true": {map[string]any{"comments": true}, true}, "false": {map[string]any{"comments": false}, false}} {
+		got := text(c.extra)
+		if has := strings.Contains(got, "[active vertical dipole]"); has != c.want {
+			t.Errorf("%s: comment in report = %v, want %v\n%s", name, has, c.want, got)
+		}
+		if n := strings.Count(got, "[active vertical dipole]"); c.want && n != 2 { // the table and the raw log
+			t.Errorf("%s: %d times", name, n)
+		}
+	}
+}
