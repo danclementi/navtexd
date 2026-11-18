@@ -1365,7 +1365,7 @@
     $("db-ex-f").disabled = !sum; $("db-ex-sum").textContent = sum ? "(" + sum + ")" : "(no filter is applied)";
     if (!sum) document.querySelector('input[name="db-ex"][value="all"]').checked = true;
     ddlg.showModal();
-    prCount(); riCount();
+    prCount(); riCount(); rcCount();
   };
   $("db-close").onclick = () => ddlg.close();
   $("db-compact").onclick = async () => {
@@ -1408,6 +1408,28 @@
       trashLoad(); dbInfo(); await reload(); indicate();
     } catch (e) { dmsg(e.message); }
     riCount();
+  };
+  // ---- Read the Chinese messages (486 kHz) again with the reader as it is now ----
+  let rcN = 0;
+  async function rcCount() {
+    $("rc-go").disabled = true; rcN = 0;
+    $("rc-count").textContent = "Checking\u2026";
+    try {
+      const r = (await api("POST", "/api/maintenance/reread-chinese", { dry: true })).result;
+      rcN = r.changed;
+      $("rc-count").textContent = r.checked ? `${r.changed} of ${r.checked} messages on 486 kHz would change` + (r.serials ? ` (${r.serials} header numbers get their digits).` : ".") : "There are no messages on 486 kHz.";
+      $("rc-go").disabled = !rcN;
+    } catch (e) { $("rc-count").textContent = e.message; }
+  }
+  $("rc-go").onclick = async () => {
+    if (!rcN || !confirm(`Read ${rcN} messages on 486 kHz again?\n\nA copy of the database is saved in the backups folder first, and Undo takes the whole change back.`)) return;
+    $("rc-go").disabled = true;
+    try {
+      const j = await api("POST", "/api/maintenance/reread-chinese", { dry: false });
+      dmsg(`${j.result.changed} of ${j.result.checked} messages on 486 kHz were read again (Undo takes it back). Backup: ${j.backup}`);
+      trashLoad(); dbInfo(); await reload(); indicate();
+    } catch (e) { dmsg(e.message); }
+    rcCount();
   };
   // ---- Prune: delete by date and / or distance, as YaND's log maintenance does ----
   const prBody = () => ({ mode: document.querySelector('input[name="pr-mode"]:checked').value, before: $("pr-date").value, km: Number($("pr-km").value), freq: Number($("pr-freq").value), erase: $("pr-erase").checked, compact: $("pr-compact").checked });

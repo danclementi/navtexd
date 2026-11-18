@@ -16,6 +16,7 @@ import (
 
 	"navtex/internal/autocorr"
 	"navtex/internal/catalog"
+	"navtex/internal/gbcode"
 	"navtex/internal/sitor"
 	"navtex/internal/store"
 	"navtex/internal/when"
@@ -37,6 +38,7 @@ func (s *Server) recordRoutes(mux *http.ServeMux, tunnel bool) {
 	mux.HandleFunc("POST /api/maintenance/compact", s.admin(tunnel, s.maintCompact))
 	mux.HandleFunc("POST /api/maintenance/prune", s.admin(tunnel, s.maintPrune))
 	mux.HandleFunc("POST /api/maintenance/reident", s.admin(tunnel, s.maintReident))
+	mux.HandleFunc("POST /api/maintenance/reread-chinese", s.admin(tunnel, s.maintRereadChinese))
 	mux.HandleFunc("GET /api/database", s.admin(tunnel, s.dbInfo))
 	mux.HandleFunc("GET /api/database/export", s.admin(tunnel, s.dbExport))
 	mux.HandleFunc("POST /api/database/import", s.admin(tunnel, s.dbImport))
@@ -745,6 +747,59 @@ func (s *Server) maintReident(w http.ResponseWriter, r *http.Request, id Identit
 		if res.Found > 0 {
 			s.hub.Publish("record", recordMsg{Action: "restore"}, false, false)
 		}
+		out["undo"] = s.undoState()
+	}
+	out["records"] = s.st.Count()
+	writeJSON(w, 200, out)
+}
+
+// maintRereadChinese reads the stored messages of the 486 kHz channel again with the Chinese reader as it is now: the text
+// (Corrected) is made again from the raw lines, and a header number that was stored as letters (EAIY for EA86, from builds that
+// read the figures shift wrongly) gets its digits. The raw lines are never touched. With "dry" it only says what would change.
+// The changes are one action that Undo takes back, and a copy of the database is saved first.
+func (s *Server) maintRereadChinese(w http.ResponseWriter, r *http.Request, id Identity) {
+	var body struct {
+		Dry bool `json:"dry"`
+	}
+	if err := readBody(r, &body); err != nil {
+		fail(w, 400, err)
+		return
+	}
+	recs, _ := s.st.Query(store.Filter{Channel: 486000})
+	var res struct {
+		Checked int `json:"checked"`
+		Changed int `json:"changed"`
+		Serials int `json:"serials"`
+	}
+	var changed []store.Record
+	for _, r := range recs {
+		res.Checked++
+		n := r
+		s.run.Correct(&n)
+		if d, ok := gbcode.SerialDigits(n.Serial); ok && len(n.Lines) > 0 && strings.HasPrefix(n.Lines[0].Text, "ZCZC") {
+			n.Serial = d
+			res.Serials++
+		}
+		if n.Corrected == r.Corrected && n.Serial == r.Serial {
+			continue
+		}
+		res.Changed++
+		changed = append(changed, n)
+	}
+	out := map[string]any{"result": res}
+	if !body.Dry && len(changed) > 0 {
+		backup, err := s.st.Backup("before-reread", 3)
+		if err != nil {
+			fail(w, 500, fmt.Errorf("could not save a backup first: %w", err))
+			return
+		}
+		out["backup"] = backup
+		if _, err := s.st.UpdateManyUndoable(changed, "read the Chinese messages again"); err != nil {
+			fail(w, 500, err)
+			return
+		}
+		s.run.Log("info", fmt.Sprintf("Chinese messages read again: %d of %d changed", res.Changed, res.Checked))
+		s.hub.Publish("record", recordMsg{Action: "restore"}, false, false)
 		out["undo"] = s.undoState()
 	}
 	out["records"] = s.st.Count()

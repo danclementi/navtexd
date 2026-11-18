@@ -389,7 +389,11 @@ func textAndFreq(r *store.Record) (string, float64) {
 	}
 	khz := float64(r.Channel) / 1000
 	if r.Channel == chineseHz || gbcode.Looks(lines) {
-		if dec, ok := gbcode.Decode(lines, 200); ok {
+		decode := gbcode.Decode
+		if r.Channel == chineseHz {
+			decode = gbcode.DecodeChinese
+		}
+		if dec, ok := decode(lines, 200); ok {
 			lines, khz = dec, chineseHz/1000
 		}
 	}

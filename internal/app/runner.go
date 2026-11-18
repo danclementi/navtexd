@@ -159,7 +159,11 @@ func (r *Runner) Correct(rec *store.Record) []string {
 		if wrap < 20 {
 			wrap = 200
 		}
-		if text, ok := gbcode.Decode(lines, wrap); ok {
+		dec := gbcode.Decode
+		if rec.Channel == chineseHz { // known to be of the national service: lines with a stray blank are read too
+			dec = gbcode.DecodeChinese
+		}
+		if text, ok := dec(lines, wrap); ok {
 			rec.Corrected = strings.Join(text, "\n")
 			if rec.Channel != chineseHz {
 				return []string{"Chinese text (GB 2312) read, although the channel is not 486 kHz"}

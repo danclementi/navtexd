@@ -22,9 +22,16 @@ func isMark(c byte) bool { return c == '~' || c == '*' }
 // IsUnitLine says whether a line can hold units: no blanks (a line of words is not Chinese text), at least one unit long, not
 // the ZCZC line or the NNNN of an international message, and nearly all letters and marks of unreadable characters. A few
 // other symbols or digits are allowed: where the receiver lost its shift a letter comes out as one, and "{}" marks a lost shift.
-func IsUnitLine(l string) bool { return unitLine(strings.TrimRight(l, "\r")) }
+func IsUnitLine(l string) bool { return unitLine(strings.TrimRight(l, "\r"), false) }
 
-func unitLine(l string) bool {
+// unitLine is IsUnitLine; with known (the text is known to be of the national service, as on the 486 kHz channel) a few
+// blanks are allowed too: noise that turned a letter into the space code is far more likely there than a line of words, and
+// without this a line with one stray blank was left as the letters it was received as. A blank at the end is dropped, and
+// more than one blank in twelve letters is words.
+func unitLine(l string, known bool) bool {
+	if known {
+		l = strings.TrimRight(l, " ")
+	}
 	if l == "NNNN" || strings.HasPrefix(l, "ZCZC") {
 		return false
 	}
@@ -32,22 +39,30 @@ func unitLine(l string) bool {
 	if len(s) < 3 {
 		return false
 	}
-	good := 0
+	good, blanks := 0, 0
 	for i := 0; i < len(s); i++ {
 		switch c := s[i]; {
 		case isLetter(c) || isMark(c):
 			good++
+		case c == ' ' && known:
+			blanks++
 		case c > ' ' && c < 0x7f: // a symbol or digit instead of a letter
 		default:
 			return false
 		}
 	}
-	return good*10 >= len(s)*7
+	if blanks*12 > len(s) {
+		return false
+	}
+	return (good+blanks)*10 >= len(s)*7
 }
 
-// clean makes the letters of a unit line: every symbol or digit is an unreadable letter, and "{}" (a lost shift) is dropped.
-// gaps are the places in the result where a "{}" was.
-func clean(l string) (s string, gaps []int) {
+// clean makes the letters of a unit line: every symbol, digit or blank is an unreadable letter, and "{}" (a lost shift) is
+// dropped. gaps are the places in the result where a "{}" was. With known a blank at the end is dropped.
+func clean(l string, known bool) (s string, gaps []int) {
+	if known {
+		l = strings.TrimRight(l, " ")
+	}
 	var b strings.Builder
 	for i := 0; i < len(l); {
 		if strings.HasPrefix(l[i:], "{}") {
@@ -235,8 +250,28 @@ type stream struct {
 	gaps   []int
 }
 
+// endMark is the full-width NNNN that ends a message: four units AIZ.
+const endMark = "AIZAIZAIZ"
+
 func (s *stream) cut() []piece {
-	ps := cut(s.st)
+	// The end of a message is the full-width NNNN, and the station follows it with the plain NNNN, in the same line when
+	// there is no line break (Tianjin does that). Read as units the plain letters come out as characters, so they are set
+	// aside: whatever follows three full-width N (the fourth is read as one, damaged or not) is the end.
+	st, tail := s.st, ""
+	var ends []piece
+	if i := strings.Index(st, endMark); i >= 0 {
+		ends = append(ends, piece{i, "ＮＮＮＮ", 0})
+		if i+12 <= len(st) {
+			tail = st[i+12:]
+		}
+		st = st[:i]
+	} else if strings.HasSuffix(st, "NNNN") {
+		tail, st = "NNNN", st[:len(st)-4]
+	}
+	if strings.Contains(tail, "NNNN") {
+		ends = append(ends, piece{len(s.st) - 1, " NNNN", 0})
+	}
+	ps := cut(st)
 	bad := untrusted(s.st, s.gaps)
 	for i := range ps {
 		// Noise seldom spells a full-width digit, letter or sign (they are 3% of the codes), but it spells a hanzi or another
@@ -245,12 +280,12 @@ func (s *stream) cut() []piece {
 			ps[i].text, ps[i].cost = Unreadable, 1
 		}
 	}
-	return ps
+	return append(ps, ends...)
 }
 
 // streams cuts a run of unit lines into the stretches that belong together: a line that is wrap characters long, or as long
 // as the other lines of the run (the receiver cut it there), goes on in the next line.
-func streams(lines []string, from, to, wrap int) []stream {
+func streams(lines []string, from, to, wrap int, known bool) []stream {
 	w := runWidth(lines[from:to])
 	var out []stream
 	for a := from; a < to; {
@@ -259,7 +294,10 @@ func streams(lines []string, from, to, wrap int) []stream {
 		b := a
 		for ; b < to; b++ {
 			l := strings.TrimRight(lines[b], "\r")
-			c, g := clean(l)
+			if known {
+				l = strings.TrimRight(l, " ")
+			}
+			c, g := clean(l, known)
 			for _, p := range g {
 				s.gaps = append(s.gaps, sb.Len()+p)
 			}
@@ -284,19 +322,31 @@ func streams(lines []string, from, to, wrap int) []stream {
 // the line where its unit starts, so the result has as many lines as the input. Lines that are not units (ZCZC, the date-time
 // group, NNNN) stay as they are. changed is false when no line holds units. Units near a burst of errors show as unreadable
 // rather than as the rare characters that the noise happens to spell.
-func Decode(lines []string, wrap int) (out []string, changed bool) {
+func Decode(lines []string, wrap int) (out []string, changed bool) { return decode(lines, wrap, false) }
+
+// DecodeChinese is Decode for text that is known to be of the national service (the 486 kHz channel). Lines with a stray blank
+// (noise that made a letter the space code) are read all the same, and the header and date-time group that the receiver read
+// in the letters shift (builds 173 and earlier of this program, a log of another program) show their digits.
+func DecodeChinese(lines []string, wrap int) (out []string, changed bool) {
+	return decode(lines, wrap, true)
+}
+
+func decode(lines []string, wrap int, known bool) (out []string, changed bool) {
+	if known {
+		lines = digitLines(lines)
+	}
 	out = make([]string, len(lines))
 	copy(out, lines)
 	for i := 0; i < len(lines); {
-		if !IsUnitLine(lines[i]) {
+		if !unitLine(strings.TrimRight(lines[i], "\r"), known) {
 			i++
 			continue
 		}
 		j := i
-		for j < len(lines) && IsUnitLine(lines[j]) {
+		for j < len(lines) && unitLine(strings.TrimRight(lines[j], "\r"), known) {
 			j++
 		}
-		for _, s := range streams(lines, i, j, wrap) {
+		for _, s := range streams(lines, i, j, wrap, known) {
 			first := s.starts[0]
 			last := s.starts[len(s.starts)-1]
 			parts := make([]strings.Builder, last-first+1)
@@ -327,7 +377,7 @@ func Looks(lines []string) bool {
 		for j < len(lines) && IsUnitLine(lines[j]) {
 			j++
 		}
-		for _, s := range streams(lines, i, j, 0) {
+		for _, s := range streams(lines, i, j, 0, false) {
 			if len(s.st) < 18 {
 				continue
 			}
@@ -361,4 +411,72 @@ func HasHan(text string) bool {
 		}
 	}
 	return false
+}
+
+// digitLetters are the letters that stand for the digits 0 to 9 in the figures shift (P Q W E R T Y U I O): a header number or
+// a date-time group read in the letters shift shows as these.
+const digitLetters = "PQWERTYUIO"
+
+func digitOf(c byte) (byte, bool) {
+	i := strings.IndexByte(digitLetters, c)
+	return byte('0' + i), i >= 0
+}
+
+// digitLines gives the digits back to a header (ZCZC, station, subject, two digits) and to the date-time group that follows it
+// when they were read in the letters shift. The station sends the digits in the figures shift but no letters shift after them,
+// and a receiver that took the figures shift as a misread (build 173) printed them as letters: EAIY for EA86.
+func digitLines(lines []string) []string {
+	var out []string
+	for i, l := range lines {
+		t := strings.TrimRight(l, "\r")
+		switch {
+		case strings.HasPrefix(t, "ZCZC ") && len(t) >= 9 && t[7] != ' ':
+			a, ok1 := digitOf(t[7])
+			b, ok2 := digitOf(t[8])
+			if ok1 && ok2 && isLetter(t[5]) && isLetter(t[6]) {
+				if out == nil {
+					out = append([]string(nil), lines...)
+				}
+				out[i] = t[:7] + string([]byte{a, b}) + t[9:]
+			}
+		case i > 0 && strings.HasPrefix(strings.TrimRight(lines[i-1], "\r"), "ZCZC") && len(t) >= 8 && len(t) <= 12 && allIn(t, digitLetters+"~"):
+			if out == nil {
+				out = append([]string(nil), lines...)
+			}
+			b := []byte(t)
+			for k, c := range b {
+				if d, ok := digitOf(c); ok {
+					b[k] = d
+				}
+			}
+			out[i] = string(b)
+		}
+	}
+	if out == nil {
+		return lines
+	}
+	return out
+}
+
+func allIn(s, set string) bool {
+	for i := 0; i < len(s); i++ {
+		if strings.IndexByte(set, s[i]) < 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// SerialDigits gives the digits of a header number that was read in the letters shift (IY is 86); ok is false if it is not
+// two such letters.
+func SerialDigits(serial string) (string, bool) {
+	if len(serial) != 2 {
+		return serial, false
+	}
+	a, ok1 := digitOf(serial[0])
+	b, ok2 := digitOf(serial[1])
+	if !ok1 || !ok2 {
+		return serial, false
+	}
+	return string([]byte{a, b}), true
 }
