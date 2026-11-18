@@ -12,6 +12,7 @@ type Config struct {
 	Framing         Framing    `json:"framing" doc:"How the character alignment is found (soft is the default since v0.9). hard: ten valid 4-of-7 words in a row lock the framing (fast, but needs a clean signal). soft: scores all alignments from the 35-bit repetition of each character and locks on the accumulated evidence (works in more noise, follows bit slips and station changes, but locks a few seconds later and shows characters it cannot trust as ~ or !). The soft framing reads the bit order as LSB first, ignores unshift_on_space, and leaves lock_words, unlock_bad_words, parity_votes, parity_factor, keep_parity_symbols and relock_words unused. Changing it restarts the channel" choices:"hard,soft"`
 	Order           Order      `json:"bit_order" doc:"Which bit of each 7-bit code is sent first. auto: decide by finding ZCZC (LSB is shown until then)" choices:"auto,lsb,msb"`
 	Polarity        Polarity   `json:"polarity" doc:"Which tone is the mark: normal (receiver in USB, mark is the higher tone), inverted (LSB) or auto (try both)" choices:"auto,normal,inverted"`
+	LettersOnly     bool       `json:"-"` // set by the engine for a channel whose text is all letters (486 kHz, China): the figures shift is ignored
 	UnshiftOnSpace  bool       `json:"unshift_on_space" doc:"A space character returns to the letters shift (helps when a shift character was missed)"`
 	Unreadable      Unreadable `json:"unreadable" doc:"What to print when both copies of a character are unreadable: the nearest valid character, * or ~ (as YaND prints it)" choices:"nearest,star,tilde"`
 	BreakBeforeZCZC bool       `json:"break_before_zczc" doc:"Always start ZCZC at the beginning of a line (inserts a line break if needed)"`
@@ -164,6 +165,11 @@ func (d *Decoder) SetConfig(c Config) []Event {
 	orderChanged := c.Order != d.cfg.Order
 	pol, uos := c.Polarity, c.UnshiftOnSpace
 	d.cfg = c
+	for _, ip := range d.interps {
+		if ip != nil {
+			ip.only = c.LettersOnly
+		}
+	}
 	d.SetUnshiftOnSpace(uos)
 	evs := d.SetPolarity(pol)
 	if orderChanged {
@@ -300,11 +306,11 @@ func (d *Decoder) lock(pol, a int, j int64, nw int, sticky bool) {
 	first := j - 7*int64(nw-1)
 	d.base = (first - int64(a)) / 7
 	d.nextEmit = d.base
-	d.interps = [2]*interp{{order: LSB, uos: d.cfg.UnshiftOnSpace}, {order: MSB, uos: d.cfg.UnshiftOnSpace}}
+	d.interps = [2]*interp{{order: LSB, uos: d.cfg.UnshiftOnSpace, only: d.cfg.LettersOnly}, {order: MSB, uos: d.cfg.UnshiftOnSpace, only: d.cfg.LettersOnly}}
 	d.tails, d.msbBuf = [2]string{}, nil
 	d.shape.reset()
 	if d.order != Auto {
-		d.interps[0] = &interp{order: d.order, uos: d.cfg.UnshiftOnSpace}
+		d.interps[0] = &interp{order: d.order, uos: d.cfg.UnshiftOnSpace, only: d.cfg.LettersOnly}
 		d.interps[1] = nil
 	}
 	if lp := d.lastPar; lp.ok && lp.align == a && (d.cfg.KeepParity > 0 && float64(d.idx-lp.symIdx) < d.cfg.KeepParity || sticky) {

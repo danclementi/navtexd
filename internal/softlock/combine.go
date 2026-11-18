@@ -4,9 +4,10 @@ package softlock
 // letters/figures shift state between characters.
 type combiner struct {
 	letters bool
+	only    bool // never leave the letters shift (Chinese text: every unit is three letters)
 }
 
-func newCombiner() combiner { return combiner{letters: true} }
+func newCombiner(only bool) combiner { return combiner{letters: true, only: only} }
 
 // combine returns the character to print for the pair (dx, rx: seven soft values each, first bit first, positive = 1).
 // ok is false when the pair prints nothing (a pair of phasing signals, a shift, idle filler). '~' means an error; '!'
@@ -52,7 +53,9 @@ func (c *combiner) decode(code Code) (rune, bool) {
 		c.letters = true
 		return 0, false
 	case ctlFigures:
-		c.letters = false
+		if !c.only { // a figures shift in letters-only text is a misread, and would turn the following letters into digits and signs
+			c.letters = false
+		}
 		return 0, false
 	case ctlCR:
 		return '\r', true
