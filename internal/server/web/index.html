@@ -69,6 +69,7 @@
   <button data-tab="header" hidden>Instruments</button>
   <button data-tab="spectrum">Spectrum</button>
   <button data-tab="log">Log</button>
+  <button data-tab="review">Review</button>
   <button data-tab="report">Report</button>
   <button data-tab="retext">Report text</button>
   <button data-tab="schedule">Schedule</button>
@@ -125,7 +126,7 @@
       <span class="sp"></span>
       <button id="n-undo" type="button" class="tb ghost" title="Take back the last deletion or edit of a record" disabled><svg class="ic" aria-hidden="true"><use href="#i-arrow-back-up"/></svg><span>undo</span></button>
       <svg class="ic vsep" aria-hidden="true"><use href="#i-minus-vertical"/></svg>
-      <button id="n-open" type="button" class="tb" title="Read the selected record (double-click or Enter)" disabled><svg class="ic" aria-hidden="true"><use href="#i-eye"/></svg><span>review</span></button>
+      <button id="n-open" type="button" class="tb" title="Read the selected record (double-click or Enter).&#10;With several records selected: read them one after another" disabled><svg class="ic" aria-hidden="true"><use href="#i-eye"/></svg><span>review</span></button>
       <button id="n-report" type="button" class="tb" title="Add the selected records to your report (kept in this browser)" disabled><svg class="ic" aria-hidden="true"><use href="#i-report-medical"/></svg><span>to report</span></button>
       <button id="n-delete" type="button" class="tb" title="Delete the selected records.&#10;They are saved first: the undo button brings them back." disabled><svg class="ic" aria-hidden="true"><use href="#i-trash"/></svg><span>delete</span></button>
       <svg class="ic vsep" aria-hidden="true"><use href="#i-minus-vertical"/></svg>
@@ -226,6 +227,39 @@
       <p class="small redit-note">The text follows the report list until you edit it. Your edits change only this text, never the log records. While it is edited the list cannot change without asking you first; revert brings the generated text back.</p>
       <textarea id="re-text" spellcheck="false" wrap="off" placeholder="The report list is empty. Add records from the Log tab (Alt-click, or the context menu)."></textarea>
     </div>
+  </section>
+  <section id="tab-review" hidden>
+<div id="rv-body" class="rvbody">
+  <div class="dlghead">
+    <button id="ld-prev" type="button" title="Earlier record (left arrow key)">&#9664;</button>
+    <button id="ld-next" type="button" title="Later record (right arrow key)">&#9654;</button>
+    <span class="dlgsep"></span>
+    <button id="ld-undo" type="button" title="Take back the last deletion or edit of a record" disabled>UNDO</button>
+    <button id="ld-delete" type="button" title="Delete this record.&#10;It is saved first: the undo button brings it back.&#10;Key: Delete">DELETE</button>
+    <b id="rec-title"></b>
+    <span class="grow"></span>
+    <button id="ld-report" type="button" title="Add this record to your report (kept in this browser)" hidden>Add to report</button>
+    <button id="ld-close" class="rvpop" type="button" title="Close (Esc)" aria-label="Close">&#10005;</button>
+  </div>
+  <div id="rec-info" class="ldinfo"></div>
+  <div id="rec-ident" class="ldident"></div>
+  <div class="ldtext">
+    <pre id="rec-text" tabindex="0"></pre>
+    <div id="rev-sug" class="small" hidden></div>
+    <div id="rev-list" class="small" hidden></div>
+  </div>
+  <div class="ldrev">
+    <textarea id="rev-out" rows="3" spellcheck="false" placeholder="Select message text: its reversal appears here. Correct it if needed, then Accept."></textarea>
+    <div class="revbtns"><button id="rev-apply" type="button" disabled>Accept</button><button id="rev-clear" type="button" disabled title="Unselect the text in the message">Clear</button></div>
+    <span class="vsep"></span>
+    <div class="revchecks">
+      <label class="check small" title="Words with unreadable characters, repaired from the maritime vocabulary,&#10;are shown in [brackets]; hover for what was received.&#10;The raw text is never changed.&#10;On a 486 kHz channel the Chinese text is shown."><input type="checkbox" id="rec-cor" checked> show autocorrections</label>
+      <label class="check small" title="Mark stretches that look as if they were decoded in the wrong shift.&#10;Click one to put its reversed text into the message."><input type="checkbox" id="rec-cand"> show reversal candidates</label>
+      <label class="check small" title="Show all of the text as it reads after the shift reverser, to find stretches that were decoded in the wrong shift.&#10;Select a stretch to see it reversed in the box. Copy (Ctrl-C) still gives the received text."><input type="checkbox" id="rec-showrev"> reverse all text</label>
+    </div>
+  </div>
+  <div id="ld-stat" class="lpstat" title="Stations on air at the time the message began (their slot began less than 10 minutes before), in the NAVAREAs ticked in the Schedule tab"></div>
+</div>
   </section>
   <section id="tab-statistics" hidden><p class="note">Reception statistics are planned for the next milestone.</p></section>
   <section id="tab-schedule" hidden>
@@ -366,37 +400,7 @@
     </div>
   </div>
 </dialog>
-<dialog id="log-dlg" aria-label="Log record">
-  <div class="dlghead">
-    <button id="ld-prev" type="button" title="Earlier record (left arrow key)">&#9664;</button>
-    <button id="ld-next" type="button" title="Later record (right arrow key)">&#9654;</button>
-    <span class="dlgsep"></span>
-    <button id="ld-undo" type="button" title="Take back the last deletion or edit of a record" disabled>UNDO</button>
-    <button id="ld-delete" type="button" title="Delete this record.&#10;It is saved first: the undo button brings it back.&#10;Key: Delete">DELETE</button>
-    <b id="rec-title"></b>
-    <span class="grow"></span>
-    <button id="ld-report" type="button" title="Add this record to your report (kept in this browser)" hidden>Add to report</button>
-    <button id="ld-close" type="button" title="Close (Esc)" aria-label="Close">&#10005;</button>
-  </div>
-  <div id="rec-info" class="ldinfo"></div>
-  <div id="rec-ident" class="ldident"></div>
-  <div class="ldtext">
-    <pre id="rec-text" tabindex="0"></pre>
-    <div id="rev-sug" class="small" hidden></div>
-    <div id="rev-list" class="small" hidden></div>
-  </div>
-  <div class="ldrev">
-    <textarea id="rev-out" rows="3" spellcheck="false" placeholder="Select message text: its reversal appears here. Correct it if needed, then Accept."></textarea>
-    <div class="revbtns"><button id="rev-apply" type="button" disabled>Accept</button><button id="rev-clear" type="button" disabled title="Unselect the text in the message">Clear</button></div>
-    <span class="vsep"></span>
-    <div class="revchecks">
-      <label class="check small" title="Words with unreadable characters, repaired from the maritime vocabulary,&#10;are shown in [brackets]; hover for what was received.&#10;The raw text is never changed.&#10;On a 486 kHz channel the Chinese text is shown."><input type="checkbox" id="rec-cor" checked> show autocorrections</label>
-      <label class="check small" title="Mark stretches that look as if they were decoded in the wrong shift.&#10;Click one to put its reversed text into the message."><input type="checkbox" id="rec-cand"> show reversal candidates</label>
-      <label class="check small" title="Show all of the text as it reads after the shift reverser, to find stretches that were decoded in the wrong shift.&#10;Select a stretch to see it reversed in the box. Copy (Ctrl-C) still gives the received text."><input type="checkbox" id="rec-showrev"> reverse all text</label>
-    </div>
-  </div>
-  <div id="ld-stat" class="lpstat" title="Stations on air at the time the message began (their slot began less than 10 minutes before), in the NAVAREAs ticked in the Schedule tab"></div>
-</dialog>
+<dialog id="log-dlg" aria-label="Log record"><div id="rv-host"></div></dialog>
 <dialog id="about-dlg" class="about">
   <h3>navtexd <span id="about-ver2"></span></h3>
   <p>A NAVTEX decoder with a web interface, modelled on YaND. Free software under the GNU General Public License, version 3, without any warranty.</p>

@@ -3,7 +3,7 @@
 (() => {
   const NX = window.NX, $ = NX.$, el = NX.el, api = NX.api;
   const CH = 100, ROW = 22, HDR = 26; // fetch chunk size, row height and header height in pixels
-  const L = { total: 0, all: 0, cache: new Map(), chunks: new Set(), gen: 0, sel: new Set(), selId: 0, anchor: -1, rec: null, loaded: false, timer: 0, q: "", hid0: 0, la: 0, lt: 0, dir: 1, end: false };
+  const L = { total: 0, all: 0, cache: new Map(), chunks: new Set(), gen: 0, sel: new Set(), selId: 0, anchor: -1, rec: null, loaded: false, timer: 0, q: "", hid0: 0, la: 0, lt: 0, dir: 1, end: false, scope: null };
   const admin = () => NX.state.role === "admin";
   const sc = $("logscroll");
 
@@ -212,7 +212,7 @@
     const n = L.sel.size;
     $("n-selinfo").textContent = n > 1 ? `${n} records selected` : "";
     $("n-open").disabled = !L.selId;
-    if (dlg.open) updateNav();
+    if (rvActive()) updateNav();
     $("n-report").disabled = n < 1;
     $("n-report").title = (n > 1 ? `Add the ${n} selected records to your report (kept in this browser)` : "Add the selected record to your report (kept in this browser)") + "\nAlt-click a row in the list to add just that record";
     $("n-delete").disabled = !admin() || n < 1;
@@ -259,6 +259,7 @@
 
   // a fresh query (filters or order changed): forget everything and show the latest records
   async function reload() {
+    L.scope = null;
     L.gen++; L.cache.clear(); L.chunks.clear();
     const q = params().toString();
     try { const j = await fetchRange(0, 1); L.total = j.total; L.all = j.all; } catch (e) { $("n-selinfo").textContent = "error: " + e.message; return; }
@@ -291,7 +292,7 @@
     }
     if (atEnd) sc.scrollTop = L.total * ROW + HDR;
     render();
-    if (L.selId && dlg.open) reloadRecord(L.selId);
+    if (L.selId && rvActive()) reloadRecord(L.selId);
   }
   // re-read the current record; the text pane is rebuilt only when it really changed
   async function reloadRecord(id) {
@@ -405,6 +406,7 @@
     showRecord();
   }
   async function selectIndex(i) {
+    L.scope = null; // (the table moves on: no longer reading the selection)
     i = Math.max(0, Math.min(L.total - 1, i));
     if (i < 0) return;
     L.anchor = i;
@@ -731,6 +733,8 @@
   }
   // may the pop-up step in direction d (+1 = down the list as shown)?
   function canStep(d) {
+    const S = L.scope;
+    if (S) { const k = S.k, n = S.items.length; return S.gap ? (d > 0 ? k < n : k - 1 >= 0) : k + d >= 0 && k + d < n; }
     const i = pos(), n = L.total;
     if (i < 0) return false;
     return L.gone ? (d > 0 ? i < n : i - 1 >= 0) : i + d >= 0 && i + d < n;
@@ -738,6 +742,16 @@
   // left / right always mean earlier / later in time, whichever way the list is sorted
   const earlier = () => (newestFirst() ? 1 : -1);
   function updateNav() {
+    const S = L.scope;
+    if (S) {
+      const rk = newestFirst() ? S.items.length - S.k : S.k + 1;
+      $("rec-title").textContent = L.rec && !L.end ? `${L.rec.kind} ${rk} of ${S.items.length} (selection)` : "";
+      $("ld-prev").disabled = !canStep(earlier());
+      $("ld-next").disabled = !canStep(-earlier());
+      $("ld-report").hidden = L.end;
+      syncDelete();
+      return;
+    }
     const i = pos(), n = L.total;
     const rank = newestFirst() ? n - i : i + 1; // counted in time, whichever way the list is sorted: the newest record is "n of n"
     const where = i >= 0 && n && !L.gone ? ` ${rank} of ${n}${filterOn() ? " (filtered)" : ""}` : L.gone ? " (no longer in the filtered list)" : "";
@@ -753,17 +767,61 @@
     $("ld-delete").disabled = !admin() || rev || L.end;
     $("ld-delete").title = rev ? "Not while \"reverse all text\" is checked" : "Delete this record.\nIt is saved first: the undo button brings it back.\nKey: Delete";
   }
+  // The Review body (#rv-body) lives in the Review tab. When the tab is not on screen, the pop-up borrows it, and gives it back on close.
+  // In the tab it follows the record selected in the Log; in the pop-up it is the one record being read.
+  const rvBody = $("rv-body");
+  const rvActive = () => dlg.open || NX.shown("review");
+  // The records to read one after another when several are selected, in list order. A snapshot: the selection in the table can change meanwhile.
+  async function scopeItems(set) {
+    const known = new Map();
+    for (const [i, r] of L.cache) if (set.has(r.id) && !L.gone) known.set(r.id, i);
+    const missing = [...set].filter((id) => !known.has(id));
+    if (missing.length && missing.length <= 40) { // a few: ask where each is
+      await Promise.all(missing.map(async (id) => { const it = { id, i: -1 }; await freshIndex(it); if (it.i >= 0) known.set(id, it.i); }));
+    } else if (missing.length) { // many (Select all): read through the list
+      for (let off = 0; off < L.total && known.size < set.size; off += 500) {
+        const r = await fetchRange(off, 500);
+        r.records.forEach((m, k) => { if (set.has(m.id)) known.set(m.id, off + k); });
+      }
+    }
+    return [...known].map(([id, i]) => ({ id, i })).sort((a, b) => a.i - b.i);
+  }
   async function openDialog() {
     if (!L.selId) return;
-    if (!dlg.open) { dlg.showModal(); L.dir = 1; }
+    L.scope = null;
+    if (L.sel.size > 1) {
+      const items = await scopeItems(L.sel);
+      if (items.length) {
+        const k = Math.max(0, items.findIndex((x) => x.id === L.selId));
+        L.scope = { items, k, gap: false, removed: new Set() };
+        L.selId = items[k].id; L.anchor = items[k].i; L.gone = false;
+      }
+    }
+    L.dir = 1;
+    if (!NX.shown("review") && !dlg.open) { $("rv-host").append(rvBody); dlg.showModal(); }
+    else if (!dlg.open) $("rec-text").focus({ preventScroll: true });
     updateNav();
-    if (!L.rec || L.rec.id !== L.selId) select(L.selId, true); // the pane may still show an older record
+    if (L.scope) { scrollToIndex(L.anchor); select(L.selId, true); }
+    else if (!L.rec || L.rec.id !== L.selId) select(L.selId, true); // the pane may still show an older record
+  }
+  // where a record of the selection is in the list now (new records may have shifted it); for scrolling the table to it
+  async function freshIndex(it) {
+    try { const p = params(); p.set("order", $("n-order").value); p.set("id", it.id); const r = await api("GET", "/api/messages/locate?" + p); if (r.index >= 0) it.i = r.index; } catch (e) { /* keep it */ }
   }
   let stepping = false;
   async function step(d) {
     if (stepping) return;
     stepping = true;
     try {
+      const S = L.scope;
+      if (S) {
+        if (!canStep(d)) { updateNav(); return; }
+        const to = S.gap ? (d > 0 ? S.k : S.k - 1) : S.k + d, it = S.items[to];
+        S.k = to; S.gap = false; L.dir = d; L.gone = false; L.end = false;
+        await freshIndex(it); L.anchor = it.i;
+        scrollToIndex(it.i); select(it.id, true);
+        return;
+      }
       await locate(); // (asks the server: the cached rows may be out of date after an edit)
       if (!canStep(d)) { updateNav(); return; }
       const i = pos(), to = L.gone ? (d > 0 ? i : i - 1) : i + d;
@@ -778,16 +836,18 @@
   $("ld-next").onclick = () => step(-earlier());
   $("ld-close").onclick = () => dlg.close();
   dlg.addEventListener("close", () => {
+    $("tab-review").append(rvBody); L.scope = null;
     if (L.end) { L.end = false; L.gone = false; $("rec-text").classList.remove("endlist"); }
     sc.focus({ preventScroll: true }); render();
   });
-  dlg.addEventListener("keydown", (e) => {
+  rvBody.addEventListener("keydown", (e) => {
     if (e.ctrlKey || e.altKey || e.metaKey || /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
     if (e.key === "ArrowLeft") { e.preventDefault(); step(earlier()); }
     else if (e.key === "ArrowRight") { e.preventDefault(); step(-earlier()); }
   });
   dlg.addEventListener("mousedown", (e) => { if (e.target === dlg) dlg.close(); }); // a click on the backdrop
   $("n-open").onclick = openDialog;
+  NX.tabs.review = () => { updateNav(); };
 
   const tbody = document.querySelector("#log-table tbody");
   // ---- clicking rows: select, ctrl-click for several, shift-click for a range ----
@@ -795,6 +855,7 @@
     const tr = e.target.closest("tr[data-id]");
     if (!tr) return;
     const id = Number(tr.dataset.id), i = Number(tr.dataset.i);
+    L.scope = null;
     sc.focus({ preventScroll: true });
     // Alt-click: this record goes into the report; the selection stays as it is
     if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) { e.preventDefault(); addToReport([id]); return; }
@@ -838,7 +899,7 @@
     const rows = [];
     const item = (text, key, fn, off, tip) => rows.push({ text, key, fn, off: !!off, tip });
     const sep = () => { if (rows.length && rows[rows.length - 1].sep !== true) rows.push({ sep: true }); };
-    item("Review", "Enter", () => openDialog(), !one);
+    item(one ? "Review" : "Review selected" + n, "Enter", () => openDialog());
     item("Add to report" + n, "Alt-click", () => addToReport(ids));
     item(one ? "Copy record number" : "Copy record numbers", "", () => copyText(ids.map((i) => NX.hex(i)).join(" ")));
     item("Copy message text", "", () => copyText($("lp-text").textContent), !rec, one ? "" : "Select one record");
@@ -933,12 +994,13 @@
   // ---- keys for the records: Delete, Ctrl-Z (undo). With the pop-up open they concern the record it shows. (Alt-click on a row adds it to the report.) ----
   // (what the buttons do; nothing happens when a button is disabled, in a text box, or while another pop-up is open)
   document.addEventListener("keydown", (e) => {
-    if (NX.state.tab !== "log" || e.defaultPrevented) return;
+    const inRv = !!(e.target.closest && e.target.closest("#rv-body")); // (the Review tab: its keys concern the record it shows)
+    if ((NX.state.tab !== "log" && !inRv) || e.defaultPrevented) return;
     const open = document.querySelector("dialog[open]");
     if (open && open !== dlg) return;
     const t = e.target;
     if (/INPUT|SELECT|TEXTAREA/.test(t.tagName) || t.isContentEditable) return; // (the text there has its own Delete and undo)
-    const pop = !!open;
+    const pop = !!open || inRv;
     let b = null;
     if (e.key === "Delete" && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) b = $(pop ? "ld-delete" : "n-delete");
     else if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "z") b = $(pop ? "ld-undo" : "n-undo");
@@ -946,6 +1008,7 @@
     e.preventDefault();
     b.click();
   });
+
 
   // ---- navigation and filters ----
   // the two order buttons: chronological (newest last) or reverse (newest first); #n-order holds the choice
@@ -1132,6 +1195,8 @@
   async function deleteSelected(fromDlg) {
     if (fromDlg === true && L.selId) L.sel = new Set([L.selId]); // the pop-up deletes the record it shows, nothing else
     if (!admin() || !L.sel.size) return;
+    const S = fromDlg === true ? L.scope : null, sk = S ? S.k : -1;
+    if (fromDlg !== true) L.scope = null;
     const list = [...L.sel], at = pos();
     if (fromDlg !== true && !confirm(list.length === 1 && L.rec ? `Delete record ${NX.hex(L.rec.id)} (${NX.stamp(Date.parse(L.rec.rx))}, ${L.rec.st})?\nUndo brings it back.` : `Delete ${list.length} records?\nUndo brings them back.`)) return;
     try { const r = await api("POST", "/api/messages/delete", { ids: list }); showUndo(r.undo); } catch (e) { alert(e.message); }
@@ -1140,7 +1205,18 @@
     L.gen++; L.cache.clear(); L.chunks.clear();
     try { const j = await fetchRange(0, 1); L.total = j.total; L.all = j.all; L.lt = j.total; L.la = j.all; } catch (e) { return; }
     sc.scrollTop = top; select(0);
-    if (dlg.open) {
+    if (S && S === L.scope && rvActive()) {
+      // reading the selection: the record leaves it, and the next one of the selection in the direction of travel is shown
+      const gone = S.items.splice(sk, 1)[0];
+      S.removed.add(gone.id);
+      for (const it of S.items) if (it.i > gone.i) it.i--;
+      L.sel = new Set(S.items.map((x) => x.id));
+      const down = (L.dir || 1) > 0, nxt = down ? sk : sk - 1;
+      if (nxt >= 0 && nxt < S.items.length) {
+        S.k = nxt; S.gap = false; const it = S.items[nxt];
+        await freshIndex(it); L.anchor = it.i; scrollToIndex(it.i); select(it.id, true);
+      } else showEnd(down ? S.items.length : 0, "End of selection");
+    } else if (dlg.open) {
       // the next record in the direction the pop-up was being stepped (down the list unless the last step was up), so that no record is shown
       // twice; where there is none, a page that says it is the end of the list
       const down = (L.dir || 1) > 0, nxt = down ? at : at - 1;
@@ -1151,10 +1227,13 @@
   }
   // The pop-up has run off the end of the list (the last record in the direction of travel was deleted). The gap is where that record was:
   // the arrows then go to its neighbour on the side that is left, and nothing is skipped.
-  async function showEnd(gap) {
+  async function showEnd(gap, text) {
+    const S = L.scope;
+    const sel = S ? L.sel : null;
     await select(0);
-    L.end = true; L.gone = true; L.anchor = gap;
-    $("rec-text").textContent = "End of list"; $("rec-text").classList.add("endlist");
+    if (S) { L.sel = sel; S.k = gap; S.gap = true; }
+    L.end = true; L.gone = true; L.anchor = S ? -1 : gap;
+    $("rec-text").textContent = text || "End of list"; $("rec-text").classList.add("endlist");
     updateNav();
   }
   // Undo: the server keeps every deletion and every edit of a record (30 days) on one stack; this takes back the last one
@@ -1181,9 +1260,16 @@
       const ids = r.ids || [], p = params(); p.set("order", $("n-order").value); p.set("id", ids[0]);
       const at = ids.length ? (await api("GET", "/api/messages/locate?" + p)).index : -1;
       L.gone = false;
+      const S = L.scope, back = S ? ids.filter((id) => S.removed.has(id)) : [];
+      if (S && back.length) { // the records come back into the selection that is being read
+        for (const id of back) S.removed.delete(id);
+        S.items = await scopeItems(new Set([...S.items.map((x) => x.id), ...back]));
+        S.k = Math.max(0, S.items.findIndex((x) => x.id === ids[0])); S.gap = false; L.end = false;
+      }
       if (at >= 0) {
         L.anchor = at; L.sel = new Set(ids); L.selId = ids[0];
         scrollToIndex(at); render();
+        if (S && back.length) L.sel = new Set(S.items.map((x) => x.id));
         await select(ids[0], true);
         $("n-selinfo").textContent = r.kind === "edit" ? "edit undone" : `${r.restored} record${r.restored > 1 ? "s" : ""} restored`;
       } else {
@@ -1366,7 +1452,7 @@
     const n = NX.replist.add(list);
     const msg = n < 0 ? "not added: the report text has your edits (revert it first)" : n === list.length ? `${n} added to your report` : n ? `${n} added to your report (the rest were already there)` : "already in your report";
     $("n-selinfo").textContent = msg;
-    if (dlg.open) $("rec-title").textContent += "  \u2014 " + (n < 0 ? "not added: the report text has your edits" : n ? "added to your report" : "already in your report");
+    if (rvActive()) $("rec-title").textContent += "  \u2014 " + (n < 0 ? "not added: the report text has your edits" : n ? "added to your report" : "already in your report");
     clearTimeout(reportNote); reportNote = setTimeout(render, 2500);
   }
   $("n-report").onclick = () => addToReport([...L.sel]);
@@ -1420,7 +1506,7 @@
   let revSeq = 0;
   function revClear() { revSeq++; revSrc = null; $("rev-out").value = ""; updateApply(); }
   document.addEventListener("selectionchange", () => {
-    if (!dlg.open || !L.rec || document.activeElement === $("rev-out")) return; // (editing the box must not lose what it came from)
+    if (!rvActive() || !L.rec || document.activeElement === $("rev-out")) return; // (editing the box must not lose what it came from)
     const sel = window.getSelection(), parts = String(sel) ? selectedParts(sel) : [];
     if (!parts.length) { if (revSrc || $("rev-out").value) revClear(); return; }
     const mine = ++revSeq, text = parts.map((p) => p.text).join("\n");

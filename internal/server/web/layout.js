@@ -28,6 +28,13 @@
     logedit: { name: "Log, Report and text", cols: [
       { w: 1.4, rows: [{ tab: "log", h: 1 }] },
       { w: 1, rows: [{ tab: "report", h: 1 }, { tab: "retext", h: 1.2 }] }] },
+    logrev: { name: "Log and Review", cols: [
+      { w: 1, rows: [{ tab: "log", h: 1 }] },
+      { w: 1.1, rows: [{ tab: "review", h: 1 }] }] },
+    logall: { name: "Log, Review and Report", cols: [
+      { w: 1.1, rows: [{ tab: "log", h: 1 }] },
+      { w: 1.2, rows: [{ tab: "review", h: 1 }] },
+      { w: 0.9, rows: [{ tab: "report", h: 1 }, { tab: "retext", h: 1.2 }] }] },
     grid4: { name: "2 × 2", cols: [
       { w: 1, rows: [{ tab: "status", h: 1 }, { tab: "log", h: 1 }] },
       { w: 1, rows: [{ tab: "spectrum", h: 1 }, { tab: "report", h: 1 }] }] },

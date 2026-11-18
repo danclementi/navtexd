@@ -318,7 +318,7 @@ main > section:not([hidden]) { flex: 1 1 auto; min-height: 0; overflow: auto; bo
 footer.schedbar { position: static; flex: 0 0 auto; width: 100%; }
 
 /* ---- tabs that fill the panel ---- */
-#tab-status:not([hidden]), #tab-spectrum:not([hidden]), #tab-schedule:not([hidden]), #tab-syslog:not([hidden]), #tab-retext:not([hidden]) { display: flex; flex-direction: column; overflow: hidden; }
+#tab-status:not([hidden]), #tab-spectrum:not([hidden]), #tab-schedule:not([hidden]), #tab-syslog:not([hidden]), #tab-retext:not([hidden]), #tab-review:not([hidden]) { display: flex; flex-direction: column; overflow: hidden; }
 #tab-status .cols { flex: 1 1 auto; min-height: 0; flex-wrap: nowrap; margin-top: 0; }
 #tab-status .col { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 #tab-status .textcol { flex: 1 1 0; }
@@ -392,27 +392,27 @@ nav button.filtered::after { content: ""; display: inline-block; width: 8px; hei
 dialog#log-dlg { width: min(1000px, 96vw); height: min(780px, 94vh); padding: 0; border: 2px solid var(--tabline); border-radius: 8px; background: var(--panel); color: var(--ink); }
 dialog#log-dlg[open] { display: flex; flex-direction: column; }
 dialog#log-dlg::backdrop { background: rgba(0, 0, 0, .45); }
-#log-dlg .ldinfo { padding: 0 0 4px; border-bottom: 1px solid var(--line); }
-#log-dlg .ldinfo .dlginfo { grid-template-columns: auto 18em auto 7em auto minmax(0, 1fr); align-items: center; }
-#log-dlg .ldinfo .dlginfo dd { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#log-dlg .ldinfo .dlginfo .v { display: block; overflow: hidden; text-overflow: ellipsis; }
-#log-dlg .ldinfo .dlginfo dd input:not(.mini) { width: 100%; box-sizing: border-box; }
-#log-dlg .cands select { width: 15em; }
-#log-dlg .ldinfo input[type=text] { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 1px 4px; width: 100%; }
-#log-dlg .ldinfo input.mini { width: 2.6em; text-align: center; }
-#log-dlg .ldinfo input.bad { background: color-mix(in srgb, var(--bad) 30%, transparent); }
-#log-dlg .nowrap { white-space: nowrap; }
-#log-dlg .cands { padding: 2px 12px 4px; font-size: 12px; display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; }
-#log-dlg .ldtext { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; padding: 6px 12px 0; }
-#log-dlg .ldtext label { align-self: flex-start; margin-bottom: 4px; }
-#log-dlg #rec-text { flex: 1 1 auto; height: auto; min-height: 60px; margin: 0; font-family: var(--mono); background: var(--msg-bg); color: var(--msg-ink); border-color: var(--spec-grid); }
-#log-dlg #rec-text.endlist { display: flex; align-items: center; justify-content: center; color: var(--dim); font-family: inherit; font-size: 18px; }
-#log-dlg .ldrev { flex: 0 0 auto; display: flex; gap: 10px; align-items: stretch; padding: 8px 12px 10px; border-top: 1px solid var(--line); margin-top: 6px; }
-#log-dlg .ldrev textarea { flex: 1 1 0; min-width: 0; resize: none; }
-#log-dlg .ldrev .revbtns { flex: none; display: flex; flex-direction: column; gap: 4px; align-self: flex-start; }
-#log-dlg .ldrev .revbtns button { min-width: 5.5em; }
-#log-dlg .ldrev .vsep { flex: none; width: 1px; background: var(--line); }
-#log-dlg .ldrev .revchecks { flex: none; display: flex; flex-direction: column; gap: 4px; justify-content: center; }
+#rv-body .ldinfo { padding: 0 0 4px; border-bottom: 1px solid var(--line); }
+#rv-body .ldinfo .dlginfo { grid-template-columns: auto 18em auto 7em auto minmax(0, 1fr); align-items: center; }
+#rv-body .ldinfo .dlginfo dd { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#rv-body .ldinfo .dlginfo .v { display: block; overflow: hidden; text-overflow: ellipsis; }
+#rv-body .ldinfo .dlginfo dd input:not(.mini) { width: 100%; box-sizing: border-box; }
+#rv-body .cands select { width: 15em; }
+#rv-body .ldinfo input[type=text] { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 1px 4px; width: 100%; }
+#rv-body .ldinfo input.mini { width: 2.6em; text-align: center; }
+#rv-body .ldinfo input.bad { background: color-mix(in srgb, var(--bad) 30%, transparent); }
+#rv-body .nowrap { white-space: nowrap; }
+#rv-body .cands { padding: 2px 12px 4px; font-size: 12px; display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; }
+#rv-body .ldtext { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; padding: 6px 12px 0; }
+#rv-body .ldtext label { align-self: flex-start; margin-bottom: 4px; }
+#rv-body #rec-text { flex: 1 1 auto; height: auto; min-height: 60px; margin: 0; font-family: var(--mono); background: var(--msg-bg); color: var(--msg-ink); border-color: var(--spec-grid); }
+#rv-body #rec-text.endlist { display: flex; align-items: center; justify-content: center; color: var(--dim); font-family: inherit; font-size: 18px; }
+#rv-body .ldrev { flex: 0 0 auto; display: flex; gap: 10px; align-items: stretch; padding: 8px 12px 10px; border-top: 1px solid var(--line); margin-top: 6px; }
+#rv-body .ldrev textarea { flex: 1 1 0; min-width: 0; resize: none; }
+#rv-body .ldrev .revbtns { flex: none; display: flex; flex-direction: column; gap: 4px; align-self: flex-start; }
+#rv-body .ldrev .revbtns button { min-width: 5.5em; }
+#rv-body .ldrev .vsep { flex: none; width: 1px; background: var(--line); }
+#rv-body .ldrev .revchecks { flex: none; display: flex; flex-direction: column; gap: 4px; justify-content: center; }
 .filters .frow { gap: 6px 10px; }
 .filters .frow:first-child { flex-wrap: nowrap; }
 .filters .frow:first-child .field, .filters .frow:first-child .check { flex: 0 0 auto; white-space: nowrap; gap: 4px; }
@@ -558,8 +558,8 @@ button.mw:disabled, button.mw:disabled:hover { cursor: default; opacity: 1; colo
 
 .dlgsep { display: inline-block; width: 14px; }
 /* the record pop-up: only the controls, the message and the shift reverser boxes can be selected */
-#log-dlg, #log-dlg * { -webkit-user-select: none; user-select: none; }
-#log-dlg #rec-text, #log-dlg #rec-text *, #log-dlg input, #log-dlg textarea { -webkit-user-select: text; user-select: text; }
+#rv-body, #rv-body * { -webkit-user-select: none; user-select: none; }
+#rv-body #rec-text, #rv-body #rec-text *, #rv-body input, #rv-body textarea { -webkit-user-select: text; user-select: text; }
 input.tm { width: 64px; flex: none; box-sizing: border-box; font: inherit; font-variant-numeric: tabular-nums; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; text-align: center; }
 input.tm.bad { border-color: var(--bad); }
 select.rel { font: inherit; font-size: 12px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 3px 2px; }
@@ -586,25 +586,25 @@ nav #helplink:hover { color: var(--ink); }
 #rec-text.showrev { outline: 2px dashed #38a0e8; outline-offset: -2px; }
 
 /* station identification in the record dialog: a block of its own with fixed rows, so that nothing moves when a record is edited */
-#log-dlg .ldident { flex: none; padding: 3px 12px; font-size: 12px; border-bottom: 1px solid var(--line); }
-#log-dlg .ldident:empty { display: none; }
-#log-dlg .ldident .gl { color: var(--dim); }
-#log-dlg .ldinfo .whybtn { font-size: 12px; padding: 0 8px; line-height: 18px; flex: none; }
-#log-dlg .ldinfo .setby { display: flex; gap: 8px; align-items: center; min-width: 0; }
-#log-dlg .ldinfo .slotl { color: var(--dim); }
-#log-dlg .ldinfo .ovr { display: flex; gap: 8px; align-items: center; min-width: 0; }
-#log-dlg .ldinfo .ovr select { width: 17em; max-width: 100%; }
-#log-dlg .ldinfo .ovr button { font-size: 12px; padding: 0 8px; line-height: 18px; }
-#log-dlg .whyp { display: grid; gap: 2px; padding: 2px 0 3px; max-height: 28vh; overflow: auto; }
-#log-dlg .whyg { display: grid; grid-template-columns: 17em 1.6em auto auto repeat(5, auto) minmax(2em, 1fr); gap: 1px 8px; align-items: center; }
-#log-dlg .whyg button { font-size: 11px; padding: 0 8px; line-height: 16px; }
-#log-dlg .whyn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#log-dlg .whyn.chosen { font-weight: 700; }
-#log-dlg .whys { text-align: center; font-family: var(--mono, monospace); color: var(--dim); cursor: help; }
-#log-dlg .whyp button:disabled { opacity: .45; }
-#log-dlg .whytot, #log-dlg .bdg { white-space: pre; font-family: var(--mono, monospace); font-size: 12px; }
-#log-dlg .bdg { border: 1px solid var(--line); border-radius: 9px; padding: 0 7px; line-height: 15px; cursor: help; }
-#log-dlg .bdg.strike { text-decoration: line-through; color: var(--dim); }
+#rv-body .ldident { flex: none; padding: 3px 12px; font-size: 12px; border-bottom: 1px solid var(--line); }
+#rv-body .ldident:empty { display: none; }
+#rv-body .ldident .gl { color: var(--dim); }
+#rv-body .ldinfo .whybtn { font-size: 12px; padding: 0 8px; line-height: 18px; flex: none; }
+#rv-body .ldinfo .setby { display: flex; gap: 8px; align-items: center; min-width: 0; }
+#rv-body .ldinfo .slotl { color: var(--dim); }
+#rv-body .ldinfo .ovr { display: flex; gap: 8px; align-items: center; min-width: 0; }
+#rv-body .ldinfo .ovr select { width: 17em; max-width: 100%; }
+#rv-body .ldinfo .ovr button { font-size: 12px; padding: 0 8px; line-height: 18px; }
+#rv-body .whyp { display: grid; gap: 2px; padding: 2px 0 3px; max-height: 28vh; overflow: auto; }
+#rv-body .whyg { display: grid; grid-template-columns: 17em 1.6em auto auto repeat(5, auto) minmax(2em, 1fr); gap: 1px 8px; align-items: center; }
+#rv-body .whyg button { font-size: 11px; padding: 0 8px; line-height: 16px; }
+#rv-body .whyn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#rv-body .whyn.chosen { font-weight: 700; }
+#rv-body .whys { text-align: center; font-family: var(--mono, monospace); color: var(--dim); cursor: help; }
+#rv-body .whyp button:disabled { opacity: .45; }
+#rv-body .whytot, #rv-body .bdg { white-space: pre; font-family: var(--mono, monospace); font-size: 12px; }
+#rv-body .bdg { border: 1px solid var(--line); border-radius: 9px; padding: 0 7px; line-height: 15px; cursor: help; }
+#rv-body .bdg.strike { text-decoration: line-through; color: var(--dim); }
 #rec-text mark.kwhit { background: color-mix(in srgb, #e8c020 55%, transparent); color: inherit; border-radius: 2px; }
 
 
@@ -724,3 +724,8 @@ header[hidden] { display: none; }
 #tab-header .specgrp { min-height: 80px; }
 #tab-header .tickerrow { flex: none; }
 @container tile (max-width: 640px) { #tab-header .hdrrow { flex-wrap: wrap; } #tab-header .specgrp { flex: 1 1 100%; min-height: 120px; } }
+
+/* the Review body lives in its tab; the pop-up borrows it (see log.js) */
+#rv-body, #rv-host { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+#tab-review #ld-close { display: none; }
+#rv-body #rec-text:empty::before { content: "No record selected"; color: var(--dim); }
