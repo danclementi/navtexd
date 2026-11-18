@@ -158,8 +158,9 @@
   function renderHead(t) {
     t.strip.replaceChildren(...t.tabs.map((k) => {
       const it = mk("div", "tabitem" + (k === t.act ? " on" : "")), b = mk("button", "tabbtn"), x = mk("button", "tabx");
-      b.type = "button"; b.textContent = labelOf(k); b.title = "Show " + labelOf(k) + " in this tile";
-      b.onclick = () => pickTab(t, k);
+      b.type = "button"; b.textContent = labelOf(k); b.title = "Show " + labelOf(k) + " in this tile.\nDrag to move it within the tile or into another tile.";
+      b.onclick = () => { if (performance.now() - dragEnd > 80) pickTab(t, k); };
+      b.addEventListener("pointerdown", (e) => dragTab(e, t, k, it));
       x.type = "button"; x.textContent = "×"; x.title = "Take " + labelOf(k) + " out of this tile (the + button or the tab bar brings it back)"; x.setAttribute("aria-label", "Remove " + labelOf(k));
       x.onclick = (e) => { e.stopPropagation(); removeTab(t, k); };
       it.append(b, x);
@@ -204,6 +205,65 @@
     if (t.r.act === k) t.r.act = null;
     touch();
     if (!hasVisible(t.r) && tiles.length > 1) { dropRow(t); build(); } else sync();
+  }
+
+  // ---- drag a tab title: to another place in its tile, or into another tile (the tab is in one tile only) ----
+  let dragEnd = 0;
+  // the tile whose header is under the point, and the place in its tab strip (0..number of tabs) where a dropped tab would go
+  function dropAt(x, y) {
+    for (const t of tiles) {
+      const hr = t.el.firstElementChild.getBoundingClientRect(); // the tile header
+      if (x < hr.left || x > hr.right || y < hr.top || y > hr.bottom) continue;
+      const items = [...t.strip.children];
+      let idx = items.length;
+      for (let i = 0; i < items.length; i++) { const r = items[i].getBoundingClientRect(); if (x < r.left + r.width / 2) { idx = i; break; } }
+      return { t, idx };
+    }
+    return null;
+  }
+  function dragTab(e, t, k, item) {
+    if (e.button !== 0) return;
+    const x0 = e.clientX, y0 = e.clientY;
+    let on = false, tgt = null;
+    const clear = () => {
+      document.body.classList.remove("tabmoving");
+      tiles.forEach((x) => { x.el.firstElementChild.classList.remove("dropin"); [...x.strip.children].forEach((i) => i.classList.remove("dropl", "dropr", "dragging")); });
+    };
+    const mark = () => {
+      clear(); if (!on) return;
+      document.body.classList.add("tabmoving"); item.classList.add("dragging");
+      if (!tgt) return;
+      tgt.t.el.firstElementChild.classList.add("dropin");
+      const items = [...tgt.t.strip.children];
+      if (tgt.idx < items.length) items[tgt.idx].classList.add("dropl"); else if (items.length) items[items.length - 1].classList.add("dropr");
+    };
+    const mv = (m) => {
+      if (!on && Math.hypot(m.clientX - x0, m.clientY - y0) < 6) return;
+      on = true; tgt = dropAt(m.clientX, m.clientY); mark();
+    };
+    const end = (m, cancel) => {
+      document.removeEventListener("pointermove", mv); document.removeEventListener("pointerup", up); document.removeEventListener("pointercancel", cx); document.removeEventListener("keydown", esc, true);
+      const was = on, to = tgt; on = false; clear();
+      if (was) dragEnd = performance.now();
+      if (was && !cancel && to) moveTab(k, to.t, to.idx);
+    };
+    const up = (m) => end(m, false), cx = (m) => end(m, true);
+    const esc = (m) => { if (m.key === "Escape") { m.stopPropagation(); end(m, true); } };
+    document.addEventListener("pointermove", mv); document.addEventListener("pointerup", up); document.addEventListener("pointercancel", cx); document.addEventListener("keydown", esc, true);
+  }
+  // put tab k into tile t before the idx-th tab it shows (idx counts the tabs as they are now, k included when it is in this tile)
+  function moveTab(k, t, idx) {
+    const vis = t.tabs.slice(), at = vis.indexOf(k);
+    const rest = vis.filter((x) => x !== k), p = idx - (at >= 0 && at < idx ? 1 : 0), ref = rest[p]; // (undefined: after the last)
+    const sameBefore = t.r.tabs.join();
+    const from = tiles.find((x) => x !== t && x.r.tabs.includes(k));
+    S.cols.forEach((c) => c.rows.forEach((r) => { r.tabs = r.tabs.filter((x) => x !== k); }));
+    t.r.tabs.splice(ref ? t.r.tabs.indexOf(ref) : t.r.tabs.length, 0, k);
+    const changed = from || t.r.tabs.join() !== sameBefore;
+    t.r.act = k;
+    if (!changed) { save(); focusTile(t); sync(); return; } // (dropped where it was: it only becomes the shown tab)
+    touch();
+    if (from && !hasVisible(from.r) && tiles.length > 1) { dropRow(from); build(t.r); } else { focusTile(t); sync(); }
   }
 
   function dropRow(t) { const c = S.cols[t.ci]; c.rows.splice(t.ri, 1); if (!c.rows.length) S.cols.splice(t.ci, 1); }

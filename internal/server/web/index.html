@@ -193,7 +193,6 @@
     <p class="small">The signals are shown on one time axis, each shifted for its own filter delay, so a decided bit sits below the part of the signal that produced it. The decoder works about two seconds behind the antenna, so a sweep is that old. High tone = bit 1.</p>
   </section>
   <section id="tab-report" hidden>
-    <p class="note">Records you add from the Log tab ("Add to report", or the button in the record window). Your list is kept in this browser; other users have their own. The NavtexDX report format itself is planned for a later milestone.</p>
     <div class="row">
       <button id="rp-remove" class="tb" disabled title="Remove the selected records from the report.&#10;They stay in the log."><svg class="ic" aria-hidden="true"><use href="#i-playlist-x"/></svg><span>remove</span></button><button id="rp-clear" class="tb" disabled title="Empty the report list.&#10;The records stay in the log."><svg class="ic" aria-hidden="true"><use href="#i-file-x"/></svg><span>clear</span></button><span id="rp-count" class="small"></span>
       <span class="grow"></span>
@@ -216,7 +215,7 @@
   </section>
   <section id="tab-retext" hidden>
     <div id="re-body" class="rebody">
-      <div class="rehead">
+      <div class="rehead" title="The text follows the report list until you edit it.&#10;Your edits change only this text, never the log records.&#10;While it is edited the list cannot change without asking you first;&#10;revert brings the generated text back.">
         <button id="re-revert" type="button" class="tb" disabled title="Replace the edited text with the report as it is generated from the list.&#10;Your edits are lost."><svg class="ic" aria-hidden="true"><use href="#i-restore"/></svg><span>revert</span></button>
         <button id="re-copy" type="button" class="tb" disabled title="Copy the report text to the clipboard"><svg class="ic" aria-hidden="true"><use href="#i-clipboard-copy"/></svg><span>copy</span></button>
         <button id="re-save" type="button" class="tb" disabled title="Save the report as a text file"><svg class="ic" aria-hidden="true"><use href="#i-device-floppy"/></svg><span>save</span></button>
@@ -224,7 +223,6 @@
         <span id="re-msg" class="small"></span>
         <span id="re-count" class="small"></span>
       </div>
-      <p class="small redit-note">The text follows the report list until you edit it. Your edits change only this text, never the log records. While it is edited the list cannot change without asking you first; revert brings the generated text back.</p>
       <textarea id="re-text" spellcheck="false" wrap="off" placeholder="The report list is empty. Add records from the Log tab (Alt-click, or the context menu)."></textarea>
     </div>
   </section>
