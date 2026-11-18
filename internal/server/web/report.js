@@ -2,7 +2,7 @@
 // Report tab: the records this user added from the Log tab (the list is kept in this browser, see replist.js), in time order.
 (() => {
   const NX = window.NX, $ = NX.$, el = NX.el, api = NX.api;
-  const R = { rows: [], sel: new Set(), anchor: -1, edited: null }; // edited: { text, key } while the report text has been edited by hand (key: the list and choices the generated text was made for)
+  const R = { rows: [], sel: new Set(), anchor: -1, edited: null, shown: 0 }; // edited: { text, key } while the report text has been edited by hand (key: the list and choices the generated text was made for)
   const admin = () => NX.state.role === "admin";
 
   function render() {
@@ -25,11 +25,15 @@
     const have = new Set(R.rows.map((r) => r.id));
     NX.replist.keepOnly(R.rows.map((r) => r.id)); // records deleted from the log drop out of the list
     R.sel = new Set([...R.sel].filter((id) => have.has(id))); R.anchor = -1;
+    if (R.shown && !have.has(R.shown)) showNone(); // the record in the text pane left the list
     render();
   }
+  function showNone() { R.shown = 0; $("rp-title").textContent = ""; $("rp-text").textContent = ""; }
   async function show(id) {
+    R.shown = id;
     try {
       const r = await api("GET", "/api/messages/" + id);
+      if (R.shown !== id) return; // the pane has moved on (or been emptied) meanwhile
       $("rp-title").textContent = `${r.st} (${NX.hex(r.id)})`;
       $("rp-text").textContent = r.lines.map((l) => l.x).join("\n");
     } catch (e) { $("rp-text").textContent = e.message; }

@@ -5,7 +5,7 @@
 (() => {
   "use strict";
   const NX = window.NX, state = NX.state, $ = (id) => document.getElementById(id);
-  const KEY = "nx-layout", KEYM = "nx-layout-mine", MINW = 1400, MINC = 240, MINR = 120, MAXC = 6, MAXR = 6;
+  const KEY = "nx-layout", KEYM = "nx-layout-mine", KEYU = "nx-layouts", KEYH = "nx-layouts-hide", MINW = 1400, MINC = 240, MINR = 120, MAXC = 6, MAXR = 6;
   const PRESETS = {
     wide3: { name: "Wide, 3 columns", cols: [
       { w: 1, rows: [{ tab: "status", h: 1 }, { tab: "schedule", h: 1 }] },
@@ -54,9 +54,23 @@
   }
   const preset = (k) => norm(clone(PRESETS[k].cols));
 
+  // the layouts the operator named (kept in this browser), and the built-in ones the operator removed from the menu
+  const NAMEMAX = 32;
+  function loadU() { try { const j = JSON.parse(localStorage.getItem(KEYU)); return Array.isArray(j) ? j.filter((x) => x && typeof x.name === "string" && x.name && valid(x.cols)).map((x) => ({ name: x.name, cols: norm(x.cols) })) : []; } catch (e) { return []; } }
+  function loadH() { try { const j = JSON.parse(localStorage.getItem(KEYH)); return new Set(Array.isArray(j) ? j.filter((k) => PRESETS[k]) : []); } catch (e) { return new Set(); } }
+  let U = loadU();
+  const H = loadH();
+  const saveU = () => { try { localStorage.setItem(KEYU, JSON.stringify(U)); localStorage.setItem(KEYH, JSON.stringify([...H])); } catch (e) { /* private mode */ } };
+  const userOf = (name) => U.find((x) => x.name.toLowerCase() === name.toLowerCase());
+
   function load() {
     try {
       const j = JSON.parse(localStorage.getItem(KEY));
+      if (j && typeof j.name === "string" && j.name.startsWith("u:")) {
+        const u = userOf(j.name.slice(2));
+        if (u) return { name: "u:" + u.name, cols: clone(u.cols) };
+        if (valid(j.cols)) return { name: "mine", cols: norm(j.cols) }; // (removed meanwhile: what was on screen stays as my layout)
+      }
       if (j && PRESETS[j.name]) return { name: j.name, cols: valid(j.cols) ? norm(j.cols) : preset(j.name) };
       if (j && j.name === "mine" && valid(j.cols)) return { name: "mine", cols: norm(j.cols) };
     } catch (e) { /* none or damaged: plain tabs */ }
@@ -222,6 +236,8 @@
       { text: "Close this tile", off: tiles.length < 2, tip: "Its tabs wait; the + button or the tab bar brings them back", fn: () => closeTile(t) },
       { sep: true },
       { text: "Equal sizes", fn: equalize },
+      { sep: true },
+      { text: "Save this layout as\u2026", fn: saveAs },
     ];
   }
 
@@ -316,25 +332,70 @@
 
   // ---- the layout menu in the tab bar ----
   const menu = mk("select", "presel layoutsel"); menu.id = "layoutsel";
-  menu.title = "Layout: one tab at a time, or several tabs side by side (screens at least " + MINW + " pixels wide).\nThe + and ⋮ buttons of a tile change a layout; the result is \"my layout\".";
+  menu.title = "Layout: one tab at a time, or several tabs side by side (screens at least " + MINW + " pixels wide).\nThe + and ⋮ buttons of a tile change a layout; the result is \"my layout\".\nUse \"Save this layout as…\" to give a layout a name, \"Delete a layout…\" to remove one.";
   menu.setAttribute("aria-label", "Layout");
   function menuSync() {
     menu.replaceChildren();
     const add = (v, t) => { const o = mk("option"); o.value = v; o.textContent = "Layout: " + t; menu.append(o); };
     add("tabs", "tabs");
-    for (const k of Object.keys(PRESETS)) add(k, PRESETS[k].name);
+    for (const k of Object.keys(PRESETS)) if (!H.has(k) || S.name === k) add(k, PRESETS[k].name);
+    for (const u of U) add("u:" + u.name, u.name);
     if (S.name === "mine" || mine()) add("mine", "my layout");
+    const act = (v, t) => { const o = mk("option"); o.value = v; o.textContent = t; menu.append(o); };
+    const sep = mk("option"); sep.disabled = true; sep.textContent = "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"; menu.append(sep);
+    act("@save", "Save this layout as\u2026"); act("@del", "Delete a layout\u2026");
     menu.value = S.name;
   }
   menuSync();
   { const help = $("helplink"); help.parentNode.insertBefore(menu, help); }
   menu.onchange = () => {
     const v = menu.value; menu.blur();
+    if (v[0] === "@") { menu.value = S.name; if (v === "@save") saveAs(); else deleteMenu(); return; }
     if (v === "tabs") { S.name = "tabs"; delete S.cols; }
     else if (v === "mine") { S.name = "mine"; S.cols = mine() || preset("wide3"); }
+    else if (v.startsWith("u:")) { const u = userOf(v.slice(2)); if (!u) { menuSync(); return; } S.name = v; S.cols = clone(u.cols); }
     else { S.name = v; S.cols = preset(v); }
     save(); apply();
   };
+
+  // ---- naming the layout on screen, and removing layouts from the menu ----
+  // A changed layout is "my layout" (a working copy); Save as gives it a name of its own, which then stays in the menu as it was saved
+  // until it is saved again under the same name.
+  function saveAs() {
+    if (!on || S.name === "tabs" || !S.cols) { alert("There is no tiled layout to save: choose one in the Layout menu first, or change one with the + and \u22ee buttons."); return; }
+    let n = prompt("Name for this layout (it is kept in this browser):", S.name.startsWith("u:") ? S.name.slice(2) : "");
+    if (n === null) return;
+    n = n.trim().replace(/\s+/g, " ");
+    if (!n) return;
+    if (n.length > NAMEMAX) { alert("The name can be at most " + NAMEMAX + " characters."); return; }
+    const low = n.toLowerCase();
+    if (low === "tabs" || low === "my layout" || Object.values(PRESETS).some((p) => p.name.toLowerCase() === low)) { alert("\u201c" + n + "\u201d is the name of a built-in choice. Please use another name."); return; }
+    const old = userOf(n);
+    if (old && !confirm("Replace the saved layout \u201c" + old.name + "\u201d?")) return;
+    if (old) { old.name = n; old.cols = clone(S.cols); } else U.push({ name: n, cols: clone(S.cols) });
+    S.name = "u:" + n; saveU(); save(); menuSync();
+  }
+  function deleteMenu() {
+    const rows = [];
+    for (const u of U) rows.push({ text: "Delete \u201c" + u.name + "\u201d", tip: "A layout you saved", fn: () => { if (confirm("Delete the saved layout \u201c" + u.name + "\u201d?")) removeUser(u.name); } });
+    if (mine()) rows.push({ text: "Delete \u201cmy layout\u201d", tip: "The working copy", fn: () => { if (confirm("Delete \u201cmy layout\u201d?")) removeMine(); } });
+    if (rows.length) rows.push({ sep: true });
+    for (const k of Object.keys(PRESETS)) if (!H.has(k)) rows.push({ text: "Remove \u201c" + PRESETS[k].name + "\u201d", tip: "Built in: it only leaves the menu, and \u201cRestore built-in layouts\u201d brings it back", fn: () => { H.add(k); saveU(); menuSync(); } });
+    if (H.size) { rows.push({ sep: true }); rows.push({ text: "Restore built-in layouts", fn: () => { H.clear(); saveU(); menuSync(); } }); }
+    popOpen(menu, rows);
+  }
+  function removeUser(name) {
+    const was = S.name === "u:" + userOf(name).name;
+    U = U.filter((x) => x.name.toLowerCase() !== name.toLowerCase());
+    saveU();
+    if (was) S.name = "mine"; // what is on screen stays, as my layout
+    save(); menuSync();
+  }
+  function removeMine() {
+    try { localStorage.removeItem(KEYM); } catch (e) { /* private mode */ }
+    if (S.name === "mine") { S.name = "tabs"; delete S.cols; save(); menuSync(); apply(); return; }
+    menuSync();
+  }
 
   function apply() {
     const wide = window.innerWidth >= MINW;
