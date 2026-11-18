@@ -284,9 +284,9 @@ main > section { border: 2px solid var(--tabline); }
 /* continuous log list */
 .logscroll { height: 372px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; position: relative; outline: none; }
 .logscroll:focus-visible { border-color: var(--accent); }
-#log-table { width: 100%; table-layout: auto; }
+#log-table { width: 100%; table-layout: fixed; }
 #log-table th { position: sticky; top: 0; background: var(--panel); z-index: 1; height: 26px; }
-#log-table td { height: 22px; padding-top: 0; padding-bottom: 0; line-height: 21px; overflow: hidden; }
+#log-table td { text-overflow: ellipsis; height: 22px; padding-top: 0; padding-bottom: 0; line-height: 21px; overflow: hidden; }
 #log-table tr.spacer td, #log-table tr.ph td { padding: 0; border: 0; color: var(--dim); }
 #log-table tr.ph { height: 22px; }
 #log-table tr.cur td { box-shadow: inset 0 1px 0 0 var(--accent), inset 0 -1px 0 0 var(--accent); } /* one frame around the row, not around each cell */
@@ -729,3 +729,13 @@ header[hidden] { display: none; }
 #rv-body, #rv-host { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 #tab-review #ld-close { display: none; }
 #rv-body #rec-text:empty::before { content: "No record selected"; color: var(--dim); }
+
+/* the list's columns: drag to move, the right edge to resize */
+#log-table th { cursor: grab; user-select: none; overflow: hidden; text-overflow: ellipsis; position: sticky; }
+#log-table th .rz { position: absolute; top: 0; right: 0; width: 7px; height: 100%; cursor: col-resize; }
+#log-table th .rz::after { content: ""; position: absolute; right: 3px; top: 5px; bottom: 5px; width: 1px; background: var(--line); }
+#log-table th .rz:hover::after { background: var(--accent); width: 2px; right: 2px; }
+#log-table th.dropl { box-shadow: inset 3px 0 0 0 var(--accent); }
+#log-table th.dropr { box-shadow: inset -3px 0 0 0 var(--accent); }
+#log-table th.dragging { opacity: .5; }
+body.colmoving, body.colmoving * { cursor: grabbing !important; user-select: none; }

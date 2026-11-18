@@ -163,6 +163,7 @@ type recordMsg struct {
 	Comment   string  `json:"cmt"`
 	Manual    bool    `json:"man"`
 	Method    string  `json:"im"`
+	Score     float64 `json:"sc,omitempty"` // identification score (points); 0 when not identified
 	Lines     int     `json:"lines"`
 	Rcv       int     `json:"rcv,omitempty"` // decoding channel that received it (0 = the first)
 }
@@ -171,7 +172,7 @@ type recordMsg struct {
 func brief(r store.Record, withDist bool) recordMsg {
 	m := recordMsg{ID: r.ID, Version: r.Version, Channel: store.KHz(r.Channel), Received: r.Received.UnixMilli(), End: r.End.UnixMilli(), Kind: r.Kind,
 		B1: r.B1, B2: r.B2, Serial: r.Serial, NavArea: r.NavArea, StationID: r.StationID, Station: r.Station, Quality: float64(r.Quality),
-		Comment: r.Comment, Manual: r.Manual, Method: r.IdentMethod, Lines: len(r.Lines), Rcv: r.Rcv}
+		Comment: r.Comment, Manual: r.Manual, Method: r.IdentMethod, Score: float64(r.IdentScore), Lines: len(r.Lines), Rcv: r.Rcv}
 	if withDist {
 		m.Km, m.Bearing = r.DistanceKm, r.BearingDeg
 	}

@@ -202,7 +202,55 @@
   const idxOf = (id) => { for (const [i, r] of L.cache) if (r.id === id) return i; return -1; };
   const visRows = () => Math.max(1, Math.floor((sc.clientHeight - HDR) / ROW));
 
+  // ---- the columns of the list: which ones, in what order and how wide is the operator's choice, kept in this browser ----
+  // Every column has a cell builder; w is the default width in pixels (null: the column takes what is left, as the station does).
+  // The rows keep their height whatever is shown: nothing wraps, long values are cut with an ellipsis.
+  const COLS = [
+    { id: "utc", label: "UTC received", w: 172, tip: "When the message began (UTC)", cell: (r) => el("td", { text: NX.stamp(r.rx), "data-f": "utc" }) },
+    { id: "ch", label: "Freq", w: 84, tip: "Frequency in kHz (with the receiving channel when there are two)", cell: (r) => el("td", { text: r.ch }, NX.secondOn() ? el("span", { class: "chb", text: String((r.rcv || 0) + 1), title: "Received on channel " + ((r.rcv || 0) + 1) }) : null) },
+    { id: "q", label: "Q", w: 42, tip: "Signal quality", cell: (r) => el("td", { text: r.q.toFixed(0) }) },
+    { id: "b1", label: "B1", w: 42, tip: "Station (ID) letter", cell: (r) => el("td", { text: r.b1 || "?", class: r.man ? "man" : "" }) },
+    { id: "b2", label: "B2", w: 42, tip: "Subject letter", cell: (r) => el("td", { text: r.b2 }) },
+    { id: "ser", label: "Msg#", w: 58, tip: "Message number", cell: (r) => el("td", { text: r.ser || "?" }) },
+    { id: "area", label: "Area", w: 54, tip: "NAVAREA", cell: (r) => el("td", { text: String(r.area), class: r.man ? "man" : "" }) },
+    { id: "st", label: "Station", w: null, min: 150, tip: "The station the message was identified as (the operator's comment in brackets)", cell: (r) => el("td", { text: r.st + (r.cmt ? ` [${r.cmt}]` : ""), title: r.st + (r.cmt ? ` [${r.cmt}]` : "") }) },
+    { id: "km", label: "Dist km", w: 74, loc: true, tip: "Distance from your receiver to the station", cell: (r) => el("td", { class: "km", text: r.km ? r.km.toFixed(0) : "" }) },
+    { id: "brg", label: "Bearing", w: 72, loc: true, off: true, tip: "Bearing from your receiver to the station, in degrees", cell: (r) => el("td", { class: "km", text: r.km ? String(Math.round(r.brg || 0)) + "\u00b0" : "" }) },
+    { id: "sc", label: "Score", w: 60, off: true, tip: "Points of the identification (see Why? in the Review)", cell: (r) => el("td", { text: r.sc ? r.sc.toFixed(1) : "" }) },
+    { id: "kind", label: "Kind", w: 92, tip: "message, incomplete or fragment", cell: (r) => el("td", { text: r.kind }) },
+  ];
+  const COLKEY = "nx-logcols", colById = new Map(COLS.map((c) => [c.id, c]));
+  const CS = { order: COLS.map((c) => c.id), hide: new Set(COLS.filter((c) => c.off).map((c) => c.id)), w: {} };
+  try { // what the operator chose; anything unknown or damaged is ignored, a column added later shows up at its default place
+    const j = JSON.parse(localStorage.getItem(COLKEY));
+    if (j && Array.isArray(j.order)) {
+      const o = [...new Set(j.order.filter((k) => colById.has(k)))];
+      for (const c of COLS) if (!o.includes(c.id)) { const at = COLS.findIndex((x) => x.id === c.id); const after = COLS.slice(0, at).map((x) => x.id).reverse().find((k) => o.includes(k)); o.splice(after ? o.indexOf(after) + 1 : 0, 0, c.id); }
+      CS.order = o;
+      if (Array.isArray(j.hide)) CS.hide = new Set(j.hide.filter((k) => colById.has(k)).concat(COLS.filter((c) => c.off && !j.order.includes(c.id)).map((c) => c.id)));
+      if (j.w && typeof j.w === "object") for (const [k, v] of Object.entries(j.w)) if (colById.has(k) && Number.isFinite(v) && v >= 24 && v <= 900) CS.w[k] = Math.round(v);
+    }
+  } catch (e) { /* defaults */ }
+  const colSave = () => { try { localStorage.setItem(COLKEY, JSON.stringify({ order: CS.order, hide: [...CS.hide], w: CS.w })); } catch (e) { /* private mode */ } };
+  const colOk = (c) => !c.loc || !!NX.state.loc; // distance and bearing need the receiver's position
+  const colsNow = () => CS.order.map((k) => colById.get(k)).filter((c) => !CS.hide.has(c.id) && colOk(c));
+  const colW = (c) => (CS.w[c.id] !== undefined ? CS.w[c.id] : c.w);
+  let headKey = "";
+  // the header and the <col> widths; rebuilt when the choice, a width or the position changes
+  function buildHead() {
+    const cs = colsNow();
+    headKey = cs.map((c) => c.id + ":" + colW(c)).join();
+    const tr = $("log-head"), cg = $("log-cols");
+    tr.replaceChildren(...cs.map((c) => el("th", { "data-c": c.id, title: c.tip + "\nDrag to move, drag the edge to resize (double-click: original width), right-click: choose the columns" }, el("span", { text: c.label }), el("i", { class: "rz", "aria-hidden": "true" }))));
+    cg.replaceChildren(...cs.map((c) => { const k = el("col"); if (colW(c) != null) k.style.width = colW(c) + "px"; return k; }));
+    const fixed = cs.reduce((n, c) => n + (colW(c) != null ? colW(c) : c.min || 100), 0), fill = cs.some((c) => colW(c) == null);
+    const t = $("log-table");
+    t.style.minWidth = fixed + "px";
+    t.style.width = fill ? "100%" : fixed + "px";
+  }
+  const colsChanged = () => { colSave(); buildHead(); render(); };
   function render() {
+    if (headKey !== colsNow().map((c) => c.id + ":" + colW(c)).join()) buildHead();
     $("f-km-wrap").hidden = !NX.state.loc;
     $("p-rcv").hidden = !NX.secondOn();
     pickBoxes("rcv").forEach((x, i) => { x.parentNode.hidden = i >= (NX.channels || 4); });
@@ -219,15 +267,14 @@
     $("n-delete").title = (n > 1 ? `Delete the ${n} selected records.\nThey are saved first: the undo button brings them back.` : "Delete the selected record.\nIt is saved first: the undo button brings it back.") + "\nKey: Delete";
     const tb = document.querySelector("#log-table tbody");
     const rows = [];
-    const spacer = (h) => { const tr = el("tr", { class: "spacer" }); tr.style.height = h + "px"; tr.append(el("td", { colspan: "10" })); return tr; };
+    const cs = colsNow();
+    const spacer = (h) => { const tr = el("tr", { class: "spacer" }); tr.style.height = h + "px"; tr.append(el("td", { colspan: String(cs.length) })); return tr; };
     if (start > 0) rows.push(spacer(start * ROW));
     for (let i = start; i < end; i++) {
       const r = L.cache.get(i);
-      if (!r) { const tr = el("tr", { class: "ph" }); tr.append(el("td", { colspan: "10", text: "\u2026" })); rows.push(tr); continue; }
+      if (!r) { const tr = el("tr", { class: "ph" }); tr.append(el("td", { colspan: String(cs.length), text: "\u2026" })); rows.push(tr); continue; }
       const tr = el("tr", { "data-id": r.id, "data-i": i, class: (L.sel.has(r.id) ? "sel " : "") + (r.id === L.selId ? "cur " : "") + (r.st === "UNID" ? "unid" : "") });
-      tr.append(el("td", { text: NX.stamp(r.rx), "data-f": "utc", }), el("td", { text: r.ch }, NX.secondOn() ? el("span", { class: "chb", text: String((r.rcv || 0) + 1), title: "Received on channel " + ((r.rcv || 0) + 1) }) : null), el("td", { text: r.q.toFixed(0) }),
-        el("td", { text: r.b1 || "?", class: r.man ? "man" : "" }), el("td", { text: r.b2 }), el("td", { text: r.ser || "?" }), el("td", { text: String(r.area), class: r.man ? "man" : "" }),
-        el("td", { text: r.st + (r.cmt ? ` [${r.cmt}]` : "") }), el("td", { class: "km", text: r.km ? r.km.toFixed(0) : "" }), el("td", { text: r.kind }));
+      tr.append(...cs.map((c) => c.cell(r)));
       rows.push(tr);
     }
     if (end < L.total) rows.push(spacer((L.total - end) * ROW));
@@ -250,7 +297,7 @@
   // opened, the table is still empty): so a spacer of full height goes in first
   const toEnd = (latest) => {
     if (latest === "bottom") {
-      const tr = el("tr", { class: "spacer" }); tr.style.height = L.total * ROW + "px"; tr.append(el("td", { colspan: "10" }));
+      const tr = el("tr", { class: "spacer" }); tr.style.height = L.total * ROW + "px"; tr.append(el("td", { colspan: String(colsNow().length) }));
       document.querySelector("#log-table tbody").replaceChildren(tr);
     }
     sc.scrollTop = latest === "bottom" ? L.total * ROW + HDR : 0; render();
@@ -701,7 +748,7 @@
   function useCandidate(sid) { patch({ station: sid }); }
 
   // a record as returned by PATCH (the full record) in the shape of a list row
-  const rowOf = (r, old) => ({ ...old, id: r.id, v: r.v, ch: r.ch, rx: Date.parse(r.rx) || old.rx, kind: r.kind, b1: r.b1, b2: r.b2, ser: r.ser, area: r.area, sid: r.sid, st: r.st, q: r.q, km: r.km || 0, brg: r.brg || 0, cmt: r.cmt, man: r.man, im: r.im });
+  const rowOf = (r, old) => ({ ...old, id: r.id, v: r.v, ch: r.ch, rx: Date.parse(r.rx) || old.rx, kind: r.kind, b1: r.b1, b2: r.b2, ser: r.ser, area: r.area, sid: r.sid, st: r.st, q: r.q, km: r.km || 0, brg: r.brg || 0, cmt: r.cmt, man: r.man, im: r.im, sc: r.sc || 0 });
   async function patch(fields) {
     if (!L.rec) return;
     try {
@@ -850,6 +897,7 @@
   NX.tabs.review = () => { updateNav(); };
 
   const tbody = document.querySelector("#log-table tbody");
+  buildHead();
   // ---- clicking rows: select, ctrl-click for several, shift-click for a range ----
   tbody.addEventListener("click", (e) => {
     const tr = e.target.closest("tr[data-id]");
@@ -914,6 +962,7 @@
     item("Undo", "Ctrl-Z", () => $("n-undo").click(), $("n-undo").disabled);
     item("Delete" + n, "Delete", () => $("n-delete").click(), $("n-delete").disabled, adm ? "" : "Administrators only");
     sep();
+    item("Columns\u2026", "", () => colMenu(ctxAt.x, ctxAt.y));
     item("Select all", "Ctrl-A", () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "a", ctrlKey: true, bubbles: true, cancelable: true })));
     while (rows.length && rows[rows.length - 1].sep) rows.pop();
     ctx.replaceChildren(...rows.map((r) => {
@@ -923,13 +972,77 @@
       return b;
     }));
   }
+  let ctxAt = { x: 0, y: 0 };
   function ctxShow(x, y) {
+    ctxAt = { x, y };
     ctx.hidden = false;
     const w = ctx.offsetWidth, h = ctx.offsetHeight;
     ctx.style.left = Math.max(4, Math.min(x, window.innerWidth - w - 4)) + "px";
     ctx.style.top = Math.max(4, Math.min(y, window.innerHeight - h - 4)) + "px";
     const first = ctx.querySelector("button:not(:disabled)"); if (first) first.focus({ preventScroll: true });
   }
+  // ---- header: drag a title to move the column, drag its right edge to resize it, right-click for the choice of columns ----
+  const head = $("log-head");
+  head.addEventListener("pointerdown", (e) => {
+    const th = e.target.closest("th[data-c]");
+    if (!th || e.button !== 0) return;
+    const c = colById.get(th.dataset.c), x0 = e.clientX;
+    if (e.target.classList.contains("rz")) { // resize
+      e.preventDefault();
+      const w0 = th.getBoundingClientRect().width, col = $("log-cols").children[[...head.children].indexOf(th)];
+      let did = false;
+      const mv = (m) => { if (!did && Math.abs(m.clientX - x0) < 3) return; did = true; const w = Math.max(c.min ? Math.min(c.min, 40) : 30, Math.min(900, Math.round(w0 + m.clientX - x0))); CS.w[c.id] = w; col.style.width = w + "px"; };
+      const up = () => { document.removeEventListener("pointermove", mv); document.removeEventListener("pointerup", up); document.body.classList.remove("colmoving"); if (did) colsChanged(); };
+      document.body.classList.add("colmoving");
+      document.addEventListener("pointermove", mv); document.addEventListener("pointerup", up);
+      return;
+    }
+    // move: nothing happens until the pointer has gone a few pixels, so a plain click stays a click
+    let on = false, to = -1;
+    const ths = () => [...head.children];
+    const mark = () => ths().forEach((t, i) => { t.classList.toggle("dropl", on && i === to && to < ths().length); t.classList.toggle("dropr", on && to === ths().length && i === ths().length - 1); t.classList.toggle("dragging", on && t === th); });
+    const mv = (m) => {
+      if (!on && Math.abs(m.clientX - x0) < 6) return;
+      on = true; document.body.classList.add("colmoving");
+      const all = ths(); to = all.length;
+      for (let i = 0; i < all.length; i++) { const r = all[i].getBoundingClientRect(); if (m.clientX < r.left + r.width / 2) { to = i; break; } }
+      mark();
+    };
+    const up = () => {
+      document.removeEventListener("pointermove", mv); document.removeEventListener("pointerup", up); document.body.classList.remove("colmoving");
+      const all = ths(), from = all.indexOf(th), moved = on && to >= 0 && to !== from && to !== from + 1;
+      on = false; mark();
+      if (!moved) return;
+      const shown = colsNow().map((k) => k.id); // the order of the visible ones changes; the hidden ones keep their places
+      shown.splice(from, 1); shown.splice(to > from ? to - 1 : to, 0, c.id);
+      const it = [...shown];
+      CS.order = CS.order.map((k) => (shown.includes(k) ? it.shift() : k));
+      colsChanged();
+    };
+    document.addEventListener("pointermove", mv); document.addEventListener("pointerup", up);
+  });
+  head.addEventListener("dblclick", (e) => { // the edge: back to the original width
+    const th = e.target.closest("th[data-c]");
+    if (!th || !e.target.classList.contains("rz")) return;
+    delete CS.w[th.dataset.c]; colsChanged();
+  });
+  function colMenu(x, y) {
+    const shown = colsNow().length, rows = [];
+    for (const k of CS.order) {
+      const c = colById.get(k), on = !CS.hide.has(k) && colOk(c), off = !colOk(c) || (on && shown <= 1);
+      rows.push({ text: (on ? "\u2713 " : "\u2003 ") + c.label, off, tip: !colOk(c) ? "Needs the receiver's position (Options, Station)" : c.tip, fn: () => { if (CS.hide.has(k)) CS.hide.delete(k); else CS.hide.add(k); colsChanged(); colMenu(x, y); } });
+    }
+    rows.push({ sep: true });
+    rows.push({ text: "Original columns", off: false, tip: "The usual set, order and widths", fn: () => { CS.order = COLS.map((c) => c.id); CS.hide = new Set(COLS.filter((c) => c.off).map((c) => c.id)); CS.w = {}; colsChanged(); } });
+    ctx.replaceChildren(...rows.map((r) => {
+      if (r.sep) return el("hr", { role: "separator" });
+      const b = el("button", { type: "button", role: "menuitem", disabled: r.off, title: r.tip || "" }, el("span", { text: r.text }), el("span", { class: "k", text: "" }));
+      b.onclick = () => { ctxClose(); r.fn(); };
+      return b;
+    }));
+    ctxShow(x, y);
+  }
+  $("log-head").addEventListener("contextmenu", (e) => { if (e.shiftKey) return; e.preventDefault(); colMenu(e.clientX, e.clientY); });
   $("logscroll").addEventListener("contextmenu", async (e) => {
     if (e.shiftKey) return; // the browser's menu
     let tr = e.target.closest("tr[data-id]"), x = e.clientX, y = e.clientY;
