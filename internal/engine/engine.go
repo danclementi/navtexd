@@ -89,11 +89,11 @@ type qpoint struct{ t, q float64 }
 
 // Engine is one decoding channel.
 // isChinese says whether a channel frequency is that of the national NAVTEX service of China (486 kHz), whose text is sent as
-// groups of three letters per character and never needs the figures shift.
+// groups of three letters per character and has digits only in its header.
 func isChinese(hz float64) bool { return math.Abs(hz-486000) < 1000 }
 
 type Engine struct {
-	lettersOnly bool // the decoder ignores the figures shift (see isChinese)
+	unshiftLine bool // a line end returns the decoder to the letters shift (see isChinese)
 	scope       *Scope
 	cfg         config.Config
 	h           Handlers
@@ -162,9 +162,9 @@ func New(fs, centreHz float64, kind iq.Kind, cfg config.Config, h Handlers) (*En
 	rcfg := cfg.Receiver
 	rcfg.Params.Fs = e.front.OutputRate()
 	e.rx = fsk.NewReceiver(rcfg)
-	e.lettersOnly = isChinese(chHz)
+	e.unshiftLine = isChinese(chHz)
 	dcfg := cfg.Decoder
-	dcfg.LettersOnly = e.lettersOnly
+	dcfg.UnshiftOnLine = e.unshiftLine
 	e.dec = sitor.New(dcfg)
 	e.seg = segment.New(cfg.Segment, e.Quality, func(r segment.Record) {
 		if e.h.Record != nil {
@@ -314,7 +314,7 @@ func (e *Engine) Reconfigure(cfg config.Config) {
 	dc.Polarity, dc.UnshiftOnSpace = old.Decoder.Polarity, old.Decoder.UnshiftOnSpace
 	dc.Framing = old.Decoder.Framing
 	if dc.ShiftHz = old.Decoder.ShiftHz; dc != old.Decoder {
-		dc.LettersOnly = e.lettersOnly
+		dc.UnshiftOnLine = e.unshiftLine
 		e.handleSitor(e.dec.SetConfig(dc))
 	}
 	if pol != old.Decoder.Polarity {

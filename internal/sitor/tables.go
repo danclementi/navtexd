@@ -163,7 +163,7 @@ type interp struct {
 	order Order
 	fig   bool
 	uos   bool // unshift on space: a space returns to the letters shift
-	only  bool // letters only: a figures shift is ignored (text that is all letters, as the Chinese service sends)
+	eol   bool // a line end returns to the letters shift (the Chinese service: digits only in the header, the text is all letters)
 }
 
 // feed interprets one pattern. When unreadable is true and the policy marks them, a printable result becomes the mark
@@ -177,12 +177,12 @@ func (p *interp) feed(mask uint8, unreadable bool, policy Unreadable) string {
 	ch := tab[v]
 	switch {
 	case ch == tokFIGS:
-		p.fig = p.fig || !p.only
+		p.fig = true
 	case ch == tokLTRS:
 		p.fig = false
 	case controls[ch]:
 	default:
-		if ch == " " && p.uos {
+		if ch == " " && p.uos || (ch == "\n" || ch == "\r") && p.eol {
 			p.fig = false
 		}
 		if unreadable && policy != Nearest {

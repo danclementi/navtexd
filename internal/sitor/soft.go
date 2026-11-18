@@ -54,7 +54,7 @@ func NewSoftDecoder(cfg Config) *SoftDecoder {
 
 func (d *SoftDecoder) params() softlock.Params {
 	p := softlock.DefaultParams()
-	p.LettersOnly = d.cfg.LettersOnly
+	p.UnshiftOnLine = d.cfg.UnshiftOnLine
 	switch d.cfg.Polarity {
 	case PolNormal:
 		p.Polarity = 1

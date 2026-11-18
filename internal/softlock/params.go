@@ -3,7 +3,7 @@ package softlock
 // Params are the settings of the lock. They were calibrated together (window length, noise statistics, thresholds):
 // change none of them in isolation.
 type Params struct {
-	LettersOnly     bool       // ignore the figures shift (text that is all letters); not part of the calibration
+	UnshiftOnLine   bool       // a line end returns to the letters shift (Chinese text); not part of the calibration
 	ZStar           float64    // lock threshold on the window z-score
 	Window          int        // comparisons in the detection window
 	Gap             float64    // how far the best hypothesis must lead the runner-up, in z

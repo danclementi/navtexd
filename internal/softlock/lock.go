@@ -89,7 +89,7 @@ func New(p Params) *Lock {
 	l.scores = newScoreWindow(p.Window, l.nHyp)
 	l.rowBuf = make([]float64, l.nHyp)
 	l.zBuf = make([]float64, l.nHyp)
-	l.comb = newCombiner(l.p.LettersOnly)
+	l.comb = newCombiner(l.p.UnshiftOnLine)
 	return l
 }
 
@@ -293,7 +293,7 @@ func (l *Lock) lock(h, b int) {
 	l.lowRun, l.ownLowRun, l.challenge, l.dwell = 0, 0, 0, 0
 	l.resetRun()
 	l.resetGhost()
-	l.comb = newCombiner(l.p.LettersOnly)
+	l.comb = newCombiner(l.p.UnshiftOnLine)
 	windowStart := (b - l.p.Window + 1 - l.p.ReplayMargin) * binsPerStep
 	from := max(windowStart, l.prevEnd, l.base)
 	l.alignGroups(h, from)
@@ -504,7 +504,7 @@ func (l *Lock) switchTo(c, b int, near bool) {
 	l.h = c
 	l.neighbours[0], l.neighbours[1] = slipNeighbours(c)
 	if !near {
-		l.comb = newCombiner(l.p.LettersOnly) // an unrelated alignment: the letters/figures state cannot be trusted
+		l.comb = newCombiner(l.p.UnshiftOnLine) // an unrelated alignment: the letters/figures state cannot be trusted
 	}
 	l.alignGroups(c, cut)
 	l.recent = l.recent[:0]
