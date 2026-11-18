@@ -42,7 +42,7 @@ func TestShippedTableHasTheAddendum(t *testing.T) {
 	for _, s := range tab.Stations {
 		n[s.FreqKHz]++
 	}
-	if n[486] != 6 || n[424] < 5 || n[4209.5] < 14 {
+	if n[486] != 7 || n[424] < 5 || n[4209.5] < 14 {
 		t.Errorf("rows per frequency: 486 %d, 424 %d, 4209.5 %d", n[486], n[424], n[4209.5])
 	}
 	base, _ := stations.Parse(bytes.NewReader(baseTable))
@@ -174,7 +174,7 @@ func TestMergeTheAddendumIntoAnOldTable(t *testing.T) {
 	}
 	n := len(c.tab.Stations)
 	res, err := c.ImportMerge(addendumTable, false)
-	if err != nil || res.Added != 25 || len(c.tab.Stations) != n+25 {
+	if err != nil || res.Added != 26 || len(c.tab.Stations) != n+26 {
 		t.Errorf("merge of the addendum: %+v %v (%d stations, were %d)", res, err, len(c.tab.Stations), n)
 	}
 	// the addendum also carries keywords for stations that the table already has: they are added to the lists, nothing is lost
