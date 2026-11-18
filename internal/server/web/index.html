@@ -151,8 +151,11 @@
           <label class="field">Frequency <select id="s-freq"><option value="">all</option><option value="518">518</option><option value="490">490</option><option value="486">486</option><option value="424">424</option><option value="4209.5">4209.5</option></select></label>
           <label class="field grow">Search <input id="s-text" type="text" placeholder="call sign, name, country"></label>
           <span id="s-count" class="small"></span>
+          <button id="s-clr" type="button" hidden title="Remove every column filter (the frequency and the search stay)">clear filters</button>
+          <button id="s-copy" type="button" title="Copy the rows shown, with the columns shown, as tab-separated text (it pastes into a spreadsheet)">copy</button>
+          <button id="s-csv" type="button" title="Save the rows shown, with the columns shown, as a CSV file">CSV</button>
         </div>
-        <div class="tablewrap tall"><table id="st-table"><thead><tr><th>Area</th><th>Freq</th><th>B1</th><th>Call</th><th>Name</th><th>CC</th><th>Km</th><th>Brg</th></tr></thead><tbody></tbody></table></div>
+        <div class="tablewrap tall"><table id="st-table"><colgroup id="st-cols"></colgroup><thead><tr id="st-head"></tr></thead><tbody></tbody></table></div>
       </div>
       <div class="col" id="kw-panel">
         <h3>Keywords <span id="kw-title" class="small"></span></h3>
@@ -417,6 +420,7 @@
 </footer>
 <script src="app.js"></script>
 <script src="replist.js"></script>
+<script src="grid.js"></script>
 <script src="log.js"></script>
 <script src="report.js"></script>
 <script src="db.js"></script>

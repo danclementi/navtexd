@@ -17,20 +17,59 @@
     (NX.hooks.stationsLoaded || []).forEach((f) => f());
   }
 
-  function renderStations() {
+  // the columns of the station list: moved, resized, chosen, sorted and filtered by the operator (grid.js)
+  const td = (v) => el("td", { text: v == null ? "" : String(v) });
+  const COLS = [
+    { id: "area", label: "Area", w: 66, kind: "num", tip: "NAVAREA", val: (s) => s.area, cell: (s) => td(s.area) },
+    { id: "freq", label: "Freq", w: 74, kind: "num", tip: "Frequency in kHz", val: (s) => s.freq, cell: (s) => td(s.freq) },
+    { id: "b1", label: "B1", w: 56, tip: "Station (ID) letter", val: (s) => s.b1, cell: (s) => td(s.b1) },
+    { id: "call", label: "Call", w: 92, tip: "Call sign (___: none)", val: (s) => (/^_*$/.test(s.call) ? null : s.call), out: (s) => s.call, cell: (s) => td(s.call) },
+    { id: "name", label: "Name", w: null, min: 160, tip: "Station name", val: (s) => s.name, cell: (s) => el("td", { text: s.name, title: s.name }) },
+    { id: "cc", label: "CC", w: 58, tip: "Country code", val: (s) => s.cc, cell: (s) => td(s.cc) },
+    { id: "country", label: "Country", w: 130, off: true, tip: "Country", val: (s) => s.country, cell: (s) => el("td", { text: s.country, title: s.country }) },
+    { id: "km", label: "Km", w: 76, kind: "num", loc: true, tip: "Distance from your receiver", val: (s) => (s.km ? s.km : null), cell: (s) => td(s.km || "") },
+    { id: "brg", label: "Brg", w: 74, kind: "num", circ: true, loc: true, tip: "Bearing from your receiver, in degrees", val: (s) => (s.km ? s.brg || 0 : null), cell: (s) => td(s.km ? (s.brg || 0) + "\u00b0" : "") },
+    { id: "gid", label: "GID", w: 66, kind: "num", tip: "How many geographical keywords the station has (0: none yet)", val: (s) => s.gid.length, cell: (s) => td(s.gid.length) },
+    { id: "uid", label: "UID", w: 66, kind: "num", tip: "How many unique keywords the station has (0: none yet)", val: (s) => s.uid.length, cell: (s) => td(s.uid.length) },
+    { id: "heard", label: "Heard", w: 78, kind: "num", tip: "How many messages of the log were identified as this station", val: (s) => s.heard || 0, cell: (s) => td(s.heard || 0) },
+    { id: "last", label: "Last heard", w: 150, off: true, kind: "date", tip: "When the latest message identified as this station began (UTC)", val: (s) => s.last || null, cell: (s) => td(s.last ? NX.stamp(s.last) : ""), out: (s) => (s.last ? NX.stamp(s.last) : "") },
+  ];
+  // the stations the frequency choice and the search leave; the filters of the columns work on these
+  const base = () => {
     const f = $("s-freq").value, q = $("s-text").value.trim().toLowerCase();
-    const tb = document.querySelector("#st-table tbody");
-    tb.replaceChildren();
-    let n = 0;
-    for (const s of D.stations) {
-      if (f && String(s.freq) !== f) continue;
-      if (q && !(`${s.call} ${s.name} ${s.country} ${s.cc}`.toLowerCase().includes(q))) continue;
+    return D.stations.filter((s) => (!f || String(s.freq) === f) && (!q || `${s.call} ${s.name} ${s.country} ${s.cc}`.toLowerCase().includes(q)));
+  };
+  const G = NX.grid({ key: "nx-stcols", table: $("st-table"), head: $("st-head"), colgroup: $("st-cols"), cols: COLS, sortable: true, filterable: true, source: base,
+    ok: (c) => !c.loc || !!NX.state.loc, change: () => renderStations() });
+  let shown = []; // the rows as listed (what copy and export give)
+
+  function renderStations() {
+    if (G.stale()) G.build();
+    const tb = document.querySelector("#st-table tbody"), cs = G.cols();
+    shown = G.rows(base());
+    tb.replaceChildren(...shown.map((s) => {
       const tr = el("tr", { "data-id": s.id, class: s.id === D.sel ? "sel" : "" });
-      tr.append(el("td", { text: s.area }), el("td", { text: s.freq }), el("td", { text: s.b1 }), el("td", { text: s.call }), el("td", { text: s.name }), el("td", { text: s.cc }), el("td", { text: s.km || "" }), el("td", { text: s.brg ? s.brg + "°" : "" }));
-      tb.appendChild(tr); n++;
-    }
-    $("s-count").textContent = `${n} of ${D.stations.length} stations`;
+      tr.append(...cs.map((c) => c.cell(s)));
+      return tr;
+    }));
+    $("s-count").textContent = `${shown.length} of ${D.stations.length} stations`;
+    $("s-clr").hidden = !G.active();
+    const sel = tb.querySelector("tr.sel"); if (sel) sel.scrollIntoView({ block: "nearest" });
   }
+  $("s-clr").onclick = () => G.clearFilters();
+  $("s-copy").onclick = async () => {
+    const t = G.text(shown, false);
+    try {
+      if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(t);
+      else { const ta = el("textarea", { style: "position:fixed;opacity:0" }); ta.value = t; document.body.append(ta); ta.select(); const ok = document.execCommand("copy"); ta.remove(); if (!ok) throw new Error("the browser refused"); }
+      $("s-count").textContent = `Copied ${shown.length} stations.`;
+    } catch (e) { $("s-count").textContent = "Not copied: " + e.message; }
+    setTimeout(renderStations, 2500);
+  };
+  $("s-csv").onclick = () => {
+    const url = URL.createObjectURL(new Blob(["\ufeff" + G.text(shown, true)], { type: "text/csv;charset=utf-8" }));
+    const a = el("a", { href: url, download: "navtexd_stations_view.csv" }); document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
+  };
 
   const kind = () => document.querySelector('input[name=kwtype]:checked').value;
   const show = (k) => k.replace(/^ +| +$/g, (m) => "␣".repeat(m.length)); // visible marks for significant spaces

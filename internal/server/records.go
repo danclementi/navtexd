@@ -880,8 +880,10 @@ type stationMsg struct {
 	Times    [6]string `json:"times"`
 	GID      []string  `json:"gid"`
 	UID      []string  `json:"uid"`
-	Km       float64   `json:"km,omitempty"`  // from the receiver; only for clients allowed to know it
-	Brg      float64   `json:"brg,omitempty"` // bearing from the receiver
+	Km       float64   `json:"km,omitempty"`   // from the receiver; only for clients allowed to know it
+	Brg      float64   `json:"brg,omitempty"`  // bearing from the receiver
+	Heard    int       `json:"heard"`          // records of this station in the log
+	Last     int64     `json:"last,omitempty"` // when the latest began (ms since 1970)
 }
 
 func nonNil(v []string) []string {
@@ -899,8 +901,15 @@ func (s *Server) stationList(w http.ResponseWriter, r *http.Request, id Identity
 	if s.withDist(id) {
 		lat, lon = &op.LatDeg, &op.LonDeg
 	}
+	heard := s.st.HeardByStation()
 	for i, x := range list {
 		out[i] = stationMsgFor(i+1, x, lat, lon)
+		if h, ok := heard[i+1]; ok {
+			out[i].Heard = h.N
+			if !h.Last.IsZero() {
+				out[i].Last = h.Last.UnixMilli()
+			}
+		}
 	}
 	writeJSON(w, 200, map[string]any{"version": ver, "max_keyword_chars": 300, "stations": out})
 }

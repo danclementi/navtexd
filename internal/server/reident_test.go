@@ -297,6 +297,9 @@ func TestImportsFollowStationKeys(t *testing.T) {
 		if n := stb.CountByStation()[r.StationID]; n != 1 {
 			t.Fatalf("%s: the count of the station's place is %d", tag, n)
 		}
+		if h := stb.HeardByStation()[r.StationID]; h.N != 1 || h.Last.IsZero() {
+			t.Fatalf("%s: heard by station: %+v", tag, h)
+		}
 	}
 	post(export, "replace")
 	right("own export, other order")

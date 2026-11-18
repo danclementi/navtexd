@@ -730,13 +730,15 @@ header[hidden] { display: none; }
 #rv-body #rec-text:empty::before { content: "No record selected"; color: var(--dim); }
 
 /* the list's columns: drag to move, the right edge to resize */
-#log-table th { cursor: grab; user-select: none; overflow: hidden; text-overflow: ellipsis; position: sticky; }
-#log-table th .rz { position: absolute; top: 0; right: 0; width: 7px; height: 100%; cursor: col-resize; }
-#log-table th .rz::after { content: ""; position: absolute; right: 3px; top: 5px; bottom: 5px; width: 1px; background: var(--line); }
-#log-table th .rz:hover::after { background: var(--accent); width: 2px; right: 2px; }
-#log-table th.dropl { box-shadow: inset 3px 0 0 0 var(--accent); }
-#log-table th.dropr { box-shadow: inset -3px 0 0 0 var(--accent); }
-#log-table th.dragging { opacity: .5; }
+table.grid { table-layout: fixed; }
+table.grid th { cursor: grab; user-select: none; overflow: hidden; position: sticky; padding-right: 10px; }
+table.grid td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+table.grid th .rz { position: absolute; top: 0; right: 0; width: 7px; height: 100%; cursor: col-resize; }
+table.grid th .rz::after { content: ""; position: absolute; right: 3px; top: 5px; bottom: 5px; width: 1px; background: var(--line); }
+table.grid th .rz:hover::after { background: var(--accent); width: 2px; right: 2px; }
+table.grid th.dropl { box-shadow: inset 3px 0 0 0 var(--accent); }
+table.grid th.dropr { box-shadow: inset -3px 0 0 0 var(--accent); }
+table.grid th.dragging { opacity: .5; }
 body.colmoving, body.colmoving * { cursor: grabbing !important; user-select: none; }
 
 /* dragging a tab title between places in a tile and into other tiles */
@@ -745,3 +747,27 @@ body.colmoving, body.colmoving * { cursor: grabbing !important; user-select: non
 .tabitem.dropr { box-shadow: inset -3px 0 0 0 var(--accent); }
 .tile.dropin { outline: 2px solid var(--accent); outline-offset: -2px; }
 body.tabmoving, body.tabmoving * { cursor: grabbing !important; user-select: none; }
+
+/* header contents of a grid: title, sort mark, filter button; and the filter panel */
+table.grid .thc { display: flex; align-items: center; gap: 3px; min-width: 0; }
+table.grid .lbl { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+table.grid .sm { flex: none; color: var(--accent); font-size: 10px; }
+table.grid .fb { flex: none; margin: 0 0 0 auto; padding: 0 2px; border: 0; background: none; color: var(--dim); font-size: 11px; line-height: 1; cursor: pointer; }
+table.grid .fb:hover, table.grid th.filtered .fb { color: var(--accent); }
+table.grid th.filtered .lbl { font-style: italic; }
+.gridpop { position: fixed; z-index: 60; width: 250px; padding: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 6px 20px rgba(0, 0, 0, .35); display: flex; flex-direction: column; gap: 5px; }
+.gridpop[hidden] { display: none; }
+.gridpop .gptitle { font-weight: 600; }
+.gridpop hr { width: 100%; margin: 2px 0; border: 0; border-top: 1px solid var(--line); }
+.gridpop .gpbtn { margin: 0; text-align: left; }
+.gridpop .gprow { display: flex; gap: 6px; align-items: center; }
+.gridpop .gprow > span { flex: 0 0 62px; color: var(--dim); }
+.gridpop .gprow > input, .gridpop .gprow > select { flex: 1 1 auto; min-width: 0; margin: 0; }
+.gridpop .gpfind { margin: 0; width: 100%; box-sizing: border-box; }
+.gridpop .gplist { max-height: 220px; overflow: auto; border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; }
+.gridpop .gpitem { display: flex; align-items: center; gap: 6px; padding: 1px 0; cursor: pointer; }
+.gridpop .gpitem input { margin: 0; }
+.gridpop .gpv { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gridpop .gpn { flex: none; color: var(--dim); font-size: 11px; }
+.gridpop .gpfoot { display: flex; justify-content: space-between; gap: 6px; }
+.gridpop .gphint { color: var(--dim); font-size: 11px; }

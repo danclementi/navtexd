@@ -801,6 +801,31 @@ func (s *Store) CountByStation() map[int]int {
 	return m
 }
 
+// Heard is how many records a station has in the log and when the latest of them began.
+type Heard struct {
+	N    int
+	Last time.Time
+}
+
+// HeardByStation returns the records of each station ID (non-zero): how many and when the latest was received.
+func (s *Store) HeardByStation() map[int]Heard {
+	m := map[int]Heard{}
+	rs, err := s.rdb.Query(`SELECT station_id, count(*), max(received) FROM records WHERE deleted_at IS NULL AND station_id != 0 GROUP BY station_id`)
+	if err != nil {
+		s.dbError("heard by station", err)
+		return m
+	}
+	defer rs.Close()
+	for rs.Next() {
+		var id, n int
+		var last string
+		if rs.Scan(&id, &n, &last) == nil {
+			m[id] = Heard{N: n, Last: parseTS(last)}
+		}
+	}
+	return m
+}
+
 // Dir returns the data directory.
 func (s *Store) Dir() string { return s.dir }
 
