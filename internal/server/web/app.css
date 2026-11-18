@@ -743,5 +743,5 @@ body.colmoving, body.colmoving * { cursor: grabbing !important; user-select: non
 .tabitem.dragging { opacity: .45; }
 .tabitem.dropl { box-shadow: inset 3px 0 0 0 var(--accent); }
 .tabitem.dropr { box-shadow: inset -3px 0 0 0 var(--accent); }
-.tilehead.dropin { outline: 2px solid var(--accent); outline-offset: -2px; }
+.tile.dropin { outline: 2px solid var(--accent); outline-offset: -2px; }
 body.tabmoving, body.tabmoving * { cursor: grabbing !important; user-select: none; }

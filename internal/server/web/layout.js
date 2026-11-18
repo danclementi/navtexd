@@ -209,15 +209,17 @@
 
   // ---- drag a tab title: to another place in its tile, or into another tile (the tab is in one tile only) ----
   let dragEnd = 0;
-  // the tile whose header is under the point, and the place in its tab strip (0..number of tabs) where a dropped tab would go
-  function dropAt(x, y) {
+  // the tile under the point, and where a dropped tab would go: over the tile's header (its tab strip) at the place under the pointer
+  // (0..number of tabs); over the rest of the tile, at the end. Over the body of the tile the tab comes from: nowhere (nothing changes).
+  function dropAt(x, y, from) {
     for (const t of tiles) {
-      const hr = t.el.firstElementChild.getBoundingClientRect(); // the tile header
-      if (x < hr.left || x > hr.right || y < hr.top || y > hr.bottom) continue;
-      const items = [...t.strip.children];
+      const r = t.el.getBoundingClientRect();
+      if (x < r.left || x > r.right || y < r.top || y > r.bottom) continue;
+      const items = [...t.strip.children], hr = t.el.firstElementChild.getBoundingClientRect(), inHead = y <= hr.bottom;
+      if (!inHead) return t === from ? null : { t, idx: items.length, head: false };
       let idx = items.length;
-      for (let i = 0; i < items.length; i++) { const r = items[i].getBoundingClientRect(); if (x < r.left + r.width / 2) { idx = i; break; } }
-      return { t, idx };
+      for (let i = 0; i < items.length; i++) { const q = items[i].getBoundingClientRect(); if (x < q.left + q.width / 2) { idx = i; break; } }
+      return { t, idx, head: true };
     }
     return null;
   }
@@ -227,19 +229,20 @@
     let on = false, tgt = null;
     const clear = () => {
       document.body.classList.remove("tabmoving");
-      tiles.forEach((x) => { x.el.firstElementChild.classList.remove("dropin"); [...x.strip.children].forEach((i) => i.classList.remove("dropl", "dropr", "dragging")); });
+      tiles.forEach((x) => { x.el.classList.remove("dropin"); [...x.strip.children].forEach((i) => i.classList.remove("dropl", "dropr", "dragging")); });
     };
     const mark = () => {
       clear(); if (!on) return;
       document.body.classList.add("tabmoving"); item.classList.add("dragging");
       if (!tgt) return;
-      tgt.t.el.firstElementChild.classList.add("dropin");
+      tgt.t.el.classList.add("dropin");
       const items = [...tgt.t.strip.children];
+      if (!tgt.head) return;
       if (tgt.idx < items.length) items[tgt.idx].classList.add("dropl"); else if (items.length) items[items.length - 1].classList.add("dropr");
     };
     const mv = (m) => {
       if (!on && Math.hypot(m.clientX - x0, m.clientY - y0) < 6) return;
-      on = true; tgt = dropAt(m.clientX, m.clientY); mark();
+      on = true; tgt = dropAt(m.clientX, m.clientY, t); mark();
     };
     const end = (m, cancel) => {
       document.removeEventListener("pointermove", mv); document.removeEventListener("pointerup", up); document.removeEventListener("pointercancel", cx); document.removeEventListener("keydown", esc, true);
