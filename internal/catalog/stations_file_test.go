@@ -196,3 +196,31 @@ func TestMergeTheAddendumIntoAnOldTable(t *testing.T) {
 		t.Error("NEWHAVEN was not added to Niton on 518 kHz")
 	}
 }
+
+// the keywords that the operator added to the rows of the Canadian and US stations are in the shipped table
+func TestShippedKeywordsOfTheOperator(t *testing.T) {
+	dir := t.TempDir()
+	c, err := Open(dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{ // frequency, letter, call -> a GID or UID keyword that a fresh table needs
+		"490 D VCK": "ANTICOSTI-N", "490 J VCO": "CALEDONIA", "490 V VAR-9": "CHEBOGUE", "518 A NMA": "ATLC OCEAN-GEORGIA-FLORIDA",
+		"518 C VCK": "HONGUEDO", "518 E NME": "NEW ENGLAND", "518 F NMF": "FZNT23", "518 G NMG": "GULF_OF_MX", "518 N NMN": "POTOMAC",
+		"518 Q VCO": "VCO", "518 R NMR": "JUAN ATLC", "518 U VAR-9": "SCHOODIC",
+	}
+	found := 0
+	for _, s := range c.tab.Stations {
+		k := fmt.Sprintf("%g %s %s", s.FreqKHz, s.ID, s.Callsign)
+		if w, ok := want[k]; ok {
+			for _, x := range append(append([]string(nil), s.GID...), s.UID...) {
+				if x == w {
+					found++
+				}
+			}
+		}
+	}
+	if found != len(want) {
+		t.Errorf("%d of %d keywords found in the shipped table", found, len(want))
+	}
+}
