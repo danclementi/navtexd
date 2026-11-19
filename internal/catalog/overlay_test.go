@@ -180,3 +180,83 @@ func TestMigrationOfAnOlderTable(t *testing.T) {
 		t.Errorf("%d stations, shipped %d", len(c.tab.Stations), len(ship.Stations))
 	}
 }
+
+// A shipped station's slots can be corrected, a station removed and put back, an own station added and deleted; all of it is in the
+// overlay, and it survives a restart.
+func TestStationFieldsAddRemove(t *testing.T) {
+	dir := t.TempDir()
+	c, err := Open(dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := stationIdx(t, c, 486, "D", "XSJ")
+	z, _ := c.Station(n)
+	f := StationFields{Name: z.Name, CountryCode: z.CountryCode, Country: z.Country, Lat: z.Lat, Lon: z.Lon, Times: z.Times}
+	f.Times[0] = "03:45"
+	if err := c.SetStation(n, f); err != nil {
+		t.Fatal(err)
+	}
+	if !c.Origins()[n-1].Row {
+		t.Error("a changed row is not marked")
+	}
+	if c.SetStation(n, StationFields{Name: "x", Times: [6]string{"25:00"}}) == nil || c.SetStation(n, StationFields{Name: "", Times: z.Times}) == nil ||
+		c.SetStation(n, StationFields{Name: "a#b", Times: z.Times}) == nil || c.SetStation(n, StationFields{Name: "x", Lat: 100, Times: z.Times}) == nil {
+		t.Error("bad fields are accepted")
+	}
+	c2, _ := Open(dir, nil)
+	if s, _ := c2.Station(n); s.Times[0] != "03:45" || s.Times[1] != z.Times[1] {
+		t.Errorf("after a restart: %v", s.Times)
+	}
+	if err := c2.RevertStation(n); err != nil {
+		t.Fatal(err)
+	}
+	if s, _ := c2.Station(n); s.Times != z.Times || c2.Origins()[n-1].Row {
+		t.Errorf("as shipped: %v", s.Times)
+	}
+	// remove a shipped station and put it back
+	total := len(c2.tab.Stations)
+	k := c2.keys[n-1]
+	if err := c2.RemoveStation(n); err != nil {
+		t.Fatal(err)
+	}
+	if len(c2.tab.Stations) != total-1 || len(c2.Hidden()) != 1 || c2.Hidden()[0].Key != k {
+		t.Fatalf("removed: %d stations, hidden %v", len(c2.tab.Stations), c2.Hidden())
+	}
+	c3, _ := Open(dir, nil)
+	if len(c3.tab.Stations) != total-1 {
+		t.Errorf("after a restart: %d stations", len(c3.tab.Stations))
+	}
+	if err := c3.RestoreStation("no such key"); err == nil {
+		t.Error("a station that was not removed is put back")
+	}
+	if err := c3.RestoreStation(k); err != nil || len(c3.tab.Stations) != total || len(c3.Hidden()) != 0 {
+		t.Fatalf("put back: %v, %d stations", err, len(c3.tab.Stations))
+	}
+	// an own station
+	own := stations.Station{NavArea: 4, FreqKHz: 518, ID: "Z", Callsign: "TST", Name: "Test", CountryCode: "USA", Country: "United States", Lat: 36.8, Lon: -76.3, Times: [6]string{"01:23"}}
+	id, err := c3.AddStation(own)
+	if err != nil || id != len(c3.tab.Stations) || !c3.Origins()[id-1].Extra {
+		t.Fatalf("added: %d %v", id, err)
+	}
+	if _, err := c3.AddStation(own); err == nil {
+		t.Error("the same key twice")
+	}
+	bad := own
+	bad.Callsign, bad.ID, bad.FreqKHz = "TS2", "Y", 500
+	if _, err := c3.AddStation(bad); err == nil {
+		t.Error("a frequency that is not a NAVTEX channel")
+	}
+	if err := c3.SetKeywords(id, "GID", []string{"TESTWORD"}); err != nil {
+		t.Fatal(err)
+	}
+	c4, _ := Open(dir, nil)
+	if s, _ := c4.Station(id); s.Callsign != "TST" || len(s.GID) != 1 || s.GID[0] != "TESTWORD" {
+		t.Errorf("own station after a restart: %+v", s)
+	}
+	if err := c4.RemoveStation(id); err != nil || len(c4.tab.Stations) != total || len(c4.Hidden()) != 0 {
+		t.Errorf("deleting an own station: %v, %d stations, hidden %v", err, len(c4.tab.Stations), c4.Hidden())
+	}
+	if ov, _, _ := readOverlay(filepath.Join(dir, UserFileName)); len(ov.Extra) != 0 {
+		t.Errorf("the overlay still has the station: %+v", ov.Extra)
+	}
+}

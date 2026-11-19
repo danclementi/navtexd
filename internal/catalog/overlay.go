@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -355,4 +356,194 @@ func writeOverlay(path string, ov Overlay) error {
 		return err
 	}
 	return os.Rename(path+".tmp", path)
+}
+
+// StationFields are what the operator may change in a station: not the fields that make up its key (frequency, NAVAREA, B1 letter,
+// call sign), because the records of the log name the station by that key.
+type StationFields struct {
+	Name, CountryCode, Country string
+	Lat, Lon                   float64
+	Times                      [6]string
+}
+
+// Validate says what is wrong with the fields (nil: nothing).
+func (f StationFields) Validate() error {
+	for _, v := range []string{f.Name, f.CountryCode, f.Country} {
+		if strings.ContainsAny(v, "#\r\n") {
+			return fmt.Errorf("%q: a name may not have a # or a line end", v)
+		}
+	}
+	if strings.TrimSpace(f.Name) == "" {
+		return fmt.Errorf("the station needs a name")
+	}
+	if f.Lat < -90 || f.Lat > 90 || f.Lon < -180 || f.Lon > 180 {
+		return fmt.Errorf("position %v, %v is not on the earth", f.Lat, f.Lon)
+	}
+	slots := 0
+	for _, t := range f.Times {
+		if t == "" {
+			continue
+		}
+		if _, ok := stations.ParseClock(t); !ok {
+			return fmt.Errorf("time %q: want hh:mm (UTC)", t)
+		}
+		slots++
+	}
+	if slots == 0 {
+		return fmt.Errorf("the station needs at least one transmission time")
+	}
+	return nil
+}
+
+func (f StationFields) apply(s *stations.Station) {
+	s.Name, s.CountryCode, s.Country, s.Lat, s.Lon, s.Times = strings.TrimSpace(f.Name), strings.TrimSpace(f.CountryCode), strings.TrimSpace(f.Country), f.Lat, f.Lon, f.Times
+}
+
+// HiddenStation is a shipped station that the operator removed.
+type HiddenStation struct {
+	Key   string `json:"key"`
+	Label string `json:"label"`
+}
+
+// copyTable gives a table the caller may change.
+func (c *Catalog) copyTable() *stations.Table {
+	return &stations.Table{Version: c.tab.Version, Stations: append([]stations.Station(nil), c.tab.Stations...)}
+}
+
+// SetStation changes the fields of a station (name, country, position, transmission times). For a shipped station the changes are
+// kept in the overlay as a changed row; fields that are as shipped again leave no trace.
+func (c *Catalog) SetStation(id int, f StationFields) error {
+	if err := f.Validate(); err != nil {
+		return err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if id < 1 || id > len(c.tab.Stations) {
+		return fmt.Errorf("no station %d", id)
+	}
+	t := c.copyTable()
+	f.apply(&t.Stations[id-1])
+	return c.adopt(t)
+}
+
+// RevertStation gives a shipped station the fields it is shipped with (the keywords are not touched).
+func (c *Catalog) RevertStation(id int) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if id < 1 || id > len(c.tab.Stations) {
+		return fmt.Errorf("no station %d", id)
+	}
+	ship, skeys := shipped()
+	for i, k := range skeys {
+		if k == c.keys[id-1] {
+			t := c.copyTable()
+			s := ship.Stations[i]
+			s.GID, s.UID = t.Stations[id-1].GID, t.Stations[id-1].UID
+			t.Stations[id-1] = s
+			return c.adopt(t)
+		}
+	}
+	return errors.New("that station is not in the table shipped with the program")
+}
+
+// AddStation adds a station of the operator's own, with no keywords yet, and returns its place in the table. A station that has
+// the key of one in the table is refused.
+func (c *Catalog) AddStation(s stations.Station) (int, error) {
+	f := StationFields{Name: s.Name, CountryCode: s.CountryCode, Country: s.Country, Lat: s.Lat, Lon: s.Lon, Times: s.Times}
+	if err := f.Validate(); err != nil {
+		return 0, err
+	}
+	s.Name, s.CountryCode, s.Country = strings.TrimSpace(s.Name), strings.TrimSpace(s.CountryCode), strings.TrimSpace(s.Country)
+	s.ID, s.Callsign = strings.TrimSpace(s.ID), strings.TrimSpace(s.Callsign)
+	if s.ID == "" || len(s.ID) != 1 || s.Callsign == "" || strings.ContainsAny(s.ID+s.Callsign, "#\r\n ") {
+		return 0, errors.New("the station needs a B1 letter and a call sign (___ if it has none), without blanks")
+	}
+	if s.NavArea < 1 || s.NavArea > 21 {
+		return 0, fmt.Errorf("NAVAREA %d: want 1 to 21", s.NavArea)
+	}
+	if s.FreqKHz != 490 && s.FreqKHz != 518 && s.FreqKHz != 486 && s.FreqKHz != 424 && s.FreqKHz != 4209.5 {
+		return 0, fmt.Errorf("frequency %v: want 490, 518, 486, 424 or 4209.5", s.FreqKHz)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, k := range c.keys {
+		if k == key(s) || strings.HasPrefix(k, key(s)+"#") {
+			return 0, fmt.Errorf("the table has a station with that frequency, NAVAREA, B1 letter and call sign (%s)", key(s))
+		}
+	}
+	t := c.copyTable()
+	t.Stations = append(t.Stations, s)
+	if err := c.adopt(t); err != nil {
+		return 0, err
+	}
+	if _, err := c.resync(); err != nil {
+		return 0, err
+	}
+	for i, k := range c.keys {
+		if k == key(s) {
+			return i + 1, nil
+		}
+	}
+	return len(c.tab.Stations), nil
+}
+
+// RemoveStation takes a station out of the table: a shipped one is hidden (RestoreStation brings it back), one of the operator's
+// own is deleted. Its records keep their label and name no station.
+func (c *Catalog) RemoveStation(id int) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if id < 1 || id > len(c.tab.Stations) {
+		return fmt.Errorf("no station %d", id)
+	}
+	if len(c.tab.Stations) == 1 {
+		return errors.New("the last station of the table cannot be removed")
+	}
+	t := c.copyTable()
+	t.Stations = append(t.Stations[:id-1], t.Stations[id:]...)
+	if err := c.adopt(t); err != nil {
+		return err
+	}
+	_, err := c.resync()
+	return err
+}
+
+// Hidden lists the shipped stations that the operator removed.
+func (c *Catalog) Hidden() []HiddenStation {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	ship, skeys := shipped()
+	var out []HiddenStation
+	for _, k := range c.ov.Hidden {
+		for i, sk := range skeys {
+			if sk == k {
+				out = append(out, HiddenStation{Key: k, Label: fmt.Sprintf("%s kHz %s %s", stations.FreqString(ship.Stations[i].FreqKHz), ship.Stations[i].ID, Label(ship.Stations[i]))})
+			}
+		}
+	}
+	return out
+}
+
+// RestoreStation puts a removed shipped station back (with the changes the operator had made to it, if any).
+func (c *Catalog) RestoreStation(k string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var hidden []string
+	found := false
+	for _, h := range c.ov.Hidden {
+		if h == k {
+			found = true
+		} else {
+			hidden = append(hidden, h)
+		}
+	}
+	if !found {
+		return errors.New("that station was not removed")
+	}
+	c.ov.Hidden = hidden
+	c.set(build(c.ov))
+	if err := c.save(); err != nil {
+		return err
+	}
+	_, err := c.resync()
+	return err
 }

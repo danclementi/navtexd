@@ -11,9 +11,12 @@
 
   async function load() {
     const j = await api("GET", "/api/stations");
-    D.stations = j.stations; D.byId = new Map(j.stations.map((s) => [s.id, s]));
+    D.hidden = j.hidden || []; D.stations = j.stations; D.byId = new Map(j.stations.map((s) => [s.id, s]));
     renderStations();
+    if (D.sel && !D.byId.has(D.sel)) { D.sel = null; D.kw = D.orig = []; renderKeywords(); } // (the station was removed)
     if (D.sel) { if (isDirty()) renderKeywords(); else loadKeywords(); } // edits that are not saved stay
+    if (!D.adding) fillForm();
+    renderHidden();
     (NX.hooks.stationsLoaded || []).forEach((f) => f());
   }
 
@@ -121,6 +124,8 @@
   // Leaving a keyword list with changes that are not saved (another station, GID <-> UID) asks first: OK saves them, else they
   // can be discarded, or the operator stays where they are. Returns whether to go on.
   async function leaveOk() {
+    if ((D.adding || formDirty()) && !confirm(D.adding ? "The new station is not added yet.\n\nOK drops it. Cancel stays here." : `The fields of ${kwTitle()} have changes that are not saved.\n\nOK discards them. Cancel stays here.`)) return false;
+    D.adding = false;
     if (!isDirty()) return true;
     const what = `The ${D.kind} keywords of ${kwTitle()} have changes that are not saved.`;
     if (admin() && confirm(what + "\n\nOK saves them now. Cancel gives the choice to discard them.")) return await saveKeywords();
@@ -134,8 +139,8 @@
     const id = Number(tr.dataset.id);
     if (id !== D.sel && !(await leaveOk())) return;
     D.sel = id;
-    $("kw-msg").textContent = "";
-    renderStations(); loadKeywords();
+    $("kw-msg").textContent = ""; $("se-msg").textContent = "";
+    renderStations(); loadKeywords(); fillForm();
   });
   document.querySelectorAll("input[name=kwtype]").forEach((r) => {
     r.onchange = async () => {
@@ -167,6 +172,77 @@
     } catch (e) { $("kw-msg").textContent = "Not saved: " + e.message; return false; }
   }
   $("kw-save").onclick = saveKeywords;
+
+
+  // ---- the fields of a station (name, country, position, times; and the key fields of a new station) ----
+  const F = {}, FIELDS = ["freq", "area", "b1", "call", "name", "cc", "country", "lat", "lon", "t0", "t1", "t2", "t3", "t4", "t5"];
+  FIELDS.forEach((k) => { F[k] = $("se-" + k); });
+  const KEYF = ["freq", "area", "b1", "call"];
+  const formVals = () => ({ name: F.name.value.trim(), cc: F.cc.value.trim(), country: F.country.value.trim(), lat: F.lat.value.trim(), lon: F.lon.value.trim(), times: [0, 1, 2, 3, 4, 5].map((i) => F["t" + i].value.trim()) });
+  const stVals = (s) => ({ name: s.name, cc: s.cc, country: s.country, lat: String(s.lat), lon: String(s.lon), times: s.times.map((t) => t || "") });
+  const formDirty = () => { const s = D.byId.get(D.sel); return !!s && !D.adding && JSON.stringify(formVals()) !== JSON.stringify(stVals(s)); };
+  function fillForm() {
+    const s = D.adding ? null : D.byId.get(D.sel);
+    $("se-title").textContent = D.adding ? "new" : s ? `${s.freq} ${s.b1} ${s.call}` : "";
+    if (s) {
+      F.freq.value = String(s.freq); F.area.value = s.area; F.b1.value = s.b1; F.call.value = s.call; F.name.value = s.name; F.cc.value = s.cc; F.country.value = s.country;
+      F.lat.value = s.lat; F.lon.value = s.lon; s.times.forEach((t, i) => { F["t" + i].value = t || ""; });
+    } else if (!D.adding) FIELDS.forEach((k) => { F[k].value = ""; });
+    formState();
+  }
+  function formState() {
+    const s = D.byId.get(D.sel), a = admin();
+    KEYF.forEach((k) => { F[k].disabled = !(a && D.adding); });
+    ["name", "cc", "country", "lat", "lon", "t0", "t1", "t2", "t3", "t4", "t5"].forEach((k) => { F[k].disabled = !a || !(s || D.adding); });
+    $("se-save").textContent = D.adding ? "Add station" : "Save station";
+    $("se-save").disabled = !a || !(D.adding || (s && formDirty()));
+    $("se-ship").disabled = !a || D.adding || !s || !s.row_edit;
+    $("se-remove").disabled = !a || D.adding || !s;
+    $("se-new").disabled = !a || D.adding;
+    $("se-cancel").hidden = !D.adding;
+  }
+  function renderHidden() {
+    const h = D.hidden || [];
+    $("se-hidden").hidden = !h.length;
+    $("se-hsel").replaceChildren(...h.map((x) => el("option", { value: x.key, text: x.label })));
+  }
+  const body = () => {
+    const v = formVals(), b = { name: v.name, cc: v.cc, country: v.country, lat: Number(v.lat), lon: Number(v.lon), times: v.times };
+    if (v.lat === "" || v.lon === "" || !Number.isFinite(b.lat) || !Number.isFinite(b.lon)) throw new Error("the latitude and longitude are numbers (degrees)");
+    if (D.adding) Object.assign(b, { freq: Number(F.freq.value), area: Number(F.area.value), b1: F.b1.value.trim().toUpperCase(), call: F.call.value.trim().toUpperCase() });
+    return b;
+  };
+  FIELDS.forEach((k) => { F[k].addEventListener("input", formState); });
+  $("se-save").onclick = async () => {
+    try {
+      const b = body();
+      if (D.adding) {
+        const j = await api("POST", "/api/stations", b);
+        D.adding = false; D.sel = j.id; $("se-msg").textContent = "Added."; await load();
+        $("kw-msg").textContent = ""; loadKeywords();
+      } else { await api("PUT", `/api/stations/${D.sel}`, b); $("se-msg").textContent = "Saved."; await load(); }
+    } catch (e) { $("se-msg").textContent = "Not saved: " + e.message; }
+  };
+  $("se-ship").onclick = async () => {
+    if (!confirm(`Give ${kwTitle()} the name, position and times it is shipped with?`)) return;
+    try { await api("PUT", `/api/stations/${D.sel}`, { revert: true }); $("se-msg").textContent = "As shipped."; await load(); } catch (e) { $("se-msg").textContent = "Not changed: " + e.message; }
+  };
+  $("se-remove").onclick = async () => {
+    const s = D.byId.get(D.sel); if (!s) return;
+    if (!confirm(`Remove ${kwTitle()} from the station table?\n\nIts messages keep their label but name no station. A station shipped with the program can be put back; one of your own is deleted.`)) return;
+    try { await api("DELETE", `/api/stations/${D.sel}`); D.sel = null; D.kw = D.orig = []; $("se-msg").textContent = "Removed."; await load(); renderKeywords(); } catch (e) { $("se-msg").textContent = "Not removed: " + e.message; }
+  };
+  $("se-new").onclick = async () => {
+    if (!(await leaveOk())) return;
+    D.sel = null; D.kw = D.orig = []; renderKeywords(); renderStations();
+    D.adding = true; FIELDS.forEach((k) => { F[k].value = ""; }); F.freq.value = "518"; $("se-msg").textContent = "Fill in the fields; the keywords come after the station is added.";
+    fillForm();
+  };
+  $("se-cancel").onclick = () => { D.adding = false; $("se-msg").textContent = ""; fillForm(); };
+  $("se-put").onclick = async () => {
+    const k = $("se-hsel").value; if (!k) return;
+    try { await api("POST", "/api/stations/restore", { key: k }); $("se-msg").textContent = "Put back."; await load(); } catch (e) { $("se-msg").textContent = "Not put back: " + e.message; }
+  };
 
   // ---- station table ----
   $("st-export").onclick = () => { const a = document.createElement("a"); a.href = "/api/stations/export"; a.download = "navtexd_stations.txt"; a.click(); };

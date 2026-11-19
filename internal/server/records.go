@@ -18,6 +18,7 @@ import (
 	"navtex/internal/catalog"
 	"navtex/internal/gbcode"
 	"navtex/internal/sitor"
+	"navtex/internal/stations"
 	"navtex/internal/store"
 	"navtex/internal/when"
 	"navtex/internal/yand"
@@ -45,6 +46,10 @@ func (s *Server) recordRoutes(mux *http.ServeMux, tunnel bool) {
 	mux.HandleFunc("GET /api/stations", s.viewer(tunnel, s.stationList))
 	mux.HandleFunc("GET /api/stations/export", s.viewer(tunnel, s.stationExport))
 	mux.HandleFunc("PUT /api/stations/{id}/keywords", s.admin(tunnel, s.stationKeywords))
+	mux.HandleFunc("PUT /api/stations/{id}", s.admin(tunnel, s.stationEdit))
+	mux.HandleFunc("DELETE /api/stations/{id}", s.admin(tunnel, s.stationRemove))
+	mux.HandleFunc("POST /api/stations", s.admin(tunnel, s.stationAdd))
+	mux.HandleFunc("POST /api/stations/restore", s.admin(tunnel, s.stationRestore))
 	mux.HandleFunc("POST /api/stations/import", s.admin(tunnel, s.stationImport))
 	mux.HandleFunc("POST /api/report/list", s.viewer(tunnel, s.reportList))
 	mux.HandleFunc("POST /api/report/text", s.viewer(tunnel, s.reportText))
@@ -980,7 +985,96 @@ func (s *Server) stationList(w http.ResponseWriter, r *http.Request, id Identity
 			}
 		}
 	}
-	writeJSON(w, 200, map[string]any{"version": ver, "stations": out})
+	hidden := s.cat.Hidden()
+	if hidden == nil {
+		hidden = []catalog.HiddenStation{}
+	}
+	writeJSON(w, 200, map[string]any{"version": ver, "stations": out, "hidden": hidden})
+}
+
+// stationBody is what the editor sends for a station: the fields that may change, and for a new station the ones that make its key.
+type stationBody struct {
+	NavArea int       `json:"area"`
+	Freq    float64   `json:"freq"`
+	B1      string    `json:"b1"`
+	Call    string    `json:"call"`
+	Name    string    `json:"name"`
+	CC      string    `json:"cc"`
+	Country string    `json:"country"`
+	Lat     float64   `json:"lat"`
+	Lon     float64   `json:"lon"`
+	Times   [6]string `json:"times"`
+	Revert  bool      `json:"revert"` // the fields as shipped
+}
+
+func (b stationBody) fields() catalog.StationFields {
+	return catalog.StationFields{Name: b.Name, CountryCode: b.CC, Country: b.Country, Lat: b.Lat, Lon: b.Lon, Times: b.Times}
+}
+
+func (s *Server) stationChanged(w http.ResponseWriter, what string, n int) {
+	s.run.Log("info", fmt.Sprintf("station table: %s", what))
+	s.hub.Publish("stations", map[string]any{"changed": n}, false, false)
+	writeJSON(w, 200, map[string]any{"ok": true, "id": n})
+}
+
+func (s *Server) stationEdit(w http.ResponseWriter, r *http.Request, id Identity) {
+	n, _ := strconv.Atoi(r.PathValue("id"))
+	var b stationBody
+	if err := readBody(r, &b); err != nil {
+		fail(w, 400, err)
+		return
+	}
+	var err error
+	if b.Revert {
+		err = s.cat.RevertStation(n)
+	} else {
+		err = s.cat.SetStation(n, b.fields())
+	}
+	if err != nil {
+		fail(w, 400, err)
+		return
+	}
+	st, _ := s.cat.Station(n)
+	s.stationChanged(w, fmt.Sprintf("%s %s changed", st.Callsign, st.Name), n)
+}
+
+func (s *Server) stationAdd(w http.ResponseWriter, r *http.Request, id Identity) {
+	var b stationBody
+	if err := readBody(r, &b); err != nil {
+		fail(w, 400, err)
+		return
+	}
+	n, err := s.cat.AddStation(stations.Station{NavArea: b.NavArea, FreqKHz: b.Freq, ID: b.B1, Callsign: b.Call, Name: b.Name, CountryCode: b.CC, Country: b.Country, Lat: b.Lat, Lon: b.Lon, Times: b.Times})
+	if err != nil {
+		fail(w, 400, err)
+		return
+	}
+	s.stationChanged(w, fmt.Sprintf("station %s %s added", b.Call, b.Name), n)
+}
+
+func (s *Server) stationRemove(w http.ResponseWriter, r *http.Request, id Identity) {
+	n, _ := strconv.Atoi(r.PathValue("id"))
+	st, _ := s.cat.Station(n)
+	if err := s.cat.RemoveStation(n); err != nil {
+		fail(w, 400, err)
+		return
+	}
+	s.stationChanged(w, fmt.Sprintf("station %s %s removed", st.Callsign, st.Name), 0)
+}
+
+func (s *Server) stationRestore(w http.ResponseWriter, r *http.Request, id Identity) {
+	var b struct {
+		Key string `json:"key"`
+	}
+	if err := readBody(r, &b); err != nil {
+		fail(w, 400, err)
+		return
+	}
+	if err := s.cat.RestoreStation(b.Key); err != nil {
+		fail(w, 400, err)
+		return
+	}
+	s.stationChanged(w, "station "+b.Key+" put back", 0)
 }
 
 func (s *Server) stationExport(w http.ResponseWriter, r *http.Request, id Identity) {

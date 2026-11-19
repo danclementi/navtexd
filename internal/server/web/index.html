@@ -169,6 +169,23 @@
       </div>
     </div>
     <div class="cols">
+      <fieldset class="col" id="stedit"><legend>Station <span id="se-title" class="small"></span></legend>
+        <div class="segrid">
+          <label for="se-freq">kHz</label><select id="se-freq"><option>518</option><option>490</option><option>486</option><option>424</option><option>4209.5</option></select>
+          <label for="se-area">NAVAREA</label><input id="se-area" type="number" min="1" max="21">
+          <label for="se-b1">B1 letter</label><input id="se-b1" type="text" maxlength="1" size="2">
+          <label for="se-call">Call sign</label><input id="se-call" type="text" maxlength="12" placeholder="___ if none">
+          <label for="se-name">Name</label><input id="se-name" type="text" class="wide">
+          <label for="se-cc">Country code</label><input id="se-cc" type="text" maxlength="4" size="4">
+          <label for="se-country">Country</label><input id="se-country" type="text">
+          <label for="se-lat">Latitude</label><input id="se-lat" type="text" size="9" placeholder="degrees, north +">
+          <label for="se-lon">Longitude</label><input id="se-lon" type="text" size="9" placeholder="degrees, east +">
+        </div>
+        <div class="segrid slots"><label>UTC times</label><input id="se-t0" type="text" maxlength="5" size="5" placeholder="hh:mm"><input id="se-t1" type="text" maxlength="5" size="5"><input id="se-t2" type="text" maxlength="5" size="5"><input id="se-t3" type="text" maxlength="5" size="5"><input id="se-t4" type="text" maxlength="5" size="5"><input id="se-t5" type="text" maxlength="5" size="5"></div>
+        <div class="row"><button id="se-save">Save station</button><button id="se-ship" title="Give the station the name, position and times it is shipped with (the keywords are not touched)">As shipped</button><button id="se-remove" title="Take the station out of the table (a shipped station can be put back)">Remove</button><button id="se-new">New station…</button><button id="se-cancel" hidden>Cancel</button></div>
+        <div class="row small" id="se-hidden" hidden>Removed: <select id="se-hsel"></select><button id="se-put">Put back</button></div>
+        <div id="se-msg" class="small"></div>
+      </fieldset>
       <fieldset class="col" id="tableio"><legend>Station table</legend>
         <div class="row small">The station table is the table shipped with the program (an upgrade brings its corrections and new keywords) plus your changes to it: keywords you added or removed, stations you changed or added. Your changes are kept in navtexd_user.json; navtexd_stations.txt in the data folder is written from both, for other programs and spreadsheets, and a change made to that file from outside is taken up as your changes. Import can merge a file into the table, or replace it entirely. Merging adds the stations that are missing, and either adds the file's keywords to the stations you have (yours stay) or lets the file's rows replace yours. Whatever it changes, the table file is saved first in the backups folder of the data folder, with the date and time it was last saved in its name.</div>
         <div class="row"><button id="st-export">Export table</button><input id="st-file" type="file" accept=".txt,.TXT" hidden><button id="st-import">Import table…</button>

@@ -777,3 +777,12 @@ table.grid th.filtered .lbl { font-style: italic; }
 .gridpop .gpn { flex: none; color: var(--dim); font-size: 11px; }
 .gridpop .gpfoot { display: flex; justify-content: space-between; gap: 6px; }
 .gridpop .gphint { color: var(--dim); font-size: 11px; }
+
+/* the station form of the Stations tab: labels and boxes in aligned columns */
+#stedit .segrid { display: grid; grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr); gap: 6px 8px; align-items: center; margin: 4px 0; }
+#stedit .segrid.slots { grid-template-columns: auto repeat(6, minmax(0, 1fr)); }
+#stedit .segrid label { color: var(--dim); font-size: 12px; }
+#stedit .segrid input, #stedit .segrid select { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; min-width: 0; width: 100%; box-sizing: border-box; }
+#stedit .segrid input:disabled, #stedit .segrid select:disabled { opacity: .6; }
+#stedit .segrid input.wide { grid-column: 2 / 5; }
+#stedit .segrid input.bad { border-color: var(--bad); }

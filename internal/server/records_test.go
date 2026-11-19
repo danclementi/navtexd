@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -867,5 +868,65 @@ func TestFilterPresets(t *testing.T) {
 	}
 	if _, j = do(t, tunnel, "GET", "/api/presets", nil, nil); j["slots"].([]any)[1] != nil {
 		t.Errorf("not cleared: %v", j)
+	}
+}
+
+func TestStationEditAddRemoveAPI(t *testing.T) {
+	cfg := config.Default()
+	cfg.Input.File.Path = "/nonexistent.wav"
+	cfg.Input.Source = "file"
+	s, _, _, _ := setup(t, cfg)
+	admin := httptest.NewServer(s.handler(false))
+	defer admin.Close()
+	tunnel := httptest.NewServer(s.handler(true))
+	defer tunnel.Close()
+	_, list := s.cat.Stations()
+	first := list[0]
+	times := []string{"00:05", "04:00", "08:00", "12:00", "16:00", "20:00"}
+	b := map[string]any{"name": first.Name, "cc": first.CountryCode, "country": first.Country, "lat": first.Lat, "lon": first.Lon, "times": times}
+	if code, _ := do(t, tunnel, "PUT", "/api/stations/1", b, nil); code != 403 {
+		t.Errorf("viewer edit: %d", code)
+	}
+	if code, m := do(t, admin, "PUT", "/api/stations/1", b, nil); code != 200 {
+		t.Fatalf("edit: %d %v", code, m)
+	}
+	if st, _ := s.cat.Station(1); st.Times[0] != "00:05" {
+		t.Errorf("times: %v", st.Times)
+	}
+	b["times"] = []string{"99:00", "", "", "", "", ""}
+	if code, _ := do(t, admin, "PUT", "/api/stations/1", b, nil); code != 400 {
+		t.Errorf("bad time: %d", code)
+	}
+	if code, _ := do(t, admin, "PUT", "/api/stations/1", map[string]any{"revert": true}, nil); code != 200 {
+		t.Errorf("revert: %d", code)
+	}
+	if st, _ := s.cat.Station(1); st.Times != first.Times {
+		t.Errorf("as shipped: %v", st.Times)
+	}
+	add := map[string]any{"area": 4, "freq": 518, "b1": "Z", "call": "TST", "name": "Test", "cc": "USA", "country": "United States", "lat": 36.8, "lon": -76.3, "times": []string{"01:23", "", "", "", "", ""}}
+	code, m := do(t, admin, "POST", "/api/stations", add, nil)
+	if code != 200 || m["id"].(float64) < 2 {
+		t.Fatalf("add: %d %v", code, m)
+	}
+	if code, _ = do(t, admin, "POST", "/api/stations", add, nil); code != 400 {
+		t.Errorf("added twice: %d", code)
+	}
+	id := int(m["id"].(float64))
+	if code, _ = do(t, admin, "DELETE", "/api/stations/"+strconv.Itoa(id), nil, nil); code != 200 {
+		t.Errorf("delete own: %d", code)
+	}
+	if code, _ = do(t, admin, "DELETE", "/api/stations/1", nil, nil); code != 200 {
+		t.Fatalf("remove shipped: %d", code)
+	}
+	code, m = do(t, admin, "GET", "/api/stations", nil, nil)
+	h := m["hidden"].([]any)
+	if code != 200 || len(h) != 1 {
+		t.Fatalf("hidden: %d %v", code, m["hidden"])
+	}
+	if code, _ = do(t, admin, "POST", "/api/stations/restore", map[string]any{"key": h[0].(map[string]any)["key"]}, nil); code != 200 {
+		t.Errorf("put back: %d", code)
+	}
+	if st, _ := s.cat.Station(len(list)); st.Callsign == "" {
+		t.Error("station list")
 	}
 }
