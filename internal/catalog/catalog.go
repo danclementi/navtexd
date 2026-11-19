@@ -102,9 +102,6 @@ func MergeTables(base, add []byte) []byte {
 	return []byte(strings.Join(bl, "\r\n") + "\r\n")
 }
 
-// MaxKeywordChars is the most characters a keyword list (GID or UID) of a station may hold.
-const MaxKeywordChars = 300
-
 // Catalog is the station table and identifier.
 type Catalog struct {
 	mu   sync.RWMutex
@@ -516,7 +513,7 @@ func (c *Catalog) save() error {
 }
 
 // SetKeywords replaces one keyword list (kind "GID" or "UID") of a station. Blank entries and repeats are dropped; the
-// joined list may not exceed MaxKeywordChars characters.
+// length of a list is not limited.
 func (c *Catalog) SetKeywords(id int, kind string, list []string) error {
 	kind = strings.ToUpper(kind)
 	if kind != "GID" && kind != "UID" {
@@ -531,9 +528,6 @@ func (c *Catalog) SetKeywords(id int, kind string, list []string) error {
 		}
 		seen[k] = true
 		clean = append(clean, k)
-	}
-	if n := len(strings.Join(clean, ",")); n > MaxKeywordChars {
-		return fmt.Errorf("the keyword list is %d characters; at most %d are allowed", n, MaxKeywordChars)
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -586,7 +580,6 @@ type MergeResult struct {
 	Added    int    // stations of the file that the table lacked
 	Changed  int    // stations of the table that the file changed (new keywords, or replaced)
 	Keywords int    // keywords added to existing stations
-	Skipped  int    // keywords that did not fit in the 300 characters of a list
 	Backup   string // the table as it was, saved first (empty when nothing changed)
 }
 
@@ -612,9 +605,9 @@ func (c *Catalog) ImportMerge(data []byte, replace bool) (MergeResult, error) {
 	impKeys, _ := StationKeys(imp.Stations)
 	merged := make([]stations.Station, len(c.tab.Stations))
 	copy(merged, c.tab.Stations)
-	union := func(mine, theirs []string) ([]string, int, int) {
+	union := func(mine, theirs []string) ([]string, int) {
 		out := append([]string(nil), mine...)
-		added, skipped := 0, 0
+		added := 0
 	next:
 		for _, k := range theirs {
 			k = strings.TrimSpace(k)
@@ -626,14 +619,10 @@ func (c *Catalog) ImportMerge(data []byte, replace bool) (MergeResult, error) {
 					continue next
 				}
 			}
-			if len(strings.Join(append(append([]string(nil), out...), k), ",")) > MaxKeywordChars {
-				skipped++
-				continue
-			}
 			out = append(out, k)
 			added++
 		}
-		return out, added, skipped
+		return out, added
 	}
 	for n, st := range imp.Stations {
 		i, ok := have[impKeys[n]]
@@ -648,9 +637,8 @@ func (c *Catalog) ImportMerge(data []byte, replace bool) (MergeResult, error) {
 				res.Changed++
 			}
 		default:
-			g, ga, gs := union(merged[i].GID, st.GID)
-			u, ua, us := union(merged[i].UID, st.UID)
-			res.Skipped += gs + us
+			g, ga := union(merged[i].GID, st.GID)
+			u, ua := union(merged[i].UID, st.UID)
 			if ga+ua > 0 {
 				merged[i].GID, merged[i].UID = g, u
 				res.Keywords += ga + ua

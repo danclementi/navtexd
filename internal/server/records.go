@@ -966,7 +966,7 @@ func (s *Server) stationList(w http.ResponseWriter, r *http.Request, id Identity
 			}
 		}
 	}
-	writeJSON(w, 200, map[string]any{"version": ver, "max_keyword_chars": 300, "stations": out})
+	writeJSON(w, 200, map[string]any{"version": ver, "stations": out})
 }
 
 func (s *Server) stationExport(w http.ResponseWriter, r *http.Request, id Identity) {
@@ -1015,7 +1015,7 @@ func (s *Server) stationImport(w http.ResponseWriter, r *http.Request, id Identi
 			s.run.Log("info", fmt.Sprintf("station table merged with an import: %d stations added, %d changed, %d keywords added (the previous table is saved as backups/%s)", res.Added, res.Changed, res.Keywords, res.Backup))
 			s.hub.Publish("stations", map[string]any{"changed": 0}, false, false)
 		}
-		writeJSON(w, 200, map[string]any{"stations": res.Stations, "added": res.Added, "changed": res.Changed, "keywords": res.Keywords, "skipped": res.Skipped, "backup": res.Backup, "merged": true})
+		writeJSON(w, 200, map[string]any{"stations": res.Stations, "added": res.Added, "changed": res.Changed, "keywords": res.Keywords, "backup": res.Backup, "merged": true})
 		return
 	case "", "replace":
 	default:

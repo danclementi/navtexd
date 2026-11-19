@@ -3,7 +3,7 @@
 (() => {
   const NX = window.NX, $ = NX.$, el = NX.el, api = NX.api;
   const CH = 100, ROW = 22, HDR = 26; // fetch chunk size, row height and header height in pixels
-  const L = { total: 0, all: 0, cache: new Map(), chunks: new Set(), gen: 0, sel: new Set(), selId: 0, anchor: -1, rec: null, loaded: false, timer: 0, q: "", hid0: 0, la: 0, lt: 0, dir: 1, end: false, scope: null };
+  const L = { top: 0, total: 0, all: 0, cache: new Map(), chunks: new Set(), gen: 0, sel: new Set(), selId: 0, anchor: -1, rec: null, loaded: false, timer: 0, q: "", hid0: 0, la: 0, lt: 0, dir: 1, end: false, scope: null };
   const admin = () => NX.state.role === "admin";
   const sc = $("logscroll");
 
@@ -256,6 +256,7 @@
     ensure(start, end - 1);
   }
   NX.listen("channels", () => { if (L.loaded) render(); });
+  sc.addEventListener("scroll", () => { if (sc.clientHeight > 0) L.top = sc.scrollTop; }, { passive: true }); // the place to come back to: a tab that is hidden or moved loses its scroll position
   sc.addEventListener("scroll", () => { if (!L.gotoAt || performance.now() - L.gotoAt > 600) $("n-date").value = ""; requestAnimationFrame(render); }); // scrolling by hand forgets the "go to date"
   window.addEventListener("resize", () => { if (L.loaded) render(); });
 
@@ -1590,5 +1591,10 @@
     try { const j = await fetchRange(0, 1); L.lt = j.total; L.la = j.all; indicate(); } catch (e) { /* ignore */ }
   }
   NX.listen("role", () => { showDbBtn(); loadUndo(); if (L.loaded) { render(); if (L.rec) showRecord(); } updateApply(); });
-  NX.tabs.log = () => { applyPane(); showDbBtn(); loadUndo(); if (!L.loaded) { L.loaded = true; reload(); } else refresh(); };
+  NX.tabs.log = () => {
+    applyPane(); showDbBtn(); loadUndo();
+    if (!L.loaded) { L.loaded = true; reload(); return; }
+    if (L.top > 0 && sc.scrollTop === 0 && sc.clientHeight > 0) { sc.scrollTop = L.top; render(); } // back from another tab: the view as it was
+    refresh();
+  };
 })();

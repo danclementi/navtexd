@@ -2,7 +2,7 @@
 // Database tab: station list and keyword editor, station table import / export.
 (() => {
   const NX = window.NX, $ = NX.$, el = NX.el, api = NX.api;
-  const D = { stations: [], byId: new Map(), max: 300, sel: null, kw: [], orig: [], loaded: false };
+  const D = { stations: [], byId: new Map(), sel: null, kind: "GID", kw: [], orig: [], loaded: false };
   const admin = () => NX.state.role === "admin";
 
   NX.stationList = () => D.stations;
@@ -11,9 +11,9 @@
 
   async function load() {
     const j = await api("GET", "/api/stations");
-    D.stations = j.stations; D.max = j.max_keyword_chars; D.byId = new Map(j.stations.map((s) => [s.id, s]));
+    D.stations = j.stations; D.byId = new Map(j.stations.map((s) => [s.id, s]));
     renderStations();
-    if (D.sel) loadKeywords();
+    if (D.sel) { if (isDirty()) renderKeywords(); else loadKeywords(); } // edits that are not saved stay
     (NX.hooks.stationsLoaded || []).forEach((f) => f());
   }
 
@@ -74,11 +74,15 @@
   const kind = () => document.querySelector('input[name=kwtype]:checked').value;
   const show = (k) => k.replace(/^ +| +$/g, (m) => "␣".repeat(m.length)); // visible marks for significant spaces
 
+  const isDirty = () => !!D.sel && D.kw.join("\n") !== D.orig.join("\n");
+  const kwTitle = () => { const s = D.byId.get(D.sel); return s ? `${s.freq} ${s.b1} ${s.call} ${s.name}` : ""; };
+
   function loadKeywords() {
     const s = D.byId.get(D.sel);
     if (!s) return;
-    $("kw-title").textContent = `${s.freq} ${s.b1} ${s.call} ${s.name}`;
-    D.orig = (kind() === "GID" ? s.gid : s.uid).slice();
+    D.kind = kind();
+    $("kw-title").textContent = kwTitle();
+    D.orig = (D.kind === "GID" ? s.gid : s.uid).slice();
     D.kw = D.orig.slice();
     renderKeywords();
   }
@@ -92,23 +96,40 @@
       ul.append(el("li", { class: D.orig.includes(k) ? "" : "new" }, el("span", { text: show(k) }), b));
     });
     const n = D.kw.join(",").length;
-    $("kw-count").textContent = `${n} / ${D.max} characters`;
-    $("kw-count").className = "small" + (n > D.max ? " badq" : "");
-    const dirty = D.kw.join("\n") !== D.orig.join("\n");
-    $("kw-save").disabled = !admin() || !D.sel || !dirty || n > D.max;
+    const dirty = isDirty();
+    $("kw-count").textContent = `${n} characters` + (dirty ? " (not saved)" : "");
+    $("kw-count").className = "small" + (dirty ? " badq" : "");
+    $("kw-save").disabled = !admin() || !D.sel || !dirty;
     $("kw-revert").disabled = !dirty;
     $("kw-add").disabled = !admin() || !D.sel;
     $("kw-new").disabled = !admin() || !D.sel;
   }
 
-  document.querySelector("#st-table tbody").addEventListener("click", (e) => {
+  // Leaving a keyword list with changes that are not saved (another station, GID <-> UID) asks first: OK saves them, else they
+  // can be discarded, or the operator stays where they are. Returns whether to go on.
+  async function leaveOk() {
+    if (!isDirty()) return true;
+    const what = `The ${D.kind} keywords of ${kwTitle()} have changes that are not saved.`;
+    if (admin() && confirm(what + "\n\nOK saves them now. Cancel gives the choice to discard them.")) return await saveKeywords();
+    return confirm(what + "\n\nOK discards the changes. Cancel stays here with them.");
+  }
+  window.addEventListener("beforeunload", (e) => { if (isDirty()) { e.preventDefault(); e.returnValue = ""; } });
+
+  document.querySelector("#st-table tbody").addEventListener("click", async (e) => {
     const tr = e.target.closest("tr");
     if (!tr) return;
-    D.sel = Number(tr.dataset.id);
+    const id = Number(tr.dataset.id);
+    if (id !== D.sel && !(await leaveOk())) return;
+    D.sel = id;
     $("kw-msg").textContent = "";
     renderStations(); loadKeywords();
   });
-  document.querySelectorAll("input[name=kwtype]").forEach((r) => { r.onchange = () => { $("kw-msg").textContent = ""; loadKeywords(); }; });
+  document.querySelectorAll("input[name=kwtype]").forEach((r) => {
+    r.onchange = async () => {
+      if (!(await leaveOk())) { document.querySelector(`input[name=kwtype][value=${D.kind}]`).checked = true; return; }
+      $("kw-msg").textContent = ""; loadKeywords();
+    };
+  });
   $("s-freq").onchange = $("s-text").oninput = renderStations;
 
   $("kw-add").onclick = () => {
@@ -120,10 +141,13 @@
   };
   $("kw-new").onkeydown = (e) => { if (e.key === "Enter") $("kw-add").onclick(); };
   $("kw-revert").onclick = () => { D.kw = D.orig.slice(); renderKeywords(); };
-  $("kw-save").onclick = async () => {
-    try { await api("PUT", `/api/stations/${D.sel}/keywords`, { type: kind(), keywords: D.kw }); $("kw-msg").textContent = "Saved."; await load(); }
-    catch (e) { $("kw-msg").textContent = "Not saved: " + e.message; }
-  };
+  async function saveKeywords() {
+    try {
+      await api("PUT", `/api/stations/${D.sel}/keywords`, { type: D.kind, keywords: D.kw });
+      D.orig = D.kw.slice(); $("kw-msg").textContent = "Saved."; await load(); return true;
+    } catch (e) { $("kw-msg").textContent = "Not saved: " + e.message; return false; }
+  }
+  $("kw-save").onclick = saveKeywords;
 
   // ---- station table ----
   $("st-export").onclick = () => { const a = document.createElement("a"); a.href = "/api/stations/export"; a.download = "navtexd_stations.txt"; a.click(); };
@@ -145,7 +169,7 @@
       if (!r.ok) throw new Error(j.error);
       if (j.merged) {
         $("st-msg").textContent = !j.added && !j.changed ? "Nothing to merge: the table already has everything in the file."
-          : `${j.added} stations added, ${j.changed} changed (${j.keywords} keywords added), ${j.stations} stations now.` + (j.skipped ? ` ${j.skipped} keywords did not fit in the ${300} characters of a list and were left out.` : "") + (j.backup ? ` The previous table is saved as backups/${j.backup}.` : "");
+          : `${j.added} stations added, ${j.changed} changed (${j.keywords} keywords added), ${j.stations} stations now.` + (j.backup ? ` The previous table is saved as backups/${j.backup}.` : "");
       } else {
         $("st-msg").textContent = `${j.stations} stations imported.` + (j.backup ? ` The previous table is saved as backups/${j.backup}.` : "");
       }

@@ -60,6 +60,21 @@ func TestSpanishForecastNotChinese(t *testing.T) {
 	if len(rec.Candidates) == 0 {
 		t.Error("no candidate at 490 kHz for B1 K")
 	}
+	// Grindavik and Santa Marta share 490 kHz, K and the slot: the Spanish words and COLOMBIA decide
+	rec.Lines = append(rec.Lines[:3], store.Line{Text: "COLOMBIA 316/26"}, rec.Lines[3], rec.Lines[4], rec.Lines[5])
+	c.Enrich(rec)
+	if !strings.Contains(rec.Station, "Santa Marta") {
+		t.Errorf("station %q (method %q), want Santa Marta", rec.Station, rec.IdentMethod)
+	}
+	for _, s := range c.tab.Stations {
+		if s.ID == "C" && s.FreqKHz == 518 && s.Callsign == "HJW" {
+			for _, k := range append(append([]string(nil), s.GID...), s.UID...) {
+				if k == "AVISO COSTERO" || k == "CARIBE COLOMBIANO" {
+					t.Errorf("Santa Marta 518 C has the Spanish keyword %q", k)
+				}
+			}
+		}
+	}
 	if text, khz := textAndFreq(rec); khz != 490 || strings.Contains(text, "□") {
 		t.Errorf("frequency %v, text %q", khz, text)
 	}

@@ -116,8 +116,8 @@ func TestRecordsAndStations(t *testing.T) {
 	for i := 0; i < 40; i++ {
 		long = append(long, "KEYWORDNUMBER"+string(rune('A'+i%26))+string(rune('a'+i/26)))
 	}
-	if code, _ = do(t, admin, "PUT", "/api/stations/1/keywords", map[string]any{"type": "UID", "keywords": long}, nil); code != 400 {
-		t.Errorf("too long keyword list: %d", code)
+	if code, _ = do(t, admin, "PUT", "/api/stations/1/keywords", map[string]any{"type": "UID", "keywords": long}, nil); code != 200 {
+		t.Errorf("a long keyword list (no limit): %d", code)
 	}
 	if code, _ = do(t, tunnel, "PUT", "/api/stations/1/keywords", map[string]any{"type": "GID", "keywords": []string{"X"}}, nil); code != 403 {
 		t.Errorf("viewer keywords: %d", code)

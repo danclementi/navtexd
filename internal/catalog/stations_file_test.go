@@ -146,17 +146,17 @@ func TestImportMerge(t *testing.T) {
 	if !strings.Contains(string(b), "#NEW#Newplace#") {
 		t.Error("the table file does not have the new station")
 	}
-	// a keyword list that is full takes no more
+	// a keyword list has no length limit: a list of 60 words (599 characters) takes one more
 	var long []string
-	for i := 0; i < 30; i++ { // 30 words of 9 letters: 299 characters with the commas
+	for i := 0; i < 60; i++ {
 		long = append(long, fmt.Sprintf("KEYWORD%02d", i))
 	}
 	if err := c.SetKeywords(2, "GID", long); err != nil {
 		t.Fatal(err)
 	}
 	res, err = c.ImportMerge([]byte("VERSION5\r\n1#490#B#OST#Ostend#BEL#Belgium#51.183#2.808#00:10#04:10#08:10#12:10#16:10#20:10#MORE#\r\n"), false)
-	if err != nil || res.Skipped != 1 || res.Keywords != 0 {
-		t.Errorf("full list: %+v %v", res, err)
+	if err != nil || res.Keywords != 1 {
+		t.Errorf("long list: %+v %v", res, err)
 	}
 }
 
@@ -187,8 +187,8 @@ func TestMergeTheAddendumIntoAnOldTable(t *testing.T) {
 			for _, k := range s.GID {
 				found = found || k == "NEWHAVEN"
 			}
-			if len(s.GID) < 20 || len(strings.Join(s.GID, ",")) > MaxKeywordChars {
-				t.Errorf("GNI 518 E: %d keywords, %d characters", len(s.GID), len(strings.Join(s.GID, ",")))
+			if len(s.GID) < 20 {
+				t.Errorf("GNI 518 E: %d keywords", len(s.GID))
 			}
 		}
 	}
