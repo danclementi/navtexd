@@ -378,7 +378,7 @@ func (c *Catalog) Stations() (version string, list []stations.Station) {
 // textAndFreq returns the text that the keywords are looked for in, and the frequency (kHz) that the candidates are taken from.
 // The text is the received lines without ZCZC and NNNN. The national service of China sends GB 2312 characters as letters:
 // the keywords are Chinese, so they are looked for in the characters (the station is identified before the text is corrected,
-// so the text is read here). A message that reads like that is of the stations on 486 kHz, on whatever channel it came.
+// so the text is read here). Only a message received on 486 kHz is read that way; no other channel is tested for it.
 func textAndFreq(r *store.Record) (string, float64) {
 	var lines []string
 	for i, l := range r.Lines {
@@ -388,13 +388,9 @@ func textAndFreq(r *store.Record) (string, float64) {
 		lines = append(lines, l.Text)
 	}
 	khz := float64(r.Channel) / 1000
-	if r.Channel == chineseHz || gbcode.Looks(lines) {
-		decode := gbcode.Decode
-		if r.Channel == chineseHz {
-			decode = gbcode.DecodeChinese
-		}
-		if dec, ok := decode(lines, 200); ok {
-			lines, khz = dec, chineseHz/1000
+	if r.Channel == chineseHz {
+		if dec, ok := gbcode.DecodeChinese(lines, 200); ok {
+			lines = dec
 		}
 	}
 	var sb strings.Builder

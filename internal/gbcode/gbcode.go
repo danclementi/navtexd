@@ -363,36 +363,6 @@ func decode(lines []string, wrap int, known bool) (out []string, changed bool) {
 	return out, changed
 }
 
-// Looks says whether the lines of a message are Chinese text of the national service: at least 30 letters in lines without
-// blanks, 18 or more long (a message of words has blanks), and most of the units read as common characters. It is meant for
-// a message that was not received on 486 kHz, so that it is read all the same.
-func Looks(lines []string) bool {
-	var units, good int
-	for i := 0; i < len(lines); {
-		if !IsUnitLine(lines[i]) {
-			i++
-			continue
-		}
-		j := i
-		for j < len(lines) && IsUnitLine(lines[j]) {
-			j++
-		}
-		for _, s := range streams(lines, i, j, 0, false) {
-			if len(s.st) < 18 {
-				continue
-			}
-			for _, p := range s.cut() {
-				units++
-				if p.text != Unreadable && p.cost == 0 {
-					good++
-				}
-			}
-		}
-		i = j
-	}
-	return units >= 10 && good*10 >= units*5
-}
-
 // fullWidth says whether a unit's character is a full-width digit, letter or sign, or the ideographic space, comma or full stop.
 func fullWidth(t string) bool {
 	for _, r := range t {

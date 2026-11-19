@@ -107,28 +107,6 @@ func TestDecodeFadeShowsNoNoise(t *testing.T) {
 	}
 }
 
-func TestLooks(t *testing.T) {
-	for name, lines := range shanghai {
-		if !Looks(lines) {
-			t.Errorf("%s is Chinese text", name)
-		}
-	}
-	english := []string{"ZCZC EA23", "2611161458", "NAVAREA XI WARNING 123/26", "SOUTH CHINA SEA", "VESSELS ARE ADVISED TO KEEP CLEAR OF THE AREA", "NNNN"}
-	if Looks(english) {
-		t.Error("English text looks Chinese")
-	}
-	// a run of words with every blank lost is not Chinese: its letters do not spell common characters
-	if Looks([]string{"ZCZC EA23", "2611161458", "VESSELSAREADVISEDTOKEEPCLEAROFTHEAREAINTHEPOSITIONNEARTHEHARBOUR", "NNNN"}) {
-		t.Error("English without blanks looks Chinese")
-	}
-	if Looks([]string{"ZCZC EA23", "FQKDMMDMMCDBCXAFZT", "NNNN"}) {
-		t.Error("a title alone is too little to say")
-	}
-	if Looks(nil) {
-		t.Error("nothing looks Chinese")
-	}
-}
-
 func TestHasHan(t *testing.T) {
 	if !HasHan("上海") || HasHan("ＮＮＮＮ（１２）") || HasHan("ABC") || HasHan("") {
 		t.Error("HasHan")

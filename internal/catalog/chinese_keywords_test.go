@@ -41,3 +41,26 @@ func TestChineseKeywordsWithoutB1(t *testing.T) {
 		}
 	}
 }
+
+// A Spanish forecast of Santa Marta (490 kHz, B1 K) whose position lines (no blanks, 18 or more letters) once passed the
+// "looks Chinese" test was looked up at 486 kHz, where no station has B1 K: it is looked up on its own channel (the stations of
+// 490 kHz with B1 K are candidates; Grindavik and Santa Marta share the letter and the slot, and only the position or keywords
+// tell them apart).
+func TestSpanishForecastNotChinese(t *testing.T) {
+	dir := t.TempDir()
+	st, _ := store.Open(dir)
+	defer st.Close()
+	c, err := Open(dir, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := &store.Record{Channel: 490000, Kind: "message", B1: "K", Received: time.Date(2026, 11, 19, 1, 46, 0, 0, time.UTC)}
+	rec.Lines = []store.Line{{Text: "ZCZC KE19"}, {Text: "AVISO COSTERO"}, {Text: "MAR CARIBE COLOMBIANO/XSX"}, {Text: "NW 16-15.0N 081-40.2W"}, {Text: "SW 10-59.4N 077-59.4W"}, {Text: "NNNN"}}
+	c.Enrich(rec)
+	if len(rec.Candidates) == 0 {
+		t.Error("no candidate at 490 kHz for B1 K")
+	}
+	if text, khz := textAndFreq(rec); khz != 490 || strings.Contains(text, "□") {
+		t.Errorf("frequency %v, text %q", khz, text)
+	}
+}

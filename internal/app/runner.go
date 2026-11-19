@@ -152,22 +152,15 @@ const chineseHz = 486000
 
 // Correct fills in the autocorrected text of a record (the raw lines are not touched). It returns what was corrected.
 func (r *Runner) Correct(rec *store.Record) []string {
-	// The national service of China sends GB 2312 characters as three letters each. A message that reads like that is decoded
-	// whatever channel it came on (a log from another program, or a receiver set to the wrong frequency).
-	if lines := rec.EffectiveLines(); rec.Channel == chineseHz || gbcode.Looks(lines) {
+	// The national service of China (486 kHz only) sends GB 2312 characters as three letters each. Other channels are never
+	// read that way: a test of "looks Chinese" took a Spanish forecast for it.
+	if lines := rec.EffectiveLines(); rec.Channel == chineseHz {
 		wrap := r.ChanConfig(rec.Rcv).Segment.MaxLineChars
 		if wrap < 20 {
 			wrap = 200
 		}
-		dec := gbcode.Decode
-		if rec.Channel == chineseHz { // known to be of the national service: lines with a stray blank are read too
-			dec = gbcode.DecodeChinese
-		}
-		if text, ok := dec(lines, wrap); ok {
+		if text, ok := gbcode.DecodeChinese(lines, wrap); ok {
 			rec.Corrected = strings.Join(text, "\n")
-			if rec.Channel != chineseHz {
-				return []string{"Chinese text (GB 2312) read, although the channel is not 486 kHz"}
-			}
 			return nil
 		}
 	}

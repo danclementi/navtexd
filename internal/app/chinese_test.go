@@ -7,9 +7,9 @@ import (
 	"navtex/internal/store"
 )
 
-// A message of the national service of China is read as Chinese text on any channel; on 486 kHz it is read without a note, on
-// another channel the note says so. English text is not touched by it.
-func TestCorrectChineseOnAnyChannel(t *testing.T) {
+// A message of the national service of China is read as Chinese text on 486 kHz, and only there (a test of "looks Chinese" on
+// the other channels took a Spanish forecast for it).
+func TestCorrectChinese486Only(t *testing.T) {
 	lines := []string{"ZCZC EA10", "2611151633", "FQKDMMDMMCDBCXAFZT", "", "",
 		"HIODNMEBKAHNAHWAHVAHZAHZAHUAHXAIBAHOCYIDMMAHNAHWAHWAHOHDRAHNAHWAICAHOFNAAHNAH",
 		"VAICAHVAHVAHOFSWHKWAHNAHWAIDAHVAHVAHOFSWDOCAHNAHWAHWAHOHDRAHNAHWAIDAHOFNAHKWA", "AIZAIZAIZAIZ", "NNNN"}
@@ -21,7 +21,7 @@ func TestCorrectChineseOnAnyChannel(t *testing.T) {
 		return rec
 	}
 	r := &Runner{}
-	for _, ch := range []int{486000, 518000} {
+	for _, ch := range []int{486000} {
 		rec := mk(ch)
 		notes := r.Correct(rec)
 		if !strings.Contains(rec.Corrected, "上海海岸电台") || !strings.Contains(rec.Corrected, "浙航警（１０４４／２６）东海") {

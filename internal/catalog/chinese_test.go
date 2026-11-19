@@ -8,7 +8,7 @@ import (
 	"navtex/internal/store"
 )
 
-// A message of the national service of China is identified by its Chinese text, whatever channel it is stored under: the first line
+// A message of the national service of China is identified by its Chinese text on 486 kHz: the first line
 // of each message is the name of the station.
 func TestEnrichChineseText(t *testing.T) {
 	dir := t.TempDir()
@@ -25,7 +25,7 @@ func TestEnrichChineseText(t *testing.T) {
 		"VAICAHVAHVAHOFSWHKWAHNAHWAIDAHVAHVAHOFSWDOCAHNAHWAHWAHOHDRAHNAHWAIDAHOFNAHKWA",
 		"AIZAIZAIZAIZ",
 	}
-	for _, ch := range []int{486000, 518000} { // the receiver of a log from another program may be set to the wrong frequency
+	for _, ch := range []int{486000} {
 		rec := &store.Record{Channel: ch, Received: time.Date(2026, 11, 17, 20, 46, 0, 0, time.UTC), Kind: "message"}
 		rec.Lines = append(rec.Lines, store.Line{Text: "ZCZC EA10"}, store.Line{Text: "2611151633"})
 		for _, l := range body {
