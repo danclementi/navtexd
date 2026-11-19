@@ -112,6 +112,21 @@ func TestRecordsAndStations(t *testing.T) {
 	if st1, _ := s.cat.Station(1); len(st1.GID) != 2 || st1.GID[0] != "ALPHA" {
 		t.Errorf("keywords stored: %v", st1.GID)
 	}
+	// the station list says what is the operator's, and the shipped list can be had again
+	if code, m := do(t, admin, "GET", "/api/stations", nil, nil); code != 200 {
+		t.Errorf("stations: %d", code)
+	} else if first := m["stations"].([]any)[0].(map[string]any); first["edits"].(float64) < 3 || len(first["own_gid"].([]any)) != 2 || len(first["del_gid"].([]any)) < 1 {
+		t.Errorf("origin of the first station: %v", first)
+	}
+	if code, _ = do(t, admin, "PUT", "/api/stations/1/keywords", map[string]any{"type": "GID", "revert": true}, nil); code != 200 {
+		t.Errorf("revert: %d", code)
+	}
+	if st1, _ := s.cat.Station(1); len(st1.GID) < 3 || st1.GID[0] == "ALPHA" {
+		t.Errorf("after the revert: %v", st1.GID)
+	}
+	if code, _ = do(t, admin, "PUT", "/api/stations/1/keywords", map[string]any{"type": "GID", "keywords": []string{"alpha", "Alpha", "BETA"}}, nil); code != 200 {
+		t.Errorf("keywords again: %d", code)
+	}
 	long := make([]string, 0)
 	for i := 0; i < 40; i++ {
 		long = append(long, "KEYWORDNUMBER"+string(rune('A'+i%26))+string(rune('a'+i/26)))

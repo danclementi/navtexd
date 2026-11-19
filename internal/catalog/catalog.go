@@ -104,11 +104,13 @@ func MergeTables(base, add []byte) []byte {
 
 // Catalog is the station table and identifier.
 type Catalog struct {
-	mu   sync.RWMutex
-	path string
-	tab  *stations.Table
-	id   *ident.Identifier
-	st   *store.Store
+	mu       sync.RWMutex
+	path     string // navtexd_stations.txt: the effective table, written by the program
+	userPath string // navtexd_user.json: the operator's changes to the shipped table
+	ov       Overlay
+	tab      *stations.Table
+	id       *ident.Identifier
+	st       *store.Store
 
 	disabled map[string]bool // stations (by key) whose messages are not logged
 
@@ -123,42 +125,79 @@ type Catalog struct {
 	Position func() (lat, lon float64, ok bool)
 }
 
-// Open loads <dir>/navtexd_stations.txt. If it is missing, a YAND_STATIONS.txt of an earlier version becomes that file (the old
-// one is kept as YAND_STATIONS.old, and Notice says so), else the table shipped with the program is written there.
+// Open makes the station table from the table shipped with the program and the operator's changes to it (navtexd_user.json, see
+// overlay.go), and writes it to <dir>/navtexd_stations.txt. A station file that was not written with the overlay (the file of a
+// version that had no overlay, a YAND_STATIONS.txt of an earlier version, or a file changed from outside) is read as the operator's
+// version of the table: it is saved in the backups folder, and what it has that the shipped table lacks, or lacks that the shipped
+// table has, becomes the overlay.
 func Open(dir string, st *store.Store) (*Catalog, error) {
-	c := &Catalog{path: filepath.Join(dir, FileName), st: st}
-	if _, err := os.Stat(c.path); errors.Is(err, os.ErrNotExist) {
-		data := defaultTable()
-		legacy := filepath.Join(dir, LegacyFileName)
-		if old, err := os.ReadFile(legacy); err == nil {
-			data = old
-			c.Notice = "The station table " + LegacyFileName + " is now " + FileName + " (a copy of it); the old file was renamed " + LegacyOldName + "."
-		}
-		if err := os.WriteFile(c.path, data, 0o644); err != nil {
-			return nil, err
-		}
-		if c.Notice != "" {
-			keep := filepath.Join(dir, LegacyOldName)
-			for i := 2; ; i++ {
-				if _, err := os.Stat(keep); errors.Is(err, os.ErrNotExist) {
-					break
-				}
-				keep = filepath.Join(dir, fmt.Sprintf("YAND_STATIONS-%d.old", i))
-			}
-			if err := os.Rename(legacy, keep); err != nil {
-				c.Notice = "The station table " + LegacyFileName + " was copied to " + FileName + " (the old file could not be renamed: " + err.Error() + ")."
-			}
-		}
-	}
-	b, err := os.ReadFile(c.path)
+	c := &Catalog{path: filepath.Join(dir, FileName), userPath: filepath.Join(dir, UserFileName), st: st}
+	ov, haveOv, err := readOverlay(c.userPath)
 	if err != nil {
 		return nil, err
 	}
-	tab, err := stations.Parse(bytes.NewReader(b))
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", c.path, err)
+	fileBytes, ferr := os.ReadFile(c.path)
+	if ferr != nil && !errors.Is(ferr, os.ErrNotExist) {
+		return nil, ferr
 	}
-	c.set(tab)
+	var user []byte // the operator's version of the table, when the file is not the one this program wrote
+	legacy := filepath.Join(dir, LegacyFileName)
+	fromLegacy := false
+	switch {
+	case ferr == nil && haveOv && ov.FileSHA == sumOf(fileBytes):
+	case ferr == nil:
+		user = fileBytes
+	default:
+		if old, err := os.ReadFile(legacy); err == nil {
+			user, fromLegacy = old, true
+		}
+	}
+	if user != nil {
+		tab, err := stations.Parse(bytes.NewReader(user))
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", c.path, err)
+		}
+		if len(tab.Stations) == 0 {
+			return nil, fmt.Errorf("%s: the file contains no stations", c.path)
+		}
+		if ferr == nil {
+			if name, err := c.backupLocked(); err != nil {
+				return nil, fmt.Errorf("could not save the station file first: %w", err)
+			} else if name != "" {
+				c.Notice = "backups/" + name
+			}
+		}
+		first := !haveOv
+		ov = derive(tab, first)
+		switch {
+		case fromLegacy:
+			c.Notice = "The station table " + LegacyFileName + " is now " + FileName + " (a copy of it): the shipped table with your changes (" + UserFileName + ")."
+		case first:
+			c.Notice = fmt.Sprintf("The station table is now the table shipped with the program and your changes to it, which are kept in %s (%s). The file %s is written from them; the one you had is saved as %s.",
+				UserFileName, ov.summary(), FileName, c.Notice)
+		default:
+			c.Notice = fmt.Sprintf("The station file was changed from outside; your changes to the shipped table are now %s. The previous file is saved as %s.", ov.summary(), c.Notice)
+		}
+	}
+	c.ov = ov
+	c.set(build(ov))
+	if err := c.save(); err != nil {
+		return nil, err
+	}
+	if fromLegacy {
+		keep := filepath.Join(dir, LegacyOldName)
+		for i := 2; ; i++ {
+			if _, err := os.Stat(keep); errors.Is(err, os.ErrNotExist) {
+				break
+			}
+			keep = filepath.Join(dir, fmt.Sprintf("YAND_STATIONS-%d.old", i))
+		}
+		if err := os.Rename(legacy, keep); err != nil {
+			c.Notice += " (The old file " + LegacyFileName + " could not be renamed: " + err.Error() + ".)"
+		} else {
+			c.Notice += " The old file was renamed " + filepath.Base(keep) + "."
+		}
+	}
 	c.loadLogging()
 	if st != nil {
 		st.SetResolver(c.resolve)
@@ -170,6 +209,16 @@ func Open(dir string, st *store.Store) (*Catalog, error) {
 		}
 	}
 	return c, nil
+}
+
+// summary says in words what the overlay holds.
+func (o Overlay) summary() string {
+	var add, del int
+	for _, e := range o.Stations {
+		add += len(e.AddGID) + len(e.AddUID)
+		del += len(e.DelGID) + len(e.DelUID)
+	}
+	return fmt.Sprintf("%d keywords added, %d shipped keywords removed, %d stations of your own, %d shipped stations removed", add, del, len(o.Extra), len(o.Hidden))
 }
 
 // LoggingFile holds the selective-logging choice in the data directory.
@@ -501,15 +550,31 @@ func (c *Catalog) opPos() (lat, lon float64, ok bool) {
 	return c.Position()
 }
 
+// save writes the effective table (navtexd_stations.txt) and the overlay, which records the checksum of that file.
 func (c *Catalog) save() error {
 	var b bytes.Buffer
 	if err := c.tab.Write(&b); err != nil {
 		return err
 	}
-	if err := os.WriteFile(c.path+".tmp", b.Bytes(), 0o644); err != nil {
-		return err
+	c.ov.FileSHA = sumOf(b.Bytes())
+	if old, err := os.ReadFile(c.path); err != nil || !bytes.Equal(old, b.Bytes()) {
+		if err := os.WriteFile(c.path+".tmp", b.Bytes(), 0o644); err != nil {
+			return err
+		}
+		if err := os.Rename(c.path+".tmp", c.path); err != nil {
+			return err
+		}
 	}
-	return os.Rename(c.path+".tmp", c.path)
+	return writeOverlay(c.userPath, c.ov)
+}
+
+// adopt makes the given table the effective one: what differs from the shipped table becomes the overlay. A shipped station that
+// the table lacks is taken as removed by the operator.
+func (c *Catalog) adopt(t *stations.Table) error {
+	ov := derive(t, false)
+	c.ov = ov
+	c.set(build(ov))
+	return c.save()
 }
 
 // SetKeywords replaces one keyword list (kind "GID" or "UID") of a station. Blank entries and repeats are dropped; the
@@ -534,13 +599,45 @@ func (c *Catalog) SetKeywords(id int, kind string, list []string) error {
 	if id < 1 || id > len(c.tab.Stations) {
 		return fmt.Errorf("no station %d", id)
 	}
+	t := &stations.Table{Version: c.tab.Version, Stations: append([]stations.Station(nil), c.tab.Stations...)}
 	if kind == "GID" {
-		c.tab.Stations[id-1].GID = clean
+		t.Stations[id-1].GID = clean
 	} else {
-		c.tab.Stations[id-1].UID = clean
+		t.Stations[id-1].UID = clean
 	}
-	c.id = ident.New(c.tab)
-	return c.save()
+	return c.adopt(t)
+}
+
+// RevertKeywords gives a station its shipped keyword list again (kind "GID" or "UID"): the operator's additions to it go, and the
+// shipped keywords that were removed come back. A station of the operator's own has no shipped list: its list is left as it is.
+func (c *Catalog) RevertKeywords(id int, kind string) error {
+	kind = strings.ToUpper(kind)
+	if kind != "GID" && kind != "UID" {
+		return fmt.Errorf("keyword type %q: want GID or UID", kind)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if id < 1 || id > len(c.tab.Stations) {
+		return fmt.Errorf("no station %d", id)
+	}
+	gid, uid, ok := shippedLists(c.keys[id-1])
+	if !ok {
+		return errors.New("that station is not in the table shipped with the program")
+	}
+	t := &stations.Table{Version: c.tab.Version, Stations: append([]stations.Station(nil), c.tab.Stations...)}
+	if kind == "GID" {
+		t.Stations[id-1].GID = append([]string(nil), gid...)
+	} else {
+		t.Stations[id-1].UID = append([]string(nil), uid...)
+	}
+	return c.adopt(t)
+}
+
+// Origins says, for every station of the table (in its order), what of it is the operator's.
+func (c *Catalog) Origins() []Origin {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return origins(c.ov)
 }
 
 // Export returns the table in the YaND file format.
@@ -566,8 +663,7 @@ func (c *Catalog) Import(data []byte) (n int, backup string, err error) {
 	if backup, err = c.backupLocked(); err != nil {
 		return 0, "", fmt.Errorf("could not save the current table first: %w", err)
 	}
-	c.set(tab)
-	if err = c.save(); err != nil {
+	if err = c.adopt(tab); err != nil {
 		return len(tab.Stations), backup, err
 	}
 	_, err = c.resync() // (records follow their stations to their new places)
@@ -653,8 +749,7 @@ func (c *Catalog) ImportMerge(data []byte, replace bool) (MergeResult, error) {
 	if res.Backup, err = c.backupLocked(); err != nil {
 		return res, fmt.Errorf("could not save the current table first: %w", err)
 	}
-	c.set(&stations.Table{Version: c.tab.Version, Stations: merged})
-	if err = c.save(); err != nil {
+	if err = c.adopt(&stations.Table{Version: c.tab.Version, Stations: merged}); err != nil {
 		return res, err
 	}
 	_, err = c.resync()

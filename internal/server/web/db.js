@@ -2,7 +2,7 @@
 // Database tab: station list and keyword editor, station table import / export.
 (() => {
   const NX = window.NX, $ = NX.$, el = NX.el, api = NX.api;
-  const D = { stations: [], byId: new Map(), sel: null, kind: "GID", kw: [], orig: [], loaded: false };
+  const D = { stations: [], byId: new Map(), sel: null, kind: "GID", kw: [], orig: [], ship: [], own: [], extra: false, loaded: false };
   const admin = () => NX.state.role === "admin";
 
   NX.stationList = () => D.stations;
@@ -31,6 +31,7 @@
     { id: "brg", label: "Brg", w: 74, kind: "num", circ: true, loc: true, tip: "Bearing from your receiver, in degrees", val: (s) => (s.km ? s.brg || 0 : null), cell: (s) => td(s.km ? (s.brg || 0) + "\u00b0" : "") },
     { id: "gid", label: "GID", w: 66, kind: "num", tip: "How many geographical keywords the station has (0: none yet)", val: (s) => s.gid.length, cell: (s) => td(s.gid.length) },
     { id: "uid", label: "UID", w: 66, kind: "num", tip: "How many unique keywords the station has (0: none yet)", val: (s) => s.uid.length, cell: (s) => td(s.uid.length) },
+    { id: "edits", label: "Mine", w: 62, kind: "num", tip: "Changes of yours to the table shipped with the program: keywords added or removed, a changed row, a station of your own (0: as shipped)", val: (s) => s.edits || 0, cell: (s) => td(s.edits || "") },
     { id: "heard", label: "Heard", w: 78, kind: "num", tip: "How many messages of the log were identified as this station", val: (s) => s.heard || 0, cell: (s) => td(s.heard || 0) },
     { id: "last", label: "Last heard", w: 150, off: true, kind: "date", tip: "When the latest message identified as this station began (UTC)", val: (s) => s.last || null, cell: (s) => td(s.last ? NX.stamp(s.last) : ""), out: (s) => (s.last ? NX.stamp(s.last) : "") },
   ];
@@ -83,6 +84,10 @@
     D.kind = kind();
     $("kw-title").textContent = kwTitle();
     D.orig = (D.kind === "GID" ? s.gid : s.uid).slice();
+    // what the program ships and what is yours: the list as it is, without your additions, and with the ones you removed
+    const own = (D.kind === "GID" ? s.own_gid : s.own_uid) || [], del = (D.kind === "GID" ? s.del_gid : s.del_uid) || [];
+    D.extra = !!s.extra; D.own = D.extra ? D.orig.slice() : own.slice();
+    D.ship = D.extra ? [] : D.orig.filter((k) => !own.includes(k)).concat(del);
     D.kw = D.orig.slice();
     renderKeywords();
   }
@@ -93,7 +98,13 @@
     D.kw.forEach((k, i) => {
       const b = el("button", { text: "✕", title: "Delete this keyword", disabled: !admin() });
       b.onclick = () => { if (confirm(`Delete keyword "${k}"?`)) { D.kw.splice(i, 1); renderKeywords(); } };
-      ul.append(el("li", { class: D.orig.includes(k) ? "" : "new" }, el("span", { text: show(k) }), b));
+      const cls = !D.orig.includes(k) || (!D.ship.includes(k) && !D.own.includes(k)) ? "new" : D.ship.includes(k) ? "" : "own";
+      ul.append(el("li", { class: cls, title: cls === "own" ? "Yours: not in the table shipped with the program" : cls === "new" ? "Not saved yet" : "" }, el("span", { text: show(k) }), b));
+    });
+    D.ship.filter((k) => !D.kw.includes(k)).forEach((k) => { // shipped keywords that are not in the list (removed by you; saved or not)
+      const b = el("button", { text: "\u21ba", title: "Put this shipped keyword back", disabled: !admin() });
+      b.onclick = () => { D.kw.push(k); renderKeywords(); };
+      ul.append(el("li", { class: "gone", title: "Shipped with the program, removed from the list" }, el("span", { text: show(k) }), b));
     });
     const n = D.kw.join(",").length;
     const dirty = isDirty();
@@ -101,6 +112,8 @@
     $("kw-count").className = "small" + (dirty ? " badq" : "");
     $("kw-save").disabled = !admin() || !D.sel || !dirty;
     $("kw-revert").disabled = !dirty;
+    const st = D.byId.get(D.sel), mine = st ? ((D.kind === "GID" ? st.own_gid : st.own_uid) || []).length + ((D.kind === "GID" ? st.del_gid : st.del_uid) || []).length : 0;
+    $("kw-ship").disabled = !admin() || !D.sel || D.extra || (mine === 0 && !dirty);
     $("kw-add").disabled = !admin() || !D.sel;
     $("kw-new").disabled = !admin() || !D.sel;
   }
@@ -141,6 +154,12 @@
   };
   $("kw-new").onkeydown = (e) => { if (e.key === "Enter") $("kw-add").onclick(); };
   $("kw-revert").onclick = () => { D.kw = D.orig.slice(); renderKeywords(); };
+  $("kw-ship").onclick = async () => {
+    if (!(await leaveOk())) return;
+    if (!confirm(`Give the ${D.kind} keywords of ${kwTitle()} the list shipped with the program again?\n\nYour additions to it go, and the shipped keywords you removed come back.`)) return;
+    try { await api("PUT", `/api/stations/${D.sel}/keywords`, { type: D.kind, revert: true }); $("kw-msg").textContent = "The shipped list is back."; D.orig = D.kw = []; await load(); loadKeywords(); }
+    catch (e) { $("kw-msg").textContent = "Not changed: " + e.message; }
+  };
   async function saveKeywords() {
     try {
       await api("PUT", `/api/stations/${D.sel}/keywords`, { type: D.kind, keywords: D.kw });

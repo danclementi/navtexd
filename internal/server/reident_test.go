@@ -106,7 +106,9 @@ func TestIdentifyAgain(t *testing.T) {
 	}
 }
 
-// Rows of the station file may be moved, added or removed: the log follows its stations (they are told apart by key, not place).
+// The station file may be changed from outside (a spreadsheet, say): rows added, removed, moved. What it changes in the shipped table
+// becomes the operator's overlay; the order of the rows is the program's (shipped stations first, then the operator's own). The log
+// follows its stations (they are told apart by key, not place).
 func TestStationsFollowTheirKeys(t *testing.T) {
 	cfg := config.Default()
 	cfg.Input.File.Path = "/nonexistent.wav"
@@ -154,23 +156,23 @@ func TestStationsFollowTheirKeys(t *testing.T) {
 		g, _ := st.Get(a.ID)
 		return g.Station, g.StationID
 	}
-	// 1. the rows swapped around: the first and the last
+	// 1. the rows swapped around: the first and the last (the order is not kept: nothing changes)
 	sw := append([]string(nil), rows...)
 	sw[0], sw[len(sw)-1] = sw[len(sw)-1], sw[0]
 	write(sw)
-	if r := reload(); r["changed"] != true || r["added"].(float64) != 0 || r["removed"].(float64) != 0 {
+	if r := reload(); r["changed"] == true || r["added"].(float64) != 0 || r["removed"].(float64) != 0 {
 		t.Fatalf("swap: %v", r)
 	}
 	if name, id := station(); !strings.Contains(name, "Boston") || id != nmf() {
 		t.Fatalf("after the swap: %s %d (table says %d)", name, id, nmf())
 	}
-	// 2. a new station at the top: everything moves down by one, the record keeps its station
+	// 2. a new station (the operator's own, it goes after the shipped ones): the record keeps its station
 	newRow := "1#518#Z#TST#Test Station#TST#Testland#50.000#5.000#00:00#04:00#08:00#12:00#16:00#20:00#KEYWORD##"
 	write(append([]string{newRow}, sw...))
 	if r := reload(); r["added"].(float64) != 1 || r["removed"].(float64) != 0 {
 		t.Fatalf("add: %v", r)
 	}
-	if name, id := station(); !strings.Contains(name, "Boston") || id != nmf() || id == before {
+	if name, id := station(); !strings.Contains(name, "Boston") || id != nmf() || id != before {
 		t.Fatalf("after adding a station: %s %d (table says %d, was %d)", name, id, nmf(), before)
 	}
 	// a message that carries the new station's word gets it once the messages are identified again

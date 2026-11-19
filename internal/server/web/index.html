@@ -162,14 +162,15 @@
         <div class="row"><label class="check"><input type="radio" name="kwtype" value="GID" checked> Geographical (GID)</label>
           <label class="check"><input type="radio" name="kwtype" value="UID"> Unique (UID)</label></div>
         <ul id="kw-list" class="kwlist"></ul>
+        <div id="kw-legend" class="small">Plain: shipped with the program. <span class="lg own">Blue: yours</span>, added to the shipped list. <span class="lg gone">Struck through: shipped, and removed by you</span> (\u21ba puts it back).</div>
         <div class="row"><input id="kw-new" type="text" placeholder="new keyword"><label class="check"><input id="kw-word" type="checkbox"> whole word</label><button id="kw-add">Add</button></div>
-        <div class="row"><button id="kw-save">Confirm keyword list</button><button id="kw-revert">Revert</button><span id="kw-count" class="small"></span></div>
+        <div class="row"><button id="kw-save">Confirm keyword list</button><button id="kw-revert">Revert</button><button id="kw-ship" title="Give this list the keywords shipped with the program again: yours go, the ones you removed come back">Shipped list</button><span id="kw-count" class="small"></span></div>
         <div id="kw-msg" class="small"></div>
       </div>
     </div>
     <div class="cols">
       <fieldset class="col" id="tableio"><legend>Station table</legend>
-        <div class="row small">The station table (navtexd_stations.txt). Import can merge a file into it, or replace it entirely. Merging adds the stations that are missing, and either adds the file's keywords to the stations you have (yours stay) or lets the file's rows replace yours. Whatever it changes, the table is saved first in the backups folder of the data folder, with the date and time it was last saved in its name.</div>
+        <div class="row small">The station table is the table shipped with the program (an upgrade brings its corrections and new keywords) plus your changes to it: keywords you added or removed, stations you changed or added. Your changes are kept in navtexd_user.json; navtexd_stations.txt in the data folder is written from both, for other programs and spreadsheets, and a change made to that file from outside is taken up as your changes. Import can merge a file into the table, or replace it entirely. Merging adds the stations that are missing, and either adds the file's keywords to the stations you have (yours stay) or lets the file's rows replace yours. Whatever it changes, the table file is saved first in the backups folder of the data folder, with the date and time it was last saved in its name.</div>
         <div class="row"><button id="st-export">Export table</button><input id="st-file" type="file" accept=".txt,.TXT" hidden><button id="st-import">Import table…</button>
           <select id="st-mode" title="What importing a file does"><option value="merge">merge: add missing stations and new keywords</option><option value="merge-replace">merge: add missing stations, file replaces matching rows</option><option value="replace">replace the whole table</option></select></div>
         <div id="st-msg" class="small"></div>

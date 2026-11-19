@@ -939,6 +939,15 @@ type stationMsg struct {
 	Brg      float64   `json:"brg,omitempty"`  // bearing from the receiver
 	Heard    int       `json:"heard"`          // records of this station in the log
 	Last     int64     `json:"last,omitempty"` // when the latest began (ms since 1970)
+	// what is the operator's (the rest is shipped with the program): keywords added, shipped keywords removed, a station of one's own,
+	// a changed row; Edits counts them
+	OwnGID  []string `json:"own_gid,omitempty"`
+	OwnUID  []string `json:"own_uid,omitempty"`
+	DelGID  []string `json:"del_gid,omitempty"`
+	DelUID  []string `json:"del_uid,omitempty"`
+	Extra   bool     `json:"extra,omitempty"`
+	RowEdit bool     `json:"row_edit,omitempty"`
+	Edits   int      `json:"edits"`
 }
 
 func nonNil(v []string) []string {
@@ -957,8 +966,13 @@ func (s *Server) stationList(w http.ResponseWriter, r *http.Request, id Identity
 		lat, lon = &op.LatDeg, &op.LonDeg
 	}
 	heard := s.st.HeardByStation()
+	org := s.cat.Origins()
 	for i, x := range list {
 		out[i] = stationMsgFor(i+1, x, lat, lon)
+		if len(org) == len(list) {
+			o := org[i]
+			out[i].OwnGID, out[i].OwnUID, out[i].DelGID, out[i].DelUID, out[i].Extra, out[i].RowEdit, out[i].Edits = o.OwnGID, o.OwnUID, o.DelGID, o.DelUID, o.Extra, o.Row, o.Edits()
+		}
 		if h, ok := heard[i+1]; ok {
 			out[i].Heard = h.N
 			if !h.Last.IsZero() {
@@ -980,12 +994,17 @@ func (s *Server) stationKeywords(w http.ResponseWriter, r *http.Request, id Iden
 	var body struct {
 		Type     string   `json:"type"`
 		Keywords []string `json:"keywords"`
+		Revert   bool     `json:"revert"` // the shipped list again
 	}
 	if err := readBody(r, &body); err != nil {
 		fail(w, 400, err)
 		return
 	}
-	if err := s.cat.SetKeywords(n, body.Type, body.Keywords); err != nil {
+	set := func() error { return s.cat.SetKeywords(n, body.Type, body.Keywords) }
+	if body.Revert {
+		set = func() error { return s.cat.RevertKeywords(n, body.Type) }
+	}
+	if err := set(); err != nil {
 		fail(w, 400, err)
 		return
 	}

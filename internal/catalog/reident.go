@@ -31,14 +31,26 @@ func (c *Catalog) ReloadFromDisk() (Reloaded, error) {
 	if err != nil {
 		return out, err
 	}
-	tab, err := stations.Parse(bytes.NewReader(b))
+	file, err := stations.Parse(bytes.NewReader(b))
 	if err != nil {
 		return out, fmt.Errorf("%s: %w", c.path, err)
 	}
-	if len(tab.Stations) == 0 {
+	if len(file.Stations) == 0 {
 		return out, errors.New("the station file contains no stations")
 	}
 	c.mu.Lock()
+	if c.ov.FileSHA == sumOf(b) { // the file this program wrote: nothing was changed from outside
+		out.Stations = len(c.tab.Stations)
+		c.mu.Unlock()
+		return out, nil
+	}
+	if _, err := c.backupLocked(); err != nil {
+		c.mu.Unlock()
+		return out, fmt.Errorf("could not save the station file first: %w", err)
+	}
+	// what the file changes in the shipped table becomes the overlay; the effective table follows
+	ov := derive(file, false)
+	tab := build(ov)
 	old := map[string]stations.Station{}
 	for i, s := range c.tab.Stations {
 		old[c.keys[i]] = s
@@ -66,13 +78,20 @@ func (c *Catalog) ReloadFromDisk() (Reloaded, error) {
 			same = false
 		}
 	}
-	if same {
+	if same { // (the file is written again, so that it is the one the overlay knows)
+		c.ov = ov
+		err = c.save()
 		c.mu.Unlock()
-		return out, nil
+		return out, err
 	}
 	out.Changed = true
+	c.ov = ov
 	c.set(tab)
+	err = c.save()
 	c.mu.Unlock()
+	if err != nil {
+		return out, err
+	}
 	if out.Moved, err = c.resync(); err != nil {
 		return out, err
 	}

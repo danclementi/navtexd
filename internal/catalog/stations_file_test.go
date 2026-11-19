@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -67,9 +68,13 @@ func TestOpenMovesTheOldFileName(t *testing.T) {
 	if c.Notice == "" {
 		t.Error("no notice")
 	}
+	// the table is the shipped one with the old file's differences as the operator's changes
 	got, _ := os.ReadFile(filepath.Join(dir, FileName))
-	if !bytes.Equal(got, mine) {
-		t.Error("the new file is not a copy of the old one")
+	if !strings.Contains(string(got), "My Malin Head") || len(c.tab.Stations) < len(strings.Split(string(mine), "\n"))-2 {
+		t.Error("the new file does not have the old file's changes")
+	}
+	if ov, ok, _ := readOverlay(filepath.Join(dir, UserFileName)); !ok || len(ov.Stations) != 1 || ov.Stations[0].Row == "" {
+		t.Errorf("overlay: %d stations, hidden %d extra %d ok=%v; first: %+v", len(ov.Stations), len(ov.Hidden), len(ov.Extra), ok, ov.Stations)
 	}
 	if _, err := os.Stat(filepath.Join(dir, LegacyFileName)); err == nil {
 		t.Error("the old file is still there")
@@ -93,8 +98,13 @@ func TestOpenSeedsFromTheShippedTable(t *testing.T) {
 		t.Fatalf("%v %q", err, c.Notice)
 	}
 	b, _ := os.ReadFile(filepath.Join(dir, FileName))
-	if !bytes.Equal(b, defaultTable()) {
+	got, err := stations.Parse(bytes.NewReader(b))
+	ship, _ := shipped()
+	if err != nil || !reflect.DeepEqual(got.Stations, ship.Stations) {
 		t.Error("the file is not the shipped table")
+	}
+	if ov, ok, _ := readOverlay(filepath.Join(dir, UserFileName)); !ok || len(ov.Stations)+len(ov.Extra)+len(ov.Hidden) != 0 {
+		t.Errorf("a new install has changes of the operator: %+v", ov)
 	}
 }
 
@@ -160,7 +170,7 @@ func TestImportMerge(t *testing.T) {
 	}
 }
 
-// the addendum file of a release gives a table made earlier its stations when it is merged in
+// a table made by an earlier version gets the stations of the addendum without any import
 func TestMergeTheAddendumIntoAnOldTable(t *testing.T) {
 	dir := t.TempDir()
 	st, _ := store.Open(dir)
@@ -172,14 +182,11 @@ func TestMergeTheAddendumIntoAnOldTable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	n := len(c.tab.Stations)
-	res, err := c.ImportMerge(addendumTable, false)
-	if err != nil || res.Added != 26 || len(c.tab.Stations) != n+26 {
-		t.Errorf("merge of the addendum: %+v %v (%d stations, were %d)", res, err, len(c.tab.Stations), n)
-	}
-	// the addendum also carries keywords for stations that the table already has: they are added to the lists, nothing is lost
-	if res.Keywords == 0 {
-		t.Errorf("no keywords were added: %+v", res)
+	// a table of an earlier version, with none of the addendum's stations, is the shipped table with the operator's changes: the
+	// stations of the addendum are there without any import
+	ship, _ := shipped()
+	if len(c.tab.Stations) != len(ship.Stations) {
+		t.Errorf("%d stations, the shipped table has %d", len(c.tab.Stations), len(ship.Stations))
 	}
 	found := false
 	for _, s := range c.tab.Stations {
@@ -193,7 +200,7 @@ func TestMergeTheAddendumIntoAnOldTable(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Error("NEWHAVEN was not added to Niton on 518 kHz")
+		t.Error("NEWHAVEN is not at Niton on 518 kHz")
 	}
 }
 
