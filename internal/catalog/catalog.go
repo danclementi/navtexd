@@ -11,7 +11,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -108,7 +107,9 @@ type Catalog struct {
 	path     string // navtexd_stations.txt: the effective table, written by the program
 	userPath string // navtexd_user.json: the operator's changes to the shipped table
 	ov       Overlay
-	tab      *stations.Table
+	tab      *stations.Table // every shipped station (a deleted one too), then the operator's own
+	dead     []bool          // shipped stations that the operator deleted: in the list, not used
+	own      []bool          // the operator's own stations
 	id       *ident.Identifier
 	st       *store.Store
 
@@ -168,7 +169,13 @@ func Open(dir string, st *store.Store) (*Catalog, error) {
 			}
 		}
 		first := !haveOv
-		ov = derive(tab, first)
+		var notes []string
+		ov, notes = derive(tab, first, ov)
+		defer func() {
+			if len(notes) > 0 {
+				c.Notice += " Left out: " + strings.Join(notes, "; ") + "."
+			}
+		}()
 		switch {
 		case fromLegacy:
 			c.Notice = "The station table " + LegacyFileName + " is now " + FileName + " (a copy of it): the shipped table with your changes (" + UserFileName + ")."
@@ -179,10 +186,14 @@ func Open(dir string, st *store.Store) (*Catalog, error) {
 			c.Notice = fmt.Sprintf("The station file was changed from outside; your changes to the shipped table are now %s. The previous file is saved as %s.", ov.summary(), c.Notice)
 		}
 	}
+	ov, rekeyed := fixKeys(ov)
 	c.ov = ov
 	c.set(build(ov))
 	if err := c.save(); err != nil {
 		return nil, err
+	}
+	if len(rekeyed) > 0 {
+		c.Notice += " After the release: " + strings.Join(rekeyed, "; ") + "."
 	}
 	if fromLegacy {
 		keep := filepath.Join(dir, LegacyOldName)
@@ -243,6 +254,14 @@ func (c *Catalog) loadLogging() {
 	}
 }
 
+// logKey names a station in the selective-logging file: the key of a shipped station, "U#" and that for the operator's own.
+func (c *Catalog) logKey(i int) string {
+	if c.own[i] {
+		return "U#" + key(c.tab.Stations[i])
+	}
+	return key(c.tab.Stations[i])
+}
+
 // Logged reports whether messages of the station (ID, 0 = unidentified) are to be stored.
 func (c *Catalog) Logged(id int) bool {
 	c.mu.RLock()
@@ -250,7 +269,7 @@ func (c *Catalog) Logged(id int) bool {
 	if id < 1 || id > len(c.tab.Stations) {
 		return true
 	}
-	return !c.disabled[key(c.tab.Stations[id-1])]
+	return !c.disabled[c.logKey(id-1)]
 }
 
 // Disabled returns the IDs of the stations that are not logged.
@@ -258,8 +277,8 @@ func (c *Catalog) Disabled() []int {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	out := []int{}
-	for i, s := range c.tab.Stations {
-		if c.disabled[key(s)] {
+	for i := range c.tab.Stations {
+		if c.disabled[c.logKey(i)] && !c.dead[i] {
 			out = append(out, i+1)
 		}
 	}
@@ -272,8 +291,8 @@ func (c *Catalog) SetDisabled(ids []int) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	inTable := map[string]bool{}
-	for _, s := range c.tab.Stations {
-		inTable[key(s)] = true
+	for i := range c.tab.Stations {
+		inTable[c.logKey(i)] = true
 	}
 	next := map[string]bool{}
 	for k := range c.disabled {
@@ -283,7 +302,7 @@ func (c *Catalog) SetDisabled(ids []int) error {
 	}
 	for _, id := range ids {
 		if id >= 1 && id <= len(c.tab.Stations) {
-			next[key(c.tab.Stations[id-1])] = true
+			next[c.logKey(id-1)] = true
 		}
 	}
 	keys := make([]string, 0, len(next))
@@ -299,10 +318,10 @@ func (c *Catalog) SetDisabled(ids []int) error {
 	return nil
 }
 
-func (c *Catalog) set(t *stations.Table) {
-	c.tab = t
-	c.id = ident.New(t)
-	c.keys, c.warns = StationKeys(t.Stations)
+func (c *Catalog) set(b built) {
+	c.tab, c.dead, c.own, c.keys = b.tab, b.dead, b.own, b.keys
+	c.id = ident.NewActive(b.tab, b.dead)
+	_, c.warns = StationKeys(b.tab.Stations)
 	idx := make(map[string]int, len(c.keys))
 	for i, k := range c.keys {
 		idx[k] = i + 1
@@ -474,7 +493,7 @@ func (c *Catalog) Enrich(r *store.Record) {
 	}
 	if r.Kind == "fragment" {
 		// only the operator can give a fragment a station: a "forced ID"
-		if r.Picked >= 1 && r.Picked <= len(c.tab.Stations) && c.tab.Stations[r.Picked-1].Hz() == r.Channel {
+		if r.Picked >= 1 && r.Picked <= len(c.tab.Stations) && !c.dead[r.Picked-1] && c.tab.Stations[r.Picked-1].Hz() == r.Channel {
 			place(c.tab.Stations[r.Picked-1], r.Picked-1, "forced ID", 0)
 		}
 		return
@@ -495,7 +514,7 @@ func (c *Catalog) Enrich(r *store.Record) {
 	if r.Picked < 0 {
 		return // kept unidentified by the operator (the candidates stay, for Why?)
 	}
-	if r.Picked >= 1 && r.Picked <= len(c.tab.Stations) && c.tab.Stations[r.Picked-1].Hz() == r.Channel {
+	if r.Picked >= 1 && r.Picked <= len(c.tab.Stations) && !c.dead[r.Picked-1] && c.tab.Stations[r.Picked-1].Hz() == r.Channel {
 		// the operator chose this station among the candidates (needed when several share frequency, B1 and NAVAREA)
 		res.Index, res.Method, res.Score = r.Picked-1, "forced ID", 0 // not among the candidates: a forced ID
 		for _, cd := range res.Candidates {
@@ -517,7 +536,9 @@ func (c *Catalog) Placer() func(r *store.Record) {
 	c.mu.RLock()
 	byLabel := map[string]int{}
 	for i, s := range c.tab.Stations {
-		byLabel[fmt.Sprintf("%d|%s", s.Hz(), Label(s))] = i
+		if !c.dead[i] {
+			byLabel[fmt.Sprintf("%d|%s", s.Hz(), Label(s))] = i
+		}
 	}
 	list := c.tab.Stations
 	keys := append([]string(nil), c.keys...)
@@ -553,7 +574,7 @@ func (c *Catalog) opPos() (lat, lon float64, ok bool) {
 // save writes the effective table (navtexd_stations.txt) and the overlay, which records the checksum of that file.
 func (c *Catalog) save() error {
 	var b bytes.Buffer
-	if err := c.tab.Write(&b); err != nil {
+	if err := c.activeTable().Write(&b); err != nil {
 		return err
 	}
 	c.ov.FileSHA = sumOf(b.Bytes())
@@ -568,13 +589,12 @@ func (c *Catalog) save() error {
 	return writeOverlay(c.userPath, c.ov)
 }
 
-// adopt makes the given table the effective one: what differs from the shipped table becomes the overlay. A shipped station that
-// the table lacks is taken as removed by the operator.
-func (c *Catalog) adopt(t *stations.Table) error {
-	ov := derive(t, false)
-	c.ov = ov
-	c.set(build(ov))
-	return c.save()
+// adopt makes the given table (the stations in use, as a station file has them) the effective one: what differs from the shipped
+// table becomes the overlay. A shipped station that the table lacks is taken as deleted by the operator. The second result lists
+// what was left out (fields of shipped stations, stations in conflict).
+func (c *Catalog) adopt(t *stations.Table) ([]string, error) {
+	ov, notes := derive(t, false, c.ov)
+	return notes, c.commit(ov)
 }
 
 // SetKeywords replaces one keyword list (kind "GID" or "UID") of a station. Blank entries and repeats are dropped; the
@@ -599,13 +619,7 @@ func (c *Catalog) SetKeywords(id int, kind string, list []string) error {
 	if id < 1 || id > len(c.tab.Stations) {
 		return fmt.Errorf("no station %d", id)
 	}
-	t := &stations.Table{Version: c.tab.Version, Stations: append([]stations.Station(nil), c.tab.Stations...)}
-	if kind == "GID" {
-		t.Stations[id-1].GID = clean
-	} else {
-		t.Stations[id-1].UID = clean
-	}
-	return c.adopt(t)
+	return c.setKeywordsLocked(id, kind, clean)
 }
 
 // RevertKeywords gives a station its shipped keyword list again (kind "GID" or "UID"): the operator's additions to it go, and the
@@ -620,17 +634,17 @@ func (c *Catalog) RevertKeywords(id int, kind string) error {
 	if id < 1 || id > len(c.tab.Stations) {
 		return fmt.Errorf("no station %d", id)
 	}
+	if c.own[id-1] || c.dead[id-1] {
+		return errors.New("only a shipped station that is in use has a shipped list to go back to")
+	}
 	gid, uid, ok := shippedLists(c.keys[id-1])
 	if !ok {
 		return errors.New("that station is not in the table shipped with the program")
 	}
-	t := &stations.Table{Version: c.tab.Version, Stations: append([]stations.Station(nil), c.tab.Stations...)}
 	if kind == "GID" {
-		t.Stations[id-1].GID = append([]string(nil), gid...)
-	} else {
-		t.Stations[id-1].UID = append([]string(nil), uid...)
+		return c.setKeywordsLocked(id, kind, append([]string(nil), gid...))
 	}
-	return c.adopt(t)
+	return c.setKeywordsLocked(id, kind, append([]string(nil), uid...))
 }
 
 // Origins says, for every station of the table (in its order), what of it is the operator's.
@@ -645,45 +659,49 @@ func (c *Catalog) Export() []byte {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	var b bytes.Buffer
-	c.tab.Write(&b)
+	c.activeTable().Write(&b)
 	return b.Bytes()
 }
 
-// Import replaces the table with one read from data in the YaND file format and returns the number of stations.
-func (c *Catalog) Import(data []byte) (n int, backup string, err error) {
+// Import makes the table equal to one read from data in the YaND file format: shipped stations that the file lacks are deleted (they
+// stay in the list, struck through), a shipped station's keyword lists are the file's, and stations that the table does not ship
+// are the operator's own (the ones in conflict with a station in use are skipped). It returns the number of stations in use, the name
+// of the backup of the table as it was, and what was left out.
+func (c *Catalog) Import(data []byte) (n int, backup string, notes []string, err error) {
 	tab, err := stations.Parse(bytes.NewReader(data))
 	if err != nil {
-		return 0, "", err
+		return 0, "", nil, err
 	}
 	if len(tab.Stations) == 0 {
-		return 0, "", errors.New("the file contains no stations")
+		return 0, "", nil, errors.New("the file contains no stations")
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if backup, err = c.backupLocked(); err != nil {
-		return 0, "", fmt.Errorf("could not save the current table first: %w", err)
+		return 0, "", nil, fmt.Errorf("could not save the current table first: %w", err)
 	}
-	if err = c.adopt(tab); err != nil {
-		return len(tab.Stations), backup, err
+	if notes, err = c.adopt(tab); err != nil {
+		return 0, backup, notes, err
 	}
 	_, err = c.resync() // (records follow their stations to their new places)
-	return len(tab.Stations), backup, err
+	return len(c.activeTable().Stations), backup, notes, err
 }
 
 // MergeResult says what a merge import did.
 type MergeResult struct {
-	Stations int    // stations in the table now
-	Added    int    // stations of the file that the table lacked
-	Changed  int    // stations of the table that the file changed (new keywords, or replaced)
-	Keywords int    // keywords added to existing stations
-	Backup   string // the table as it was, saved first (empty when nothing changed)
+	Stations int      // stations in use now
+	Added    int      // stations of the file that the table lacked (now the operator's own)
+	Changed  int      // stations of the table that the file changed (new keywords)
+	Keywords int      // keywords added to existing stations
+	Backup   string   // the table as it was, saved first (empty when nothing changes)
+	Notes    []string // what was left out
 }
 
-// ImportMerge merges the stations of a file into the table. A station that the table lacks (same frequency, NAVAREA, ID letter and
-// call sign) is added at the end, so that the places of the others stay. A station that the table has keeps its fields; with
-// replace false the keywords of the file's row that it lacks are added to its lists (its own stay, in their order), with replace
-// true the row of the file takes its place. The table is saved first (backups folder) when anything changes.
-func (c *Catalog) ImportMerge(data []byte, replace bool) (MergeResult, error) {
+// ImportMerge merges the stations of a file into the table; it never deletes anything. A station that the table has in use gets
+// the keywords of the file's row that it lacks (its own stay, in their order); the file's other fields are ignored. A station that
+// the table lacks (same frequency, NAVAREA, ID letter and call sign) becomes one of the operator's own, unless it is in conflict with
+// a station in use; a deleted shipped station stays deleted. The table is saved first (backups folder) when anything changes.
+func (c *Catalog) ImportMerge(data []byte) (MergeResult, error) {
 	var res MergeResult
 	imp, err := stations.Parse(bytes.NewReader(data))
 	if err != nil {
@@ -694,13 +712,21 @@ func (c *Catalog) ImportMerge(data []byte, replace bool) (MergeResult, error) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	act := c.activeTable()
 	have := map[string]int{}
-	for i, k := range c.keys {
+	ak, _ := StationKeys(act.Stations)
+	for i, k := range ak {
 		have[k] = i
 	}
+	deadKey := map[string]bool{}
+	for i, d := range c.dead {
+		if d {
+			deadKey[c.keys[i]] = true
+		}
+	}
 	impKeys, _ := StationKeys(imp.Stations)
-	merged := make([]stations.Station, len(c.tab.Stations))
-	copy(merged, c.tab.Stations)
+	merged := make([]stations.Station, len(act.Stations))
+	copy(merged, act.Stations)
 	union := func(mine, theirs []string) ([]string, int) {
 		out := append([]string(nil), mine...)
 		added := 0
@@ -723,15 +749,11 @@ func (c *Catalog) ImportMerge(data []byte, replace bool) (MergeResult, error) {
 	for n, st := range imp.Stations {
 		i, ok := have[impKeys[n]]
 		switch {
+		case !ok && deadKey[impKeys[n]]:
 		case !ok:
 			have[impKeys[n]] = len(merged)
 			merged = append(merged, st)
 			res.Added++
-		case replace:
-			if !reflect.DeepEqual(merged[i], st) {
-				merged[i] = st
-				res.Changed++
-			}
 		default:
 			g, ga := union(merged[i].GID, st.GID)
 			u, ua := union(merged[i].UID, st.UID)
@@ -749,9 +771,13 @@ func (c *Catalog) ImportMerge(data []byte, replace bool) (MergeResult, error) {
 	if res.Backup, err = c.backupLocked(); err != nil {
 		return res, fmt.Errorf("could not save the current table first: %w", err)
 	}
-	if err = c.adopt(&stations.Table{Version: c.tab.Version, Stations: merged}); err != nil {
+	ov, notes := derive(&stations.Table{Version: act.Version, Stations: merged}, false, c.ov)
+	res.Notes = notes
+	res.Added -= len(notes)
+	if err = c.commit(ov); err != nil {
 		return res, err
 	}
+	res.Stations = len(c.activeTable().Stations)
 	_, err = c.resync()
 	return res, err
 }

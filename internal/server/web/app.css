@@ -101,6 +101,10 @@ td input.cell { width: 4em; font: inherit; }
 .kwlist li.own { background: color-mix(in srgb, var(--accent) 14%, transparent); border-left: 3px solid var(--accent); } /* yours: not in the table shipped with the program */
 .kwlist li.gone { color: var(--dim); text-decoration: line-through; border-left: 3px solid var(--bad); } /* shipped, and removed by you */
 .kwlist li.gone button { text-decoration: none; }
+#st-table tbody tr.own td { color: var(--accent); }
+#st-table tbody tr.dead td { color: var(--accent); text-decoration: line-through; opacity: .75; }
+#st-table tbody tr.mod td { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+#st-table tbody td.mine { color: var(--accent); text-decoration: none; }
 #kw-legend .lg { padding: 0 4px; }
 #kw-legend .lg.own { background: color-mix(in srgb, var(--accent) 14%, transparent); border-left: 3px solid var(--accent); }
 #kw-legend .lg.gone { text-decoration: line-through; border-left: 3px solid var(--bad); }

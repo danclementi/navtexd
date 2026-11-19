@@ -887,21 +887,8 @@ func TestStationEditAddRemoveAPI(t *testing.T) {
 	if code, _ := do(t, tunnel, "PUT", "/api/stations/1", b, nil); code != 403 {
 		t.Errorf("viewer edit: %d", code)
 	}
-	if code, m := do(t, admin, "PUT", "/api/stations/1", b, nil); code != 200 {
-		t.Fatalf("edit: %d %v", code, m)
-	}
-	if st, _ := s.cat.Station(1); st.Times[0] != "00:05" {
-		t.Errorf("times: %v", st.Times)
-	}
-	b["times"] = []string{"99:00", "", "", "", "", ""}
 	if code, _ := do(t, admin, "PUT", "/api/stations/1", b, nil); code != 400 {
-		t.Errorf("bad time: %d", code)
-	}
-	if code, _ := do(t, admin, "PUT", "/api/stations/1", map[string]any{"revert": true}, nil); code != 200 {
-		t.Errorf("revert: %d", code)
-	}
-	if st, _ := s.cat.Station(1); st.Times != first.Times {
-		t.Errorf("as shipped: %v", st.Times)
+		t.Errorf("the fields of a shipped station are changed: %d", code)
 	}
 	add := map[string]any{"area": 4, "freq": 518, "b1": "Z", "call": "TST", "name": "Test", "cc": "USA", "country": "United States", "lat": 36.8, "lon": -76.3, "times": []string{"01:23", "", "", "", "", ""}}
 	code, m := do(t, admin, "POST", "/api/stations", add, nil)
@@ -919,12 +906,15 @@ func TestStationEditAddRemoveAPI(t *testing.T) {
 		t.Fatalf("remove shipped: %d", code)
 	}
 	code, m = do(t, admin, "GET", "/api/stations", nil, nil)
-	h := m["hidden"].([]any)
-	if code != 200 || len(h) != 1 {
-		t.Fatalf("hidden: %d %v", code, m["hidden"])
+	sts := m["stations"].([]any)
+	if code != 200 || len(sts) != len(list) || sts[0].(map[string]any)["deleted"] != true || m["changes"].(map[string]any)["deleted"].(float64) != 1 {
+		t.Fatalf("deleted: %d %v", code, m["changes"])
 	}
-	if code, _ = do(t, admin, "POST", "/api/stations/restore", map[string]any{"key": h[0].(map[string]any)["key"]}, nil); code != 200 {
-		t.Errorf("put back: %d", code)
+	if code, _ = do(t, admin, "POST", "/api/stations/1/restore", nil, nil); code != 200 {
+		t.Errorf("restore: %d", code)
+	}
+	if code, _ = do(t, admin, "POST", "/api/stations/revert", nil, nil); code != 200 {
+		t.Errorf("revert all: %d", code)
 	}
 	if st, _ := s.cat.Station(len(list)); st.Callsign == "" {
 		t.Error("station list")

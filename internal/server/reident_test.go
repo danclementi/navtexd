@@ -189,10 +189,11 @@ func TestStationsFollowTheirKeys(t *testing.T) {
 	}
 	write(cut)
 	r := reload()
-	if r["removed"].(float64) < 1 || r["unresolved"].(float64) < 1 {
+	if r["removed"].(float64) < 1 {
 		t.Fatalf("remove: %v", r)
 	}
-	if name, id := station(); id != 0 || !strings.Contains(name, "Boston") {
+	// (the station stays in the list, deleted, so the records still name it)
+	if name, id := station(); id != before || !strings.Contains(name, "Boston") {
 		t.Fatalf("after removing the station: %s %d", name, id)
 	}
 	// 4. and back: the records find their station again

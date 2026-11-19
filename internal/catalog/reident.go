@@ -49,13 +49,15 @@ func (c *Catalog) ReloadFromDisk() (Reloaded, error) {
 		return out, fmt.Errorf("could not save the station file first: %w", err)
 	}
 	// what the file changes in the shipped table becomes the overlay; the effective table follows
-	ov := derive(file, false)
-	tab := build(ov)
+	ov, _ := derive(file, false, c.ov)
+	ov, _ = fixKeys(ov)
+	bt := build(ov)
+	tab := bt.tab
 	old := map[string]stations.Station{}
 	for i, s := range c.tab.Stations {
 		old[c.keys[i]] = s
 	}
-	keys, warns := StationKeys(tab.Stations)
+	keys, warns := bt.keys, func() []string { _, w := StationKeys(tab.Stations); return w }()
 	out.Stations, out.Warnings = len(tab.Stations), warns
 	same := len(keys) == len(c.keys)
 	seen := map[string]bool{}
@@ -86,7 +88,7 @@ func (c *Catalog) ReloadFromDisk() (Reloaded, error) {
 	}
 	out.Changed = true
 	c.ov = ov
-	c.set(tab)
+	c.set(bt)
 	err = c.save()
 	c.mu.Unlock()
 	if err != nil {

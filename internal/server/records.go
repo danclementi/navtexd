@@ -49,7 +49,9 @@ func (s *Server) recordRoutes(mux *http.ServeMux, tunnel bool) {
 	mux.HandleFunc("PUT /api/stations/{id}", s.admin(tunnel, s.stationEdit))
 	mux.HandleFunc("DELETE /api/stations/{id}", s.admin(tunnel, s.stationRemove))
 	mux.HandleFunc("POST /api/stations", s.admin(tunnel, s.stationAdd))
-	mux.HandleFunc("POST /api/stations/restore", s.admin(tunnel, s.stationRestore))
+	mux.HandleFunc("POST /api/stations/{id}/restore", s.admin(tunnel, s.stationRestore))
+	mux.HandleFunc("GET /api/stations/{id}/restore", s.viewer(tunnel, s.stationRestorePlan))
+	mux.HandleFunc("POST /api/stations/revert", s.admin(tunnel, s.stationRevertAll))
 	mux.HandleFunc("POST /api/stations/import", s.admin(tunnel, s.stationImport))
 	mux.HandleFunc("POST /api/report/list", s.viewer(tunnel, s.reportList))
 	mux.HandleFunc("POST /api/report/text", s.viewer(tunnel, s.reportText))
@@ -950,8 +952,8 @@ type stationMsg struct {
 	OwnUID  []string `json:"own_uid,omitempty"`
 	DelGID  []string `json:"del_gid,omitempty"`
 	DelUID  []string `json:"del_uid,omitempty"`
-	Extra   bool     `json:"extra,omitempty"`
-	RowEdit bool     `json:"row_edit,omitempty"`
+	Own     bool     `json:"own,omitempty"`     // a station of the operator's own
+	Deleted bool     `json:"deleted,omitempty"` // a shipped station that the operator deleted (in the list, not used)
 	Edits   int      `json:"edits"`
 }
 
@@ -976,7 +978,7 @@ func (s *Server) stationList(w http.ResponseWriter, r *http.Request, id Identity
 		out[i] = stationMsgFor(i+1, x, lat, lon)
 		if len(org) == len(list) {
 			o := org[i]
-			out[i].OwnGID, out[i].OwnUID, out[i].DelGID, out[i].DelUID, out[i].Extra, out[i].RowEdit, out[i].Edits = o.OwnGID, o.OwnUID, o.DelGID, o.DelUID, o.Extra, o.Row, o.Edits()
+			out[i].OwnGID, out[i].OwnUID, out[i].DelGID, out[i].DelUID, out[i].Own, out[i].Deleted, out[i].Edits = o.OwnGID, o.OwnUID, o.DelGID, o.DelUID, o.Own, o.Deleted, o.Edits()
 		}
 		if h, ok := heard[i+1]; ok {
 			out[i].Heard = h.N
@@ -985,11 +987,8 @@ func (s *Server) stationList(w http.ResponseWriter, r *http.Request, id Identity
 			}
 		}
 	}
-	hidden := s.cat.Hidden()
-	if hidden == nil {
-		hidden = []catalog.HiddenStation{}
-	}
-	writeJSON(w, 200, map[string]any{"version": ver, "stations": out, "hidden": hidden})
+	own, deleted, edited := s.cat.Changes()
+	writeJSON(w, 200, map[string]any{"version": ver, "stations": out, "changes": map[string]int{"own": own, "deleted": deleted, "edited": edited}})
 }
 
 // stationBody is what the editor sends for a station: the fields that may change, and for a new station the ones that make its key.
@@ -1062,19 +1061,33 @@ func (s *Server) stationRemove(w http.ResponseWriter, r *http.Request, id Identi
 	s.stationChanged(w, fmt.Sprintf("station %s %s removed", st.Callsign, st.Name), 0)
 }
 
+// stationRestore puts a deleted shipped station back (GET with ?plan=1 names the own stations that this takes out of use);
+// stationRevertAll puts the whole table back as shipped.
 func (s *Server) stationRestore(w http.ResponseWriter, r *http.Request, id Identity) {
-	var b struct {
-		Key string `json:"key"`
-	}
-	if err := readBody(r, &b); err != nil {
+	n, _ := strconv.Atoi(r.PathValue("id"))
+	if err := s.cat.RestoreStation(n); err != nil {
 		fail(w, 400, err)
 		return
 	}
-	if err := s.cat.RestoreStation(b.Key); err != nil {
+	st, _ := s.cat.Station(n)
+	s.stationChanged(w, fmt.Sprintf("station %s %s restored", st.Callsign, st.Name), n)
+}
+
+func (s *Server) stationRestorePlan(w http.ResponseWriter, r *http.Request, id Identity) {
+	n, _ := strconv.Atoi(r.PathValue("id"))
+	writeJSON(w, 200, map[string]any{"own": nonNil(s.cat.RestorePlan(n))})
+}
+
+func (s *Server) stationRevertAll(w http.ResponseWriter, r *http.Request, id Identity) {
+	own, deleted, edited := s.cat.Changes()
+	backup, err := s.cat.RevertAll()
+	if err != nil {
 		fail(w, 400, err)
 		return
 	}
-	s.stationChanged(w, "station "+b.Key+" put back", 0)
+	s.run.Log("info", fmt.Sprintf("station table back as shipped: %d own stations removed, %d deleted ones restored, %d with other keywords reverted (the previous table is saved as backups/%s)", own, deleted, edited, backup))
+	s.hub.Publish("stations", map[string]any{"changed": 0}, false, false)
+	writeJSON(w, 200, map[string]any{"ok": true, "backup": backup})
 }
 
 func (s *Server) stationExport(w http.ResponseWriter, r *http.Request, id Identity) {
@@ -1115,11 +1128,11 @@ func (s *Server) stationImport(w http.ResponseWriter, r *http.Request, id Identi
 		fail(w, 400, err)
 		return
 	}
-	// mode: replace (the default; the file becomes the table), merge (add the stations that are missing, and the file's keywords to
-	// the ones that are there) or merge-replace (add the missing stations, and the file's rows replace the ones that are there)
+	// mode: replace (the default; the file becomes the table) or merge (add the stations that are missing, and the file's keywords to
+	// the ones that are there; nothing is deleted)
 	switch mode := r.URL.Query().Get("mode"); mode {
-	case "merge", "merge-replace":
-		res, err := s.cat.ImportMerge(data, mode == "merge-replace")
+	case "merge":
+		res, err := s.cat.ImportMerge(data)
 		if err != nil {
 			fail(w, 400, err)
 			return
@@ -1128,20 +1141,20 @@ func (s *Server) stationImport(w http.ResponseWriter, r *http.Request, id Identi
 			s.run.Log("info", fmt.Sprintf("station table merged with an import: %d stations added, %d changed, %d keywords added (the previous table is saved as backups/%s)", res.Added, res.Changed, res.Keywords, res.Backup))
 			s.hub.Publish("stations", map[string]any{"changed": 0}, false, false)
 		}
-		writeJSON(w, 200, map[string]any{"stations": res.Stations, "added": res.Added, "changed": res.Changed, "keywords": res.Keywords, "backup": res.Backup, "merged": true})
+		writeJSON(w, 200, map[string]any{"stations": res.Stations, "added": res.Added, "changed": res.Changed, "keywords": res.Keywords, "backup": res.Backup, "merged": true, "notes": nonNil(res.Notes)})
 		return
 	case "", "replace":
 	default:
 		fail(w, 400, fmt.Errorf("unknown import mode %q", mode))
 		return
 	}
-	n, backup, err := s.cat.Import(data)
+	n, backup, notes, err := s.cat.Import(data)
 	if err != nil {
 		fail(w, 400, err)
 		return
 	}
 	s.run.Log("info", fmt.Sprintf("station table replaced by an import: %d stations (the previous table is saved as backups/%s)", n, backup))
-	out := map[string]any{"stations": n, "backup": backup}
+	out := map[string]any{"stations": n, "backup": backup, "notes": nonNil(notes)}
 	s.hub.Publish("stations", map[string]any{"changed": 0}, false, false)
 	writeJSON(w, 200, out)
 }

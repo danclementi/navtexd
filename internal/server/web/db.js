@@ -11,12 +11,12 @@
 
   async function load() {
     const j = await api("GET", "/api/stations");
-    D.hidden = j.hidden || []; D.stations = j.stations; D.byId = new Map(j.stations.map((s) => [s.id, s]));
+    D.changes = j.changes || { own: 0, deleted: 0, edited: 0 }; D.stations = j.stations; D.byId = new Map(j.stations.map((s) => [s.id, s]));
     renderStations();
     if (D.sel && !D.byId.has(D.sel)) { D.sel = null; D.kw = D.orig = []; renderKeywords(); } // (the station was removed)
     if (D.sel) { if (isDirty()) renderKeywords(); else loadKeywords(); } // edits that are not saved stay
     if (!D.adding) fillForm();
-    renderHidden();
+    tableState();
     (NX.hooks.stationsLoaded || []).forEach((f) => f());
   }
 
@@ -34,7 +34,7 @@
     { id: "brg", label: "Brg", w: 74, kind: "num", circ: true, loc: true, tip: "Bearing from your receiver, in degrees", val: (s) => (s.km ? s.brg || 0 : null), cell: (s) => td(s.km ? (s.brg || 0) + "\u00b0" : "") },
     { id: "gid", label: "GID", w: 66, kind: "num", tip: "How many geographical keywords the station has (0: none yet)", val: (s) => s.gid.length, cell: (s) => td(s.gid.length) },
     { id: "uid", label: "UID", w: 66, kind: "num", tip: "How many unique keywords the station has (0: none yet)", val: (s) => s.uid.length, cell: (s) => td(s.uid.length) },
-    { id: "edits", label: "Mine", w: 62, kind: "num", tip: "Changes of yours to the table shipped with the program: keywords added or removed, a changed row, a station of your own (0: as shipped)", val: (s) => s.edits || 0, cell: (s) => td(s.edits || "") },
+    { id: "edits", label: "Mine", w: 62, kind: "num", tip: "Changes of yours to the table shipped with the program: own = a station of your own, del = a shipped station you deleted (not used), a number = keywords you added or removed (empty: as shipped)", val: (s) => s.edits || 0, cell: (s) => el("td", { class: s.edits ? "mine" : "", text: s.own ? "own" : s.deleted ? "del" : s.edits ? "\u25cf " + s.edits : "" }) },
     { id: "heard", label: "Heard", w: 78, kind: "num", tip: "How many messages of the log were identified as this station", val: (s) => s.heard || 0, cell: (s) => td(s.heard || 0) },
     { id: "last", label: "Last heard", w: 150, off: true, kind: "date", tip: "When the latest message identified as this station began (UTC)", val: (s) => s.last || null, cell: (s) => td(s.last ? NX.stamp(s.last) : ""), out: (s) => (s.last ? NX.stamp(s.last) : "") },
   ];
@@ -52,7 +52,7 @@
     const tb = document.querySelector("#st-table tbody"), cs = G.cols();
     shown = G.rows(base());
     tb.replaceChildren(...shown.map((s) => {
-      const tr = el("tr", { "data-id": s.id, class: s.id === D.sel ? "sel" : "" });
+      const tr = el("tr", { "data-id": s.id, class: [s.id === D.sel ? "sel" : "", s.own ? "own" : "", s.deleted ? "dead" : "", !s.own && !s.deleted && s.edits ? "mod" : ""].join(" ").trim(), title: s.deleted ? "Deleted by you: shipped with the program, not used. Restore original brings it back." : s.own ? "A station of your own" : "" });
       tr.append(...cs.map((c) => c.cell(s)));
       return tr;
     }));
@@ -89,7 +89,7 @@
     D.orig = (D.kind === "GID" ? s.gid : s.uid).slice();
     // what the program ships and what is yours: the list as it is, without your additions, and with the ones you removed
     const own = (D.kind === "GID" ? s.own_gid : s.own_uid) || [], del = (D.kind === "GID" ? s.del_gid : s.del_uid) || [];
-    D.extra = !!s.extra; D.own = D.extra ? D.orig.slice() : own.slice();
+    D.extra = !!s.own; D.dead = !!s.deleted; D.own = D.extra ? D.orig.slice() : own.slice();
     D.ship = D.extra ? [] : D.orig.filter((k) => !own.includes(k)).concat(del);
     D.kw = D.orig.slice();
     renderKeywords();
@@ -99,13 +99,13 @@
     const ul = $("kw-list");
     ul.replaceChildren();
     D.kw.forEach((k, i) => {
-      const b = el("button", { text: "✕", title: "Delete this keyword", disabled: !admin() });
+      const b = el("button", { text: "✕", title: "Delete this keyword", disabled: !admin() || D.dead });
       b.onclick = () => { if (confirm(`Delete keyword "${k}"?`)) { D.kw.splice(i, 1); renderKeywords(); } };
       const cls = !D.orig.includes(k) || (!D.ship.includes(k) && !D.own.includes(k)) ? "new" : D.ship.includes(k) ? "" : "own";
       ul.append(el("li", { class: cls, title: cls === "own" ? "Yours: not in the table shipped with the program" : cls === "new" ? "Not saved yet" : "" }, el("span", { text: show(k) }), b));
     });
     D.ship.filter((k) => !D.kw.includes(k)).forEach((k) => { // shipped keywords that are not in the list (removed by you; saved or not)
-      const b = el("button", { text: "\u21ba", title: "Put this shipped keyword back", disabled: !admin() });
+      const b = el("button", { text: "\u21ba", title: "Put this shipped keyword back", disabled: !admin() || D.dead });
       b.onclick = () => { D.kw.push(k); renderKeywords(); };
       ul.append(el("li", { class: "gone", title: "Shipped with the program, removed from the list" }, el("span", { text: show(k) }), b));
     });
@@ -113,12 +113,13 @@
     const dirty = isDirty();
     $("kw-count").textContent = `${n} characters` + (dirty ? " (not saved)" : "");
     $("kw-count").className = "small" + (dirty ? " badq" : "");
-    $("kw-save").disabled = !admin() || !D.sel || !dirty;
+    $("kw-save").disabled = !admin() || !D.sel || D.dead || !dirty;
     $("kw-revert").disabled = !dirty;
     const st = D.byId.get(D.sel), mine = st ? ((D.kind === "GID" ? st.own_gid : st.own_uid) || []).length + ((D.kind === "GID" ? st.del_gid : st.del_uid) || []).length : 0;
-    $("kw-ship").disabled = !admin() || !D.sel || D.extra || (mine === 0 && !dirty);
-    $("kw-add").disabled = !admin() || !D.sel;
-    $("kw-new").disabled = !admin() || !D.sel;
+    $("kw-orig").disabled = !admin() || !D.sel || D.extra || (!(st && st.edits) && !dirty);
+    $("kw-orig").title = D.extra ? "A station of your own has nothing to go back to: delete it instead" : "Give this station the keywords (GID and UID) and the state that the program ships it with; a deleted station comes back";
+    $("kw-add").disabled = !admin() || !D.sel || D.dead;
+    $("kw-new").disabled = !admin() || !D.sel || D.dead;
   }
 
   // Leaving a keyword list with changes that are not saved (another station, GID <-> UID) asks first: OK saves them, else they
@@ -159,11 +160,18 @@
   };
   $("kw-new").onkeydown = (e) => { if (e.key === "Enter") $("kw-add").onclick(); };
   $("kw-revert").onclick = () => { D.kw = D.orig.slice(); renderKeywords(); };
-  $("kw-ship").onclick = async () => {
+  $("kw-orig").onclick = async () => {
     if (!(await leaveOk())) return;
-    if (!confirm(`Give the ${D.kind} keywords of ${kwTitle()} the list shipped with the program again?\n\nYour additions to it go, and the shipped keywords you removed come back.`)) return;
-    try { await api("PUT", `/api/stations/${D.sel}/keywords`, { type: D.kind, revert: true }); $("kw-msg").textContent = "The shipped list is back."; D.orig = D.kw = []; await load(); loadKeywords(); }
-    catch (e) { $("kw-msg").textContent = "Not changed: " + e.message; }
+    const st = D.byId.get(D.sel); if (!st) return;
+    let more = "";
+    if (st.deleted) {
+      try { const j = await api("GET", `/api/stations/${D.sel}/restore`); if (j.own.length) more = `\n\nYour own station${j.own.length > 1 ? "s" : ""} with the same frequency, NAVAREA and B1 letter (${j.own.join(", ")}) will be deleted.`; } catch (e) { /* no plan: ask anyway */ }
+    }
+    if (!confirm(`Give ${kwTitle()} back as the program ships it?\n\nYour keyword changes (GID and UID) go${st.deleted ? ", and the station is in use again" : ""}.` + more)) return;
+    try {
+      await api(st.deleted ? "POST" : "PUT", st.deleted ? `/api/stations/${D.sel}/restore` : `/api/stations/${D.sel}`, st.deleted ? undefined : { revert: true });
+      $("kw-msg").textContent = "Back as shipped."; D.orig = D.kw = []; await load(); loadKeywords();
+    } catch (e) { $("kw-msg").textContent = "Not changed: " + e.message; }
   };
   async function saveKeywords() {
     try {
@@ -193,18 +201,13 @@
   function formState() {
     const s = D.byId.get(D.sel), a = admin();
     KEYF.forEach((k) => { F[k].disabled = !(a && D.adding); });
-    ["name", "cc", "country", "lat", "lon", "t0", "t1", "t2", "t3", "t4", "t5"].forEach((k) => { F[k].disabled = !a || !(s || D.adding); });
+    // the fields of a station shipped with the program are the program's: only the fields of a station of your own can be changed
+    ["name", "cc", "country", "lat", "lon", "t0", "t1", "t2", "t3", "t4", "t5"].forEach((k) => { F[k].disabled = !a || !(D.adding || (s && s.own)); });
     $("se-save").textContent = D.adding ? "Add station" : "Save station";
-    $("se-save").disabled = !a || !(D.adding || (s && formDirty()));
-    $("se-ship").disabled = !a || D.adding || !s || !s.row_edit;
-    $("se-remove").disabled = !a || D.adding || !s;
+    $("se-save").disabled = !a || !(D.adding || (s && s.own && formDirty()));
+    $("se-remove").disabled = !a || D.adding || !s || s.deleted;
     $("se-new").disabled = !a || D.adding;
     $("se-cancel").hidden = !D.adding;
-  }
-  function renderHidden() {
-    const h = D.hidden || [];
-    $("se-hidden").hidden = !h.length;
-    $("se-hsel").replaceChildren(...h.map((x) => el("option", { value: x.key, text: x.label })));
   }
   const body = () => {
     const v = formVals(), b = { name: v.name, cc: v.cc, country: v.country, lat: Number(v.lat), lon: Number(v.lon), times: v.times };
@@ -223,14 +226,11 @@
       } else { await api("PUT", `/api/stations/${D.sel}`, b); $("se-msg").textContent = "Saved."; await load(); }
     } catch (e) { $("se-msg").textContent = "Not saved: " + e.message; }
   };
-  $("se-ship").onclick = async () => {
-    if (!confirm(`Give ${kwTitle()} the name, position and times it is shipped with?`)) return;
-    try { await api("PUT", `/api/stations/${D.sel}`, { revert: true }); $("se-msg").textContent = "As shipped."; await load(); } catch (e) { $("se-msg").textContent = "Not changed: " + e.message; }
-  };
   $("se-remove").onclick = async () => {
     const s = D.byId.get(D.sel); if (!s) return;
-    if (!confirm(`Remove ${kwTitle()} from the station table?\n\nIts messages keep their label but name no station. A station shipped with the program can be put back; one of your own is deleted.`)) return;
-    try { await api("DELETE", `/api/stations/${D.sel}`); D.sel = null; D.kw = D.orig = []; $("se-msg").textContent = "Removed."; await load(); renderKeywords(); } catch (e) { $("se-msg").textContent = "Not removed: " + e.message; }
+    if (!confirm(s.own ? `Delete your station ${kwTitle()}?\n\nIt is removed from the table. Its messages keep their label.`
+      : `Delete ${kwTitle()}?\n\nIt is shipped with the program, so it stays in the list, struck through, and is not used to identify messages. Restore original brings it back.`)) return;
+    try { await api("DELETE", `/api/stations/${D.sel}`); if (s.own) { D.sel = null; D.kw = D.orig = []; } $("se-msg").textContent = "Deleted."; await load(); loadKeywords(); } catch (e) { $("se-msg").textContent = "Not deleted: " + e.message; }
   };
   $("se-new").onclick = async () => {
     if (!(await leaveOk())) return;
@@ -239,9 +239,18 @@
     fillForm();
   };
   $("se-cancel").onclick = () => { D.adding = false; $("se-msg").textContent = ""; fillForm(); };
-  $("se-put").onclick = async () => {
-    const k = $("se-hsel").value; if (!k) return;
-    try { await api("POST", "/api/stations/restore", { key: k }); $("se-msg").textContent = "Put back."; await load(); } catch (e) { $("se-msg").textContent = "Not put back: " + e.message; }
+  // the whole table back as shipped
+  function tableState() {
+    const c = D.changes || { own: 0, deleted: 0, edited: 0 };
+    $("st-revert").disabled = !admin() || c.own + c.deleted + c.edited === 0;
+    $("st-changes").textContent = c.own + c.deleted + c.edited ? `Your changes: ${c.edited} stations with other keywords, ${c.deleted} deleted, ${c.own} of your own.` : "The table is as shipped.";
+  }
+  $("st-revert").onclick = async () => {
+    if (!(await leaveOk())) return;
+    const c = D.changes;
+    if (!confirm(`Give the whole station table back as the program ships it?\n\n${c.own} stations of your own are removed, ${c.deleted} deleted stations are restored, and the keyword changes of ${c.edited} stations go.\n\nThe table as it is now is saved first in the backups folder. OK or Cancel?`)) return;
+    try { const j = await api("POST", "/api/stations/revert"); D.sel = null; D.kw = D.orig = []; $("st-msg").textContent = "The table is as shipped." + (j.backup ? ` The previous table is saved as backups/${j.backup}.` : ""); await load(); renderKeywords(); }
+    catch (e) { $("st-msg").textContent = "Not changed: " + e.message; }
   };
 
   // ---- station table ----
@@ -252,9 +261,8 @@
     if (!f) return;
     const mode = $("st-mode").value;
     const ask = {
-      "merge": `Merge ${f.name} into the station table?\n\nStations that are missing are added; for the stations you have, the keywords of the file that you lack are added to your lists (yours stay).`,
-      "merge-replace": `Merge ${f.name} into the station table, with its rows replacing yours?\n\nStations that are missing are added; every station that the file has replaces your row of it, with your own keywords.`,
-      "replace": `Replace the whole station table with ${f.name}?`,
+      "merge": `Merge ${f.name} into the station table?\n\nKeywords of the file that you lack are added to the stations you use (yours stay), and stations that the table lacks are added as your own. Nothing is deleted. Other fields of the shipped stations in the file are ignored.`,
+      "replace": `Make the station table equal to ${f.name}?\n\nShipped stations that the file lacks are deleted (they stay in the list, struck through), the keyword lists of the file replace yours, and stations that are not shipped become your own. Fields of the shipped stations other than the keywords are ignored.`,
     }[mode] + "\n\nThe current table is saved first in the backups folder, with the date and time it was last saved in the file name.";
     if (!confirm(ask)) return;
     try {
@@ -264,9 +272,9 @@
       if (!r.ok) throw new Error(j.error);
       if (j.merged) {
         $("st-msg").textContent = !j.added && !j.changed ? "Nothing to merge: the table already has everything in the file."
-          : `${j.added} stations added, ${j.changed} changed (${j.keywords} keywords added), ${j.stations} stations now.` + (j.backup ? ` The previous table is saved as backups/${j.backup}.` : "");
+          : `${j.added} stations added, ${j.changed} changed (${j.keywords} keywords added), ${j.stations} stations in use now.` + (j.backup ? ` The previous table is saved as backups/${j.backup}.` : "") + (j.notes && j.notes.length ? " Left out: " + j.notes.join("; ") + "." : "");
       } else {
-        $("st-msg").textContent = `${j.stations} stations imported.` + (j.backup ? ` The previous table is saved as backups/${j.backup}.` : "");
+        $("st-msg").textContent = `${j.stations} stations in use now.` + (j.backup ? ` The previous table is saved as backups/${j.backup}.` : "") + (j.notes && j.notes.length ? " Left out: " + j.notes.join("; ") + "." : "");
       }
       D.sel = null; await load();
     } catch (e) { $("st-msg").textContent = "Not imported: " + e.message; }
@@ -275,7 +283,7 @@
   function roles() {
     const a = admin();
     document.querySelectorAll("#tableio input, #tableio select, #tableio button:not(#st-export)").forEach((x) => { x.disabled = !a; });
-    renderKeywords();
+    renderKeywords(); tableState();
   }
   NX.listen("role", roles);
   NX.listen("stations", () => { if (D.stations.length) load(); });

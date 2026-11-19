@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"navtex/internal/ident"
 	"navtex/internal/stations"
 )
 
@@ -102,18 +103,18 @@ func TestStationFileEditedFromOutside(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c2.Notice == "" || len(c2.tab.Stations) != n0 { // one removed, one added
+	if c2.Notice == "" || len(c2.tab.Stations) != n0+1 { // one removed (it stays in the list, deleted), one added
 		t.Errorf("notice %q, %d stations (were %d)", c2.Notice, len(c2.tab.Stations), n0)
 	}
 	ov, _, _ := readOverlay(filepath.Join(dir, UserFileName))
-	if len(ov.Hidden) != 1 || len(ov.Extra) != 1 || len(ov.Stations) != 1 || ov.Stations[0].Row == "" {
-		t.Errorf("overlay: hidden %d, extra %d, changed rows %d", len(ov.Hidden), len(ov.Extra), len(ov.Stations))
+	if len(ov.Hidden) != 1 || len(ov.Extra) != 1 || len(ov.Stations) != 0 { // (the changed times of a shipped station are ignored)
+		t.Errorf("overlay: hidden %d, extra %d, keyword changes %d", len(ov.Hidden), len(ov.Extra), len(ov.Stations))
 	}
 	if m, _ := filepath.Glob(filepath.Join(dir, "backups", "navtexd_stations-*")); len(m) != 1 {
 		t.Errorf("backups: %v", m)
 	}
 	last := c2.Origins()[len(c2.tab.Stations)-1]
-	if !last.Extra {
+	if !last.Own {
 		t.Errorf("the last station is the operator's own: %+v", last)
 	}
 	if err := c2.RevertKeywords(len(c2.tab.Stations), "GID"); err == nil {
@@ -192,71 +193,94 @@ func TestStationFieldsAddRemove(t *testing.T) {
 	n := stationIdx(t, c, 486, "D", "XSJ")
 	z, _ := c.Station(n)
 	f := StationFields{Name: z.Name, CountryCode: z.CountryCode, Country: z.Country, Lat: z.Lat, Lon: z.Lon, Times: z.Times}
-	f.Times[0] = "03:45"
-	if err := c.SetStation(n, f); err != nil {
+	if err := c.SetStation(n, f); err == nil {
+		t.Error("the fields of a shipped station are changed")
+	}
+	total := len(c.tab.Stations)
+	// delete a shipped station: it stays in the list, deleted, and is not used
+	k := c.keys[n-1]
+	if err := c.RemoveStation(n); err != nil {
 		t.Fatal(err)
 	}
-	if !c.Origins()[n-1].Row {
-		t.Error("a changed row is not marked")
+	if len(c.tab.Stations) != total || !c.Origins()[n-1].Deleted || c.Origins()[n-1].Edits() == 0 {
+		t.Fatalf("deleted: %d stations, %+v", len(c.tab.Stations), c.Origins()[n-1])
 	}
-	if c.SetStation(n, StationFields{Name: "x", Times: [6]string{"25:00"}}) == nil || c.SetStation(n, StationFields{Name: "", Times: z.Times}) == nil ||
-		c.SetStation(n, StationFields{Name: "a#b", Times: z.Times}) == nil || c.SetStation(n, StationFields{Name: "x", Lat: 100, Times: z.Times}) == nil {
-		t.Error("bad fields are accepted")
+	if err := c.SetKeywords(n, "GID", []string{"X"}); err == nil {
+		t.Error("keywords of a deleted station")
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, FileName)); strings.Contains(string(b), "#"+z.Name+"#") {
+		t.Error("the station file has the deleted station")
 	}
 	c2, _ := Open(dir, nil)
-	if s, _ := c2.Station(n); s.Times[0] != "03:45" || s.Times[1] != z.Times[1] {
-		t.Errorf("after a restart: %v", s.Times)
+	if len(c2.tab.Stations) != total || !c2.Origins()[n-1].Deleted || c2.keys[n-1] != k {
+		t.Errorf("after a restart: %d stations", len(c2.tab.Stations))
 	}
-	if err := c2.RevertStation(n); err != nil {
-		t.Fatal(err)
+	// the deleted station is not a candidate
+	in := ident.Input{FreqKHz: 486, Text: "ZCZC " + strings.Join(append(append([]string(nil), z.UID...), z.GID...), " ")}
+	for _, cd := range c2.id.Identify(in).Candidates {
+		if cd.Index == n-1 {
+			t.Error("a deleted station is a candidate")
+		}
 	}
-	if s, _ := c2.Station(n); s.Times != z.Times || c2.Origins()[n-1].Row {
-		t.Errorf("as shipped: %v", s.Times)
+	// an own station in its place (same frequency, NAVAREA, B1): the shipped one stays struck through
+	own := stations.Station{NavArea: z.NavArea, FreqKHz: z.FreqKHz, ID: z.ID, Callsign: z.Callsign, Name: "Mine", CountryCode: "CHN", Country: "China", Lat: 20, Lon: 110, Times: [6]string{"01:23"}}
+	id, err := c2.AddStation(own)
+	if err != nil || id != len(c2.tab.Stations) || !c2.Origins()[id-1].Own || c2.keys[id-1] == k {
+		t.Fatalf("added: %d %v %q", id, err, c2.keys[id-1])
 	}
-	// remove a shipped station and put it back
-	total := len(c2.tab.Stations)
-	k := c2.keys[n-1]
-	if err := c2.RemoveStation(n); err != nil {
-		t.Fatal(err)
-	}
-	if len(c2.tab.Stations) != total-1 || len(c2.Hidden()) != 1 || c2.Hidden()[0].Key != k {
-		t.Fatalf("removed: %d stations, hidden %v", len(c2.tab.Stations), c2.Hidden())
-	}
-	c3, _ := Open(dir, nil)
-	if len(c3.tab.Stations) != total-1 {
-		t.Errorf("after a restart: %d stations", len(c3.tab.Stations))
-	}
-	if err := c3.RestoreStation("no such key"); err == nil {
-		t.Error("a station that was not removed is put back")
-	}
-	if err := c3.RestoreStation(k); err != nil || len(c3.tab.Stations) != total || len(c3.Hidden()) != 0 {
-		t.Fatalf("put back: %v, %d stations", err, len(c3.tab.Stations))
-	}
-	// an own station
-	own := stations.Station{NavArea: 4, FreqKHz: 518, ID: "Z", Callsign: "TST", Name: "Test", CountryCode: "USA", Country: "United States", Lat: 36.8, Lon: -76.3, Times: [6]string{"01:23"}}
-	id, err := c3.AddStation(own)
-	if err != nil || id != len(c3.tab.Stations) || !c3.Origins()[id-1].Extra {
-		t.Fatalf("added: %d %v", id, err)
-	}
-	if _, err := c3.AddStation(own); err == nil {
+	if _, err := c2.AddStation(own); err == nil {
 		t.Error("the same key twice")
+	}
+	clash := own
+	clash.Callsign, clash.Name = "OTHER", "Other"
+	if _, err := c2.AddStation(clash); err == nil {
+		t.Error("the same frequency, NAVAREA and B1 as a station in use")
 	}
 	bad := own
 	bad.Callsign, bad.ID, bad.FreqKHz = "TS2", "Y", 500
-	if _, err := c3.AddStation(bad); err == nil {
+	if _, err := c2.AddStation(bad); err == nil {
 		t.Error("a frequency that is not a NAVTEX channel")
 	}
-	if err := c3.SetKeywords(id, "GID", []string{"TESTWORD"}); err != nil {
+	if err := c2.SetKeywords(id, "GID", []string{"TESTWORD"}); err != nil {
 		t.Fatal(err)
 	}
-	c4, _ := Open(dir, nil)
-	if s, _ := c4.Station(id); s.Callsign != "TST" || len(s.GID) != 1 || s.GID[0] != "TESTWORD" {
+	if plan := c2.RestorePlan(n); len(plan) != 1 {
+		t.Errorf("restore plan: %v", plan)
+	}
+	c3, _ := Open(dir, nil)
+	if s, _ := c3.Station(id); s.Name != "Mine" || len(s.GID) != 1 || s.GID[0] != "TESTWORD" || !c3.Origins()[id-1].Own {
 		t.Errorf("own station after a restart: %+v", s)
 	}
-	if err := c4.RemoveStation(id); err != nil || len(c4.tab.Stations) != total || len(c4.Hidden()) != 0 {
-		t.Errorf("deleting an own station: %v, %d stations, hidden %v", err, len(c4.tab.Stations), c4.Hidden())
+	// restore the shipped station: the own one with its triple is out of use, and the shipped one is as if it had never been
+	if err := c3.RestoreStation(n); err != nil || len(c3.tab.Stations) != total || c3.Origins()[n-1].Edits() != 0 {
+		t.Fatalf("restore: %v, %d stations", err, len(c3.tab.Stations))
 	}
-	if ov, _, _ := readOverlay(filepath.Join(dir, UserFileName)); len(ov.Extra) != 0 {
-		t.Errorf("the overlay still has the station: %+v", ov.Extra)
+	if ov, _, _ := readOverlay(filepath.Join(dir, UserFileName)); len(ov.Extra) != 0 || len(ov.Hidden) != 0 {
+		t.Errorf("the overlay still has: %+v", ov)
+	}
+	// an own station on its own, deleted: gone from the list
+	other := stations.Station{NavArea: 4, FreqKHz: 518, ID: "Z", Callsign: "TST", Name: "Test", CountryCode: "USA", Country: "United States", Lat: 36.8, Lon: -76.3, Times: [6]string{"01:23"}}
+	id2, err := c3.AddStation(other)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c3.RemoveStation(id2); err != nil || len(c3.tab.Stations) != total {
+		t.Errorf("deleting an own station: %v, %d stations", err, len(c3.tab.Stations))
+	}
+	// the whole table back as shipped
+	c3.AddStation(other)
+	c3.RemoveStation(n)
+	c3.SetKeywords(stationIdx(t, c3, 490, "K", "HJW"), "GID", []string{"ONE MORE"})
+	if own, del, ed := c3.Changes(); own != 1 || del != 1 || ed != 1 {
+		t.Errorf("changes: %d %d %d", own, del, ed)
+	}
+	if _, err := c3.RevertAll(); err != nil || len(c3.tab.Stations) != total {
+		t.Fatal(err)
+	}
+	if own, del, ed := c3.Changes(); own+del+ed != 0 {
+		t.Errorf("after reverting everything: %d %d %d", own, del, ed)
+	}
+	if m, _ := filepath.Glob(filepath.Join(dir, "backups", "navtexd_stations-*")); len(m) == 0 {
+		t.Error("no backup of the table that was reverted")
 	}
 }

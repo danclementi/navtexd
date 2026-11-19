@@ -136,30 +136,28 @@ type Identifier struct {
 }
 
 // New prepares an identifier for a station table.
-func New(t *stations.Table) *Identifier {
-	id := &Identifier{tab: t, byFreq: map[float64][]int{}, df: map[float64]map[string]int{}, users: map[float64]map[string][]int{}}
-	for i, s := range t.Stations {
-		id.byFreq[s.FreqKHz] = append(id.byFreq[s.FreqKHz], i)
-		m := id.df[s.FreqKHz]
-		if m == nil {
-			m = map[string]int{}
-			id.df[s.FreqKHz] = m
-		}
-		u := id.users[s.FreqKHz]
-		if u == nil {
-			u = map[string][]int{}
-			id.users[s.FreqKHz] = u
-		}
-		seen := map[string]bool{}
-		for _, k := range append(append([]string(nil), s.GID...), s.UID...) {
-			if k = strings.ToUpper(k); k != "" && !seen[k] {
-				seen[k] = true
-				m[k]++
-				u[k] = append(u[k], i)
-			}
+func New(t *stations.Table) *Identifier { return NewActive(t, nil) }
+
+func (id *Identifier) add(i int, s stations.Station) {
+	id.byFreq[s.FreqKHz] = append(id.byFreq[s.FreqKHz], i)
+	m := id.df[s.FreqKHz]
+	if m == nil {
+		m = map[string]int{}
+		id.df[s.FreqKHz] = m
+	}
+	u := id.users[s.FreqKHz]
+	if u == nil {
+		u = map[string][]int{}
+		id.users[s.FreqKHz] = u
+	}
+	seen := map[string]bool{}
+	for _, k := range append(append([]string(nil), s.GID...), s.UID...) {
+		if k = strings.ToUpper(k); k != "" && !seen[k] {
+			seen[k] = true
+			m[k]++
+			u[k] = append(u[k], i)
 		}
 	}
-	return id
 }
 
 // Normalize prepares message text for keyword matching: upper case, line ends and runs of blanks as single spaces, one
@@ -539,3 +537,16 @@ func round2(v float64) float64 { return math.Round(v*100) / 100 }
 
 // Thresholds are the keyword score a station needs to be named, and the lead it needs over the next one.
 func Thresholds() (keyword, margin float64) { t := th.Load(); return t.keyword, t.margin }
+
+// NewActive prepares an identifier for the stations of a table that are not marked dead (a nil list: all). The indices that it
+// reports are places in the whole table.
+func NewActive(t *stations.Table, dead []bool) *Identifier {
+	id := &Identifier{tab: t, byFreq: map[float64][]int{}, df: map[float64]map[string]int{}, users: map[float64]map[string][]int{}}
+	for i, s := range t.Stations {
+		if i < len(dead) && dead[i] {
+			continue
+		}
+		id.add(i, s)
+	}
+	return id
+}

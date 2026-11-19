@@ -68,12 +68,12 @@ func TestOpenMovesTheOldFileName(t *testing.T) {
 	if c.Notice == "" {
 		t.Error("no notice")
 	}
-	// the table is the shipped one with the old file's differences as the operator's changes
+	// the table is the shipped one: a changed name is not the operator's to change, so it is ignored
 	got, _ := os.ReadFile(filepath.Join(dir, FileName))
-	if !strings.Contains(string(got), "My Malin Head") || len(c.tab.Stations) < len(strings.Split(string(mine), "\n"))-2 {
-		t.Error("the new file does not have the old file's changes")
+	if strings.Contains(string(got), "My Malin Head") || len(c.tab.Stations) < len(strings.Split(string(mine), "\n"))-2 {
+		t.Error("the new file has a changed name of a shipped station")
 	}
-	if ov, ok, _ := readOverlay(filepath.Join(dir, UserFileName)); !ok || len(ov.Stations) != 1 || ov.Stations[0].Row == "" {
+	if ov, ok, _ := readOverlay(filepath.Join(dir, UserFileName)); !ok || len(ov.Stations) != 0 {
 		t.Errorf("overlay: %d stations, hidden %d extra %d ok=%v; first: %+v", len(ov.Stations), len(ov.Hidden), len(ov.Extra), ok, ov.Stations)
 	}
 	if _, err := os.Stat(filepath.Join(dir, LegacyFileName)); err == nil {
@@ -112,44 +112,38 @@ func TestImportMerge(t *testing.T) {
 	dir := t.TempDir()
 	st, _ := store.Open(dir)
 	defer st.Close()
-	table := "VERSION5\r\n" +
-		"1#490#A#EJM#Malin Head#IRL#Ireland#55.363#-7.340#00:00#04:00#08:00#12:00#16:00#20:00#MINE,SHARED#OWN#\r\n" +
-		"1#490#B#OST#Ostend#BEL#Belgium#51.183#2.808#00:10#04:10#08:10#12:10#16:10#20:10#OOSTENDE#OST#\r\n"
-	if err := os.WriteFile(filepath.Join(dir, FileName), []byte(table), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	c, err := Open(dir, st)
 	if err != nil {
 		t.Fatal(err)
 	}
 	n0 := len(c.tab.Stations)
+	a := stationIdx(t, c, 490, "A", "EJM")
+	am, _ := c.Station(a)
 	file := []byte("VERSION5\r\n" +
 		"1#490#A#EJM#Malin Head X#IRL#Ireland#55.363#-7.340#00:00#04:00#08:00#12:00#16:00#20:00#shared,THEIRS#NEWUID#\r\n" +
-		"1#490#C#NEW#Newplace#IRL#Ireland#50#-7#00:20#04:20#08:20#12:20#16:20#20:20#NEWPLACE##\r\n")
-	res, err := c.ImportMerge(file, false)
+		"1#490#Z#NEW#Newplace#IRL#Ireland#50#-7#00:20#04:20#08:20#12:20#16:20#20:20#NEWPLACE##\r\n")
+	res, err := c.ImportMerge(file)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Added != 1 || res.Changed != 1 || res.Keywords != 2 || res.Backup == "" || res.Stations != n0+1 {
-		t.Errorf("merge result %+v", res)
+	if res.Added != 1 || res.Changed != 1 || res.Keywords != 3 || res.Backup == "" || res.Stations != n0+1 {
+		t.Errorf("merge result %+v (stations were %d, shipped %d)", res, n0, n0)
 	}
-	a := c.tab.Stations[0]
-	if strings.Join(a.GID, ",") != "MINE,SHARED,THEIRS" || strings.Join(a.UID, ",") != "OWN,NEWUID" || a.Name != "Malin Head" {
-		t.Errorf("keywords were not added to the station: %+v", a)
+	got, _ := c.Station(a)
+	if strings.Join(got.GID, ",") != strings.Join(append(append([]string(nil), am.GID...), "shared", "THEIRS"), ",") || got.Name != am.Name {
+		t.Errorf("keywords were not added to the station, or its fields were changed: %+v", got)
 	}
-	if last := c.tab.Stations[len(c.tab.Stations)-1]; last.Callsign != "NEW" {
-		t.Errorf("the new station is not last: %+v", last)
+	if last := c.tab.Stations[len(c.tab.Stations)-1]; last.Callsign != "NEW" || !c.own[len(c.own)-1] {
+		t.Errorf("the new station is not last and the operator's own: %+v", last)
 	}
 	// again: nothing to do, no new backup
-	if res, err = c.ImportMerge(file, false); err != nil || res.Added+res.Changed != 0 || res.Backup != "" {
+	if res, err = c.ImportMerge(file); err != nil || res.Added+res.Changed != 0 || res.Backup != "" {
 		t.Errorf("second merge %+v %v", res, err)
 	}
-	// replace: the file's row takes the place of the table's, own keywords included
-	if res, err = c.ImportMerge(file, true); err != nil || res.Added != 0 || res.Changed != 1 {
-		t.Errorf("replacing merge %+v %v", res, err)
-	}
-	if a := c.tab.Stations[0]; a.Name != "Malin Head X" || strings.Join(a.GID, ",") != "shared,THEIRS" {
-		t.Errorf("row not replaced: %+v", a)
+	// a station in conflict with one in use is left out, and said so
+	res, err = c.ImportMerge([]byte("VERSION5\r\n1#490#Z#CLASH#Clash#IRL#Ireland#50#-7#00:20#04:20#08:20#12:20#16:20#20:20#X##\r\n"))
+	if err != nil || res.Added != 0 || len(res.Notes) != 1 {
+		t.Errorf("conflict: %+v %v", res, err)
 	}
 	// the file on disk follows
 	b, _ := os.ReadFile(filepath.Join(dir, FileName))
@@ -161,12 +155,20 @@ func TestImportMerge(t *testing.T) {
 	for i := 0; i < 60; i++ {
 		long = append(long, fmt.Sprintf("KEYWORD%02d", i))
 	}
-	if err := c.SetKeywords(2, "GID", long); err != nil {
+	if err := c.SetKeywords(a, "GID", long); err != nil {
 		t.Fatal(err)
 	}
-	res, err = c.ImportMerge([]byte("VERSION5\r\n1#490#B#OST#Ostend#BEL#Belgium#51.183#2.808#00:10#04:10#08:10#12:10#16:10#20:10#MORE#\r\n"), false)
+	res, err = c.ImportMerge([]byte("VERSION5\r\n1#490#A#EJM#Malin Head#IRL#Ireland#55.363#-7.340#00:00#04:00#08:00#12:00#16:00#20:00#MORE#\r\n"))
 	if err != nil || res.Keywords != 1 {
 		t.Errorf("long list: %+v %v", res, err)
+	}
+	// replacing: the table becomes the file's; shipped stations that it lacks are deleted, the others' lists are the file's
+	n, _, _, err := c.Import([]byte("VERSION5\r\n1#490#A#EJM#Malin Head#IRL#Ireland#55.363#-7.340#00:00#04:00#08:00#12:00#16:00#20:00#ONLY#THIS#\r\n"))
+	if err != nil || n != 1 || len(c.tab.Stations) != n0 {
+		t.Errorf("replace: %d stations in use (%d in the list) %v", n, len(c.tab.Stations), err)
+	}
+	if g, _ := c.Station(a); strings.Join(g.GID, ",") != "ONLY" {
+		t.Errorf("the list of the file: %v", g.GID)
 	}
 }
 
