@@ -1239,13 +1239,14 @@
         S.k = nxt; S.gap = false; const it = S.items[nxt];
         await freshIndex(it); L.anchor = it.i; scrollToIndex(it.i); select(it.id, true);
       } else showEnd(down ? S.items.length : 0, "End of selection");
-    } else if (dlg.open) {
+    } else if (dlg.open || (fromDlg === true && rvActive())) {
+      // (the Review tab acts as the pop-up does)
       // the next record in the direction the pop-up was being stepped (down the list unless the last step was up), so that no record is shown
       // twice; where there is none, a page that says it is the end of the list
       const down = (L.dir || 1) > 0, nxt = down ? at : at - 1;
       if (L.total && at >= 0 && nxt >= 0 && nxt < L.total) selectIndex(nxt);
       else if (L.total && at >= 0) showEnd(down ? L.total : 0);
-      else dlg.close();
+      else if (dlg.open) dlg.close();
     }
   }
   // The pop-up has run off the end of the list (the last record in the direction of travel was deleted). The gap is where that record was:
