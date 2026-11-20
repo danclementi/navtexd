@@ -177,8 +177,8 @@
     for (const k in secs) if (!want.has(k)) { secs[k].hidden = true; if (secs[k].parentNode !== mainEl) mainEl.append(secs[k]); }
     for (const t of tiles) if (t.act) { const s = secs[t.act]; s.hidden = false; if (s.parentNode !== t.body) t.body.insertBefore(s, t.empty); }
     tiles.forEach(renderHead);
+    if (focusT && focusT.act) state.tab = focusT.act; // (before the tab bar is drawn from it)
     syncHeader(); updateNav();
-    if (focusT && focusT.act) state.tab = focusT.act;
     const fresh = [...want].filter((k) => !shownPrev.has(k));
     shownPrev = want;
     fresh.forEach((k) => NX.activate(k));
