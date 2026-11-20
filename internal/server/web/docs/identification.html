@@ -106,7 +106,7 @@
 <tr><td>4 characters or more</td><td>Anywhere, including inside a longer word</td><td><code>ADAK</code> matches "ADAK ISLAND"; <code>BRISTOL</code> matches "BRISTOL BAY"</td></tr>
 </table>
 <p>A keyword counts once, however many times it appears in the text. The same word in two different keywords counts twice, once for each: "KISKA" and "KISKA ISLAND" are two keywords.</p>
-<p><strong>Chinese text.</strong> The national service of China (486 kHz) sends each GB 2312 character as three letters. For the keywords the program first reads those letters as characters, so the keywords of these stations are Chinese, written in the station table as UTF-8 (the first line of a message is the station's own name, such as 上海海岸电台 for Shanghai). A message that reads that way is treated as one of the 486 kHz stations whatever channel it was received on. Characters that could not be read are shown as □ and never match.</p>
+<p><strong>Chinese text.</strong> The national service of China (486 kHz) sends each GB 2312 character as three letters. For the keywords the program first reads those letters as characters, so the keywords of these stations are Chinese, written in the station table as UTF-8 (the first line of a message is the station's own name, such as 上海海岸电台 for Shanghai). Only the 486 kHz channel is read this way; text received on any other channel is never read as Chinese. Characters that could not be read are shown as □ and never match.</p>
 
 <h3 id="s3-2">3.2 UID keywords</h3>
 <p>The first UID hit gives <strong>10</strong> points, each further UID hit <strong>2</strong> more, up to <strong>14</strong> in all. A station naming itself is much stronger than any place name, and the first UID hit alone outscores the largest possible GID total (8).</p>

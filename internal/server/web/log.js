@@ -655,7 +655,7 @@
     const d = new Date(r.rx), m = d.getUTCHours() * 60 + d.getUTCMinutes();
     const mins = (t) => { const [h, mm] = String(t).split(":").map(Number); return h * 60 + mm; };
     const on = (s) => s.times.some((t) => t && !isNaN(mins(t)) && ((m - mins(t)) % 1440 + 1440) % 1440 < 10);
-    return [...new Set([...byId.values()].filter((s) => s.freq === r.ch && on(s)).map((s) => s.b1))].sort();
+    return [...new Set([...byId.values()].filter((s) => !s.deleted && s.freq === r.ch && on(s)).map((s) => s.b1))].sort();
   }
   // The candidates as a grid, best first: station, Use, total, and the parts of the score as badges (UID, GID, SLOT, DIST, HIST).
   // Numbers are padded with blanks, not zeros, so that the columns line up.
@@ -698,7 +698,7 @@
     const byId = await NX.loadStations();
     if (!L.rec || L.rec.id !== id) return;
     const w = r.why;
-    const same = [...byId.values()].filter((s) => s.freq === r.ch);
+    const same = [...byId.values()].filter((s) => !s.deleted && s.freq === r.ch);
     const lab = (s) => `${s.area}${s.b1} ${s.name},${s.cc}`;
     const tip = "Identify the record as this station (sets B1 and NAVAREA to its own). The identification is marked \"forced ID\" when the message text does not support it.";
     const frag = document.createDocumentFragment();

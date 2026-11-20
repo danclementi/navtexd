@@ -2,16 +2,16 @@
 // Database tab: station list and keyword editor, station table import / export.
 (() => {
   const NX = window.NX, $ = NX.$, el = NX.el, api = NX.api;
-  const D = { stations: [], byId: new Map(), sel: null, kind: "GID", kw: [], orig: [], ship: [], own: [], extra: false, loaded: false };
+  const D = { stations: [], live: [], byId: new Map(), sel: null, kind: "GID", kw: [], orig: [], ship: [], own: [], extra: false, loaded: false };
   const admin = () => NX.state.role === "admin";
 
-  NX.stationList = () => D.stations;
+  NX.stationList = () => D.live; // (the stations in use: not the shipped ones that you deleted)
   NX.reloadStations = () => load();
   NX.loadStations = async () => { if (!D.stations.length) await load(); return D.byId; };
 
   async function load() {
     const j = await api("GET", "/api/stations");
-    D.changes = j.changes || { own: 0, deleted: 0, edited: 0 }; D.stations = j.stations; D.byId = new Map(j.stations.map((s) => [s.id, s]));
+    D.changes = j.changes || { own: 0, deleted: 0, edited: 0 }; D.stations = j.stations; D.live = j.stations.filter((s) => !s.deleted); D.byId = new Map(j.stations.map((s) => [s.id, s]));
     renderStations();
     if (D.sel && !D.byId.has(D.sel)) { D.sel = null; D.kw = D.orig = []; renderKeywords(); } // (the station was removed)
     if (D.sel) { if (isDirty()) renderKeywords(); else loadKeywords(); } // edits that are not saved stay

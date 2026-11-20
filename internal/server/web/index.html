@@ -42,7 +42,7 @@
           <div class="dial" data-id="q" data-label="QUALITY" data-red="0" title="Signal quality (inverse of the crest factor)"></div>
           <div class="dial" data-id="cpu" data-label="CPU LOAD" data-red="0.85" data-two="1" title="CPU load: green needle = navtexd, amber needle = the whole computer (percent of all cores)"></div>
         </div>
-        <button id="b-clip" type="button" class="tb" title="Save the last minute of input audio (and a few seconds more)&#10;of the active channel as a WAV file for later analysis."><svg class="ic" aria-hidden="true"><use href="#i-wave-sine"/></svg><span>save clip</span></button>
+        <button id="b-clip" type="button" class="tb" title="Save the input audio of the active channel as a WAV file for later analysis:&#10;the seconds before the press and a few after it (set in Options, Audio clips)."><svg class="ic" aria-hidden="true"><use href="#i-wave-sine"/></svg><span>save clip</span></button>
       </div>
       <div class="timerow"><span id="date">&nbsp;</span><span id="clock">--:--:-- UTC</span></div>
       <div class="sunrow"><span id="sun" class="msun" title="Receive location">Sunrise: --:-- / Sunset: --:--</span></div>
@@ -86,7 +86,7 @@
   <section id="tab-status">
   <div id="chlines" class="chlines">
     <div class="chline" data-ch="0">
-      <button type="button" class="chip" title="Make this the active channel (text, big spectrum, log, Save clip)"></button>
+      <button type="button" class="chip" title="Click: make this the active channel (text, big spectrum, log, Save clip).&#10;Double-click: also open the Options of this channel."></button>
       <span class="chfreq"></span>
       <span class="chinput" title="Input of this channel (change it in Options)"></span>
       <span class="chcmt" title="Channel comment (change it in Options)"></span>
