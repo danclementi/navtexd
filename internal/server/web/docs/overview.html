@@ -43,7 +43,7 @@
 <li><strong>Up to FOUR channels at once.</strong> One program decodes, tags and logs messages from up to four channels simultaneously. Each channel can have its own frequency, input source, and decoder settings.</li>
 <li><strong>Real or complex audio.</strong> A channel accepts real-valued audio (a receiver's audio output, a sound card or virtual audio cable, a WAV file, raw samples on standard input) or complex I/Q from SDR hardware.</li>
 <li><strong>Several channels from one I/Q stream.</strong> Channels can share one input if desired. A single 48 kHz wideband I/Q stream can, for example, feed a 490 kHz and a 518 kHz decoder at the same time.</li>
-<li><strong>I/Q over the network.</strong> The program can accept I/Q streams over Ethernet from Hermes-type receivers (using OpenHPSDR protocol 1: Hermes, Hermes Lite, ANAN and similar), from an Airspy HF+ through the SpyServer program, and from an SDRplay receiver through the headless SDRconnect server.</li>
+<li><strong>I/Q over the network.</strong> The program can accept I/Q streams over Ethernet from OpenHPSDR radios (Protocol 1: Hermes, Hermes Lite, ANAN and similar; Protocol 2: for example the HPSDR bridge of UberSDR, which needs it for more than one receiver), from an Airspy HF+ through the SpyServer program, and from an SDRplay receiver through the headless SDRconnect server.</li>
 <li><strong>No calibration required.</strong> The carrier and the symbol timing are tracked continuously, so the sound card or SDR sample rate does not need to be calibrated.</li>
 <li><strong>Automatic polarity.</strong> The decoder detects and adapts, whether the audio signal is received in USB or LSB, selecting mark and space correctly.</li>
 </ul>
