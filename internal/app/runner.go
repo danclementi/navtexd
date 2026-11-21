@@ -378,6 +378,20 @@ func (r *Runner) Restart() {
 	}
 }
 
+// RestartChannel stops and starts channel ch again with its present settings, together with the channels that share its
+// input (or the one that owns it), so that an input that could not be opened (a server that was not running yet) is tried
+// again without changing any setting. It reports false for a channel that is switched off.
+func (r *Runner) RestartChannel(ch int) bool {
+	if ch < 0 || ch >= config.Channels || !r.Config().ChannelEnabled(ch) {
+		return false
+	}
+	r.mu.Lock()
+	r.need[ch] = true
+	r.mu.Unlock()
+	r.Restart()
+	return true
+}
+
 // Do runs fn in the decoding goroutine of channel ch with its engine and waits for it (at most 2 s). It reports whether
 // fn ran: false when the channel is not running, was stopped before the command came to the front, or is stuck.
 func (r *Runner) Do(ch int, fn func(*engine.Engine)) bool {

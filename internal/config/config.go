@@ -185,7 +185,7 @@ type Logging struct {
 
 // Autocorrect controls the repair of words that contain unreadable characters (shown in [brackets] in the Log).
 type Autocorrect struct {
-	Enabled       bool   `json:"enabled" doc:"Correct words with unreadable characters from the maritime vocabulary; the result is stored beside the raw text, which is never changed"`
+	Enabled       bool   `json:"enabled" doc:"Correct words with unreadable characters from the maritime vocabulary; the result is stored beside the raw text, which is never changed. Not used on a 486 kHz channel: the Chinese text is read there instead"`
 	MinLen        int    `json:"min_word_letters" unit:"letters" doc:"Shortest word that is looked up"`
 	MaxLen        int    `json:"max_word_letters" unit:"letters" doc:"Longest word that is looked up"`
 	MaxUnreadable int    `json:"max_unreadable_percent" unit:"%" doc:"Words with a larger share of unreadable characters are left alone"`
@@ -224,7 +224,7 @@ type Server struct {
 // remembers its own carrier position. Only the group of the selected source is used.
 type Input struct {
 	SharedFrom int             `json:"shared_from" doc:"own input = typical - this channel has its own source or is the primary user of its source; same input as Channel x = use this to share another channel's I/Q source if it contains a second channel"`
-	Source     string          `json:"source" doc:"file = WAV recording; device = sound card or virtual audio cable; stdin = raw PCM piped in; hpsdr = OpenHPSDR / Metis radio; sdrconnect = SDRplay RSP through the SDRconnect program; spyserver = Airspy HF+ through the SpyServer program" choices:"file,device,stdin,hpsdr,sdrconnect,spyserver"`
+	Source     string          `json:"source" doc:"file = WAV recording; device = sound card or virtual audio cable; stdin = raw PCM piped in; hpsdr = OpenHPSDR radio (Protocol 1 or 2); sdrconnect = SDRplay RSP through the SDRconnect program; spyserver = Airspy HF+ through the SpyServer program" choices:"file,device,stdin,hpsdr,sdrconnect,spyserver"`
 	BlockSize  int             `json:"block_size" unit:"samples" doc:"Samples read from the source at a time"`
 	WatchdogS  float64         `json:"watchdog_s" unit:"s" doc:"Warn when a live input (sound card, radio, stdin) delivers no new samples, or the same value over and over, for this long; 0 = off"`
 	Device     DeviceInput     `json:"device"`
@@ -248,9 +248,9 @@ type DeviceInput struct {
 
 // HPSDRInput: an OpenHPSDR radio on the network (Protocol 1 or 2), receive only.
 type HPSDRInput struct {
-	Address         string  `json:"address" doc:"Address of the radio (e.g. 192.168.1.50), or empty to search the local network. The last radios that worked are offered in a list"`
-	Protocol        int     `json:"protocol" doc:"OpenHPSDR protocol to speak to the radio: 1 = the original (Metis) protocol, what most radios use, one stream for all receivers; 2 = the newer protocol, one stream per receiver. Use 2 for a radio that offers several receivers only through protocol 2 (for example the HPSDR bridge of UberSDR). All channels that use the same radio need the same protocol and sample rate" choices:"1,2"`
-	SampleRateHz    float64 `json:"sample_rate_hz" unit:"Hz" doc:"I/Q sample rate of the radio" choices:"48000,96000,192000,384000"`
+	Address         string  `json:"address" doc:"Address of the radio (e.g. 192.168.1.50), or empty to search the local network. The last radios that worked are offered in a list. If the search does not find the radio, enter its address"`
+	Protocol        int     `json:"protocol" doc:"OpenHPSDR protocol to speak to the radio: 1 = the original (Metis) protocol, what most radios use, one stream for all receivers; 2 = the newer protocol, one stream per receiver. Not every radio supports both (see its documentation). UberSDR presents itself as both: its Protocol 1 radio has a single receiver, so choose 2 when several channels need receivers of their own (for example 518 and 4209.5 kHz, too far apart to share one). All channels that use the same radio need the same protocol and sample rate" choices:"1,2"`
+	SampleRateHz    float64 `json:"sample_rate_hz" unit:"Hz" doc:"I/Q sample rate of the radio. Not every radio supports every rate (see its documentation); all channels that use the same radio need the same rate" choices:"48000,96000,192000,384000"`
 	SwapIQ          bool    `json:"swap_iq" hidden:"true"` // obsolete and ignored: replaced by mirror_iq, whose default is the setting every radio needs
 	MirrorIQ        bool    `json:"mirror_iq" doc:"Exchange I and Q, for a radio whose spectrum comes out mirrored. Off is right for every OpenHPSDR radio tried so far (Red Pitaya, QMtech, Hermes, Hermes Lite): the program already applies the exchange they need."`
 	LoBelowHz       float64 `json:"lo_below_hz" unit:"Hz" doc:"How far below the channel frequency the radio is tuned (its LO), i.e. where the carrier is expected in the baseband. A few kHz keeps the carrier away from the radio's DC spur. A negative value puts the LO above the channel. The LO follows the channel frequency"`
@@ -393,7 +393,7 @@ func ValidChannelHz(hz float64) bool {
 
 // Channel selects the NAVTEX frequency to decode.
 type Channel struct {
-	FrequencyHz float64 `json:"frequency_hz" unit:"Hz" doc:"nominal carrier frequency of the NAVTEX channel in Hz: 518000, 490000, 486000, 424000 or 4209500"`
+	FrequencyHz float64 `json:"frequency_hz" unit:"Hz" doc:"Nominal carrier frequency of the NAVTEX channel in Hz: 518000, 490000, 486000, 424000 or 4209500"`
 	Name        string  `json:"name" doc:"Channel name (fixed: Channel 1 to 4); other features refer to the channels by these numbers"`
 	Comment     string  `json:"comment" doc:"A note about this channel (receiver, antenna, location ...); it is stored with every record received on it. The Scheduler (Options) can overwrite it at set times of day"`
 	ViewOffset  float64 `json:"view_offset_hz" unit:"Hz" doc:"adjust spectrum x-axis left-or-right; typically set by dragging the graph area in the Spectrum tab"`

@@ -264,7 +264,7 @@
 <p>A fragment is kept only if it passes these tests. Complete messages are never dropped by them.</p>
 <ul>
 <li>At least <code class="opt">{segment.min_fragment_chars}</code> (16) visible characters.</li>
-<li>Optionally (<code class="opt">{segment.min_fragment_words}</code>, 0 = off): at least that many real words of <code class="opt">{segment.min_fragment_word_letters}</code> (4) letters or more. <code class="opt">{segment.fragment_words_vocabulary}</code> (auto) decides whether "real" means found in the maritime vocabulary (on at 518 kHz; off at 490 and 424 kHz, where the vocabulary does not fit the language) or merely a run of letters. The vocabulary holds words of 5 letters or more, so with it on, shorter words do not count. <code class="opt">{segment.fragment_words_after_autocorrect}</code> (on) counts words after the repair below.</li>
+<li>Optionally (<code class="opt">{segment.min_fragment_words}</code>, 0 = off): at least that many real words of <code class="opt">{segment.min_fragment_word_letters}</code> (4) letters or more. <code class="opt">{segment.fragment_words_vocabulary}</code> (auto) decides whether "real" means found in the maritime vocabulary (on at 518 kHz; off on every other channel, where the vocabulary does not fit the language) or merely a run of letters. The vocabulary holds words of 5 letters or more, so with it on, shorter words do not count. <code class="opt">{segment.fragment_words_after_autocorrect}</code> (on) counts words after the repair below.</li>
 </ul>
 
 <h3 id="s6-4">6.4 Autocorrect (<code class="opt">{autocorrect.*}</code>)</h3>

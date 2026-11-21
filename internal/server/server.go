@@ -927,6 +927,12 @@ func (s *Server) control(w http.ResponseWriter, r *http.Request, id Identity) {
 		if !s.run.Resync(ch) {
 			err = errors.New("the channel is not running")
 		}
+	case "restart":
+		if !s.run.RestartChannel(ch) {
+			err = errors.New("the channel is switched off")
+		} else {
+			s.run.Log("info", s.chTag(ch)+"channel restarted by the operator")
+		}
 	case "polarity":
 		var t string
 		var p sitor.Polarity

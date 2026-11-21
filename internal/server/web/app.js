@@ -192,7 +192,7 @@
     const r = $("role");
     r.textContent = admin ? (h && h.remote ? "admin (remote)" : "admin") : "view only";
     r.className = "pill " + (admin ? "ok" : "");
-    document.querySelectorAll("#chlines select, #chlines input, #chlines .b-resync, .specgrp input, .m-lock, .m-sync, #b-clip").forEach((el) => { el.disabled = !admin; });
+    document.querySelectorAll("#chlines select, #chlines input, #chlines .b-resync, #chlines .b-restart, .specgrp input, .m-lock, .m-sync, #b-clip").forEach((el) => { el.disabled = !admin; });
     // a viewer outside the local network may be offered a login (server.remote_admin); an administrator who logged in that way can log out
     const canLogin = !!(h && h.can_login);
     $("b-showlogin").hidden = !canLogin;
@@ -611,6 +611,7 @@
     L(i, ".c-autotune").onchange = (e) => control("autotune", e.target.checked, i);
     L(i, ".c-uos").onchange = (e) => control("uos", e.target.checked, i);
     L(i, ".b-resync").onclick = () => control("resync", undefined, i);
+    L(i, ".b-restart").onclick = () => control("restart", undefined, i);
     // clicking any of the first five columns selects the channel; double-clicking also opens its Options tab
     const ln = document.querySelector(`.chline[data-ch="${i}"]`);
     ln.addEventListener("click", (e) => { if (e.target.closest(".chip, .chfreq, .chinput, .chcmt, .chinfo")) selectChan(i); });
@@ -672,7 +673,7 @@
     note.hidden = true; $("opt-bar").hidden = false; $("opt-hint").hidden = false;
     try { const sj = await api("GET", "/api/settings"); fields = sj.fields; optHist = sj.history || []; } catch (e) { note.hidden = false; note.textContent = e.message; return; }
     if (seq !== optSeq) return; // a newer load of this page has started (two at once would each add the pages)
-    const title = { operator: "Operator and position", identify: "Station identification", input: "Input source", "input.device": "Audio input (sound card or virtual audio cable)", "input.hpsdr": "Radio (OpenHPSDR / Metis)", "input.sdrconnect": "SDRplay RSP (through SDRconnect)", "input.spyserver": "Airspy HF+ (through SpyServer)", "input.stdin": "Raw stream (standard input)", "input.file": "WAV file", channel: "Channel", ddc: "Down-converter", decoder: "Decoder", receiver: "Receiver (FSK demodulator)", segment: "Message segmentation", logging: "Logging", autocorrect: "Word autocorrection", meters: "Meters and spectrum", server: "Network server", output: "Output (command line)", clips: "Audio clips", compare: "Compare two channels (saves a clip when their messages differ)" };
+    const title = { operator: "Operator and position", identify: "Station identification", input: "Input source", "input.device": "Audio input (sound card or virtual audio cable)", "input.hpsdr": "Radio (OpenHPSDR, Protocol 1 or 2)", "input.sdrconnect": "SDRplay RSP (through SDRconnect)", "input.spyserver": "Airspy HF+ (through SpyServer)", "input.stdin": "Raw stream (standard input)", "input.file": "WAV file", channel: "Channel", ddc: "Down-converter", decoder: "Decoder", receiver: "Receiver (FSK demodulator)", segment: "Message segmentation", logging: "Logging", autocorrect: "Word autocorrection", meters: "Meters and spectrum", server: "Network server", output: "Output (command line)", clips: "Audio clips", compare: "Compare two channels (saves a clip when their messages differ)" };
     const nameOf = (p, d) => { const f = fields.find((x) => x.path === p); return (f && String(f.value).trim()) || d; };
     const pages = [
       ["station", "Station", ["operator", "identify"]],
@@ -721,7 +722,13 @@
           try { await api("POST", "/api/settings/restore-channel", { ch: chn }); await loadOptions(true); setMsg("Previous settings restored."); }
           catch (e) { setMsg(e.message, 0); }
         };
-        bar2.append(pb, rb); page.appendChild(bar2);
+        const sb = document.createElement("button"); sb.type = "button"; sb.className = "reset"; sb.textContent = "Restart this channel";
+        sb.title = "Opens the input of this channel again with its present settings, without changing anything (the same as RESTART on the Monitor tab).\nUse it when the input was not available, for example a SpyServer or SDRconnect that was started after navtexd. Channels that share this input restart too.";
+        sb.onclick = async () => {
+          try { await api("POST", "/api/control/restart" + (chn ? "?ch=" + chn : "")); setMsg("The channel was restarted."); }
+          catch (e) { setMsg(e.message, 0); }
+        };
+        bar2.append(sb, pb, rb); page.appendChild(bar2);
       }
       if (mch && advOn()) {
         const n = document.createElement("p"); n.className = "small advnote"; n.textContent = "Advanced options are shown (Receiver, Decoder, Down-converter). To hide them again, click \u201cadmin\u201d at the bottom right and type exit.";
