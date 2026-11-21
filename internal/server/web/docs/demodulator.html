@@ -34,7 +34,7 @@
 <ol><li><a href="#s5-1">5.1 From soft value to bit</a></li><li><a href="#s5-2">5.2 The code</a></li><li><a href="#s5-3">5.3 Finding the word boundaries (framing), <code class="opt">{decoder.framing}</code> = hard</a></li><li><a href="#s5-4">5.4 The repeat (time diversity)</a></li><li><a href="#s5-5">5.5 Combining the two copies</a></li><li><a href="#s5-6">5.6 Code to text</a></li><li><a href="#s5-7">5.7 Soft framing, <code class="opt">{decoder.framing}</code> = soft</a></li></ol>
 </li>
 <li><a href="#s6">6. From text to messages</a>
-<ol><li><a href="#s6-1">6.1 Message structure</a></li><li><a href="#s6-2">6.2 Segmentation (<code class="opt">{segment.*}</code>)</a></li><li><a href="#s6-3">6.3 Dropping noise fragments</a></li><li><a href="#s6-4">6.4 Autocorrect (<code class="opt">{autocorrect.*}</code>)</a></li><li><a href="#s6-5">6.5 Output</a></li></ol>
+<ol><li><a href="#s6-1">6.1 Message structure</a></li><li><a href="#s6-2">6.2 Segmentation (<code class="opt">{segment.*}</code>)</a></li><li><a href="#s6-3">6.3 Dropping noise fragments</a></li><li><a href="#s6-4">6.4 Autocorrect (<code class="opt">{autocorrect.*}</code>)</a></li><li><a href="#s6-5">6.5 Output</a></li><li><a href="#s6-6">6.6 Chinese text (486 kHz)</a></li></ol>
 </li>
 <li><a href="#sum">Summary and known weak spots</a></li>
 </ol></nav>
@@ -294,12 +294,23 @@
 <tr><td><code class="opt">{output.incomplete_messages}</code></td><td>true</td><td>Also report messages cut short (no NNNN)</td></tr>
 </table></details>
 
+<h3 id="s6-6">6.6 Chinese text (486 kHz)</h3>
+<p>The national NAVTEX service of China (486 kHz) uses the same SITOR-B transmission, but its text is not English: each GB 2312 character is sent as three letters, the character's place in the 94 &times; 94 table written in base 26 (A = 0). The stages up to 6.3 are the same; only the last repair step differs.</p>
+<ul>
+<li>This reading is done on a 486 kHz channel only. Text received on any other channel is never read as Chinese, and on a 486 kHz channel the vocabulary autocorrect of 6.4 is replaced by this reader.</li>
+<li>The received letters are always kept unchanged. The characters are stored separately, as the corrected text of the record.</li>
+<li>A letter that was lost or added in reception is bridged where the text allows. A unit that cannot be read is shown as &#9633;.</li>
+<li>Some parts are handled specially: the end marker (a full-width NNNN), header numbers that arrive as letters (EAIY for EA86) and stray blanks, which are read as unreadable letters.</li>
+<li>Station identification (the identification page) reads the characters, so the keywords of the Chinese stations are Chinese.</li>
+</ul>
+
 <h2 id="sum">Summary and known weak spots</h2>
 <p><strong>The whole chain:</strong> audio or I/Q &rarr; DDC to about 4 kS/s &rarr; carrier search and tracking &rarr; narrow filter and FM discriminator &rarr; presence and timing, integrate-and-dump into soft symbols &rarr; bits, framing, the repeat combined &rarr; characters &rarr; ZCZC&hellip;NNNN messages, cleaned up and repaired.</p>
 <p>Places where the clips and the sweep showed real weaknesses:</p>
 <ul>
 <li><strong>Timing lock on balanced signals (step 4):</strong> the timing metric is weak on centred, balanced signals and gets worse with a narrower channel filter. The default <code class="opt">{receiver.demod.timing_confidence}</code> was lowered to 0.015 because of this.</li>
 <li><strong>Carrier search bias (step 2):</strong> the comb search tends to give about &minus;3.5 Hz while the tracker settles at +15 to +20 Hz on the same signal. This is why the retune check can be vetoed by the tracker.</li>
+<li><strong>424 kHz (incomplete):</strong> support for 424 kHz is not complete at this time. A transmission on that channel may be received without any decoded text.</li>
 <li><strong>Soft lock in noise (step 5):</strong> the soft framing can emit random valid-looking characters in noise. Weak-character gating has been left out on purpose, to keep the logic close to the original.</li>
 </ul>
 </main>

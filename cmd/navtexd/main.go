@@ -64,7 +64,7 @@ func main() {
 	flag.String("centre", "", "Hz: receiver LO (real audio) or I/Q centre of the selected input (stored as its offset below the channel frequency); default: the LO 1000 Hz below the channel (radio: 3000 Hz)")
 	flag.String("carrier", "", "Hz: fix the carrier at this position in the selected input's audio / baseband and turn autotune off")
 	flag.String("start", "", "UTC time of the first sample (yyyy-mm-dd hh:mm:ss) for a piped recording")
-	flag.String("channel", "", "channel frequency in Hz (518000, 490000, 424000)")
+	flag.String("channel", "", "channel frequency in Hz (518000, 490000, 486000, 424000, 4209500)")
 	flag.String("listen", "", "web server address, e.g. 127.0.0.1:8080, :8080 for all interfaces, off for none")
 	flag.String("tunnel", "", "extra view-only address for a reverse tunnel such as cloudflared, e.g. 127.0.0.1:8081")
 	flag.Bool("realtime", false, "play a WAV file back at its real speed (to test the web interface)")
