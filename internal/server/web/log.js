@@ -768,7 +768,7 @@
       $("rec-title").textContent = L.rec && !L.end ? `${L.rec.kind} ${rk} of ${S.items.length} (selection)` : "";
       $("ld-prev").disabled = !canStep(earlier());
       $("ld-next").disabled = !canStep(-earlier());
-      $("ld-report").hidden = L.end;
+      $("ld-report").hidden = L.end; $("ld-copy").hidden = $("ld-copyall").hidden = L.end;
       syncDelete();
       return;
     }
@@ -778,7 +778,7 @@
     $("rec-title").textContent = L.rec ? `${L.rec.kind}${where}` : "";
     $("ld-prev").disabled = !canStep(earlier());
     $("ld-next").disabled = !canStep(-earlier());
-    $("ld-report").hidden = L.end;
+    $("ld-report").hidden = L.end; $("ld-copy").hidden = $("ld-copyall").hidden = L.end;
     syncDelete();
   }
   // (not while all the text is shown reversed: it is too easy to forget that, and to take the message for garbage)
@@ -913,6 +913,29 @@
     try { document.execCommand("copy"); } catch (e) { /* nothing more to try */ }
     ta.remove();
   }
+  // the text of a record as the message has it: without the date, time and quality in front of each line, the operator's revisions applied
+  // the lines of the message as the program reads it. A Chinese message (486 kHz) is stored as letters; its characters are in the
+  // corrected text, which has its own line breaks, so that is what is copied for it
+  const CJK = /[\u2e80-\u9fff\uf900-\ufaff\uff00-\uffef\u3000-\u303f]/;
+  const chineseLines = (r) => (r.cor && CJK.test(r.cor) ? r.cor.split("\n") : null);
+  const effLines = (r) => chineseLines(r) || (r.eff || r.lines.map((l) => l.x));
+  const plainText = (r, join) => {
+    const ls = effLines(r).map((x) => (join ? x.trim() : x));
+    let out;
+    if (!join) out = ls.join("\n");
+    else { // one paragraph: a space between lines, none where a Chinese character meets the line break
+      out = ls.filter((x) => x !== "").reduce((acc, x) => (acc === "" ? x : acc + (CJK.test(acc.slice(-1)) || CJK.test(x[0]) ? "" : " ") + x), "");
+    }
+    return out.replace(/\s+$/, "");
+  };
+  const stampedText = (r) => {
+    const ls = effLines(r), out = r.lines.map((l, i) => NX.lineText({ t: Date.parse(l.t), q: l.q, x: ls[i] === undefined ? l.x : ls[i] }));
+    for (let i = r.lines.length; i < ls.length; i++) out.push(ls[i]); // (more lines than were received: a Chinese text is wrapped anew)
+    return out.join("\n").replace(/\s+$/, "");
+  };
+  const copyDone = (btn) => { if (btn) { const t = btn.dataset.t || btn.textContent; btn.dataset.t = t; btn.textContent = "Copied"; setTimeout(() => { btn.textContent = t; }, 1200); } };
+  const copyPlain = async (btn, join) => { if (!L.rec) return; await copyText(plainText(L.rec, join)); copyDone(btn); };
+  const copyAll = async (btn) => { if (!L.rec) return; await copyText(stampedText(L.rec)); copyDone(btn); };
   function ctxBuild(ids) {
     const one = ids.length === 1, rec = one && L.rec && L.rec.id === ids[0] ? L.rec : null, adm = admin();
     const n = ids.length > 1 ? ` (${ids.length} records)` : "";
@@ -922,7 +945,8 @@
     item(one ? "Review" : "Review selected" + n, "Enter", () => openDialog());
     item("Add to report" + n, "Alt-click", () => addToReport(ids));
     item(one ? "Copy record number" : "Copy record numbers", "", () => copyText(ids.map((i) => NX.hex(i)).join(" ")));
-    item("Copy message text", "", () => copyText($("lp-text").textContent), !rec, one ? "" : "Select one record");
+    item("Copy message text", "", () => copyPlain(), !rec, one ? "Without the date and time of each line" : "Select one record");
+    item("Copy text with time stamps", "", () => copyAll(), !rec, one ? "" : "Select one record");
     // identification: only for one record, and for administrators
     const why = rec && rec.why;
     sep();
@@ -1489,6 +1513,8 @@
   const showDbBtn = () => { $("n-db").classList.toggle("ghost", !admin()); $("n-undo").classList.toggle("ghost", !admin()); };
   $("n-delete").onclick = () => deleteSelected(false);
   $("ld-delete").onclick = () => deleteSelected(true); // no question asked: UNDO is next to it
+  $("ld-copy").onclick = (e) => copyPlain($("ld-copy"), e.shiftKey);
+  $("ld-copyall").onclick = () => copyAll($("ld-copyall"));
   $("ld-report").onclick = () => { if (L.selId) addToReport([L.selId]); };
 
   // ---- the report list ----
